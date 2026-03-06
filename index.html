@@ -190,12 +190,14 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 
 /* 달력 */
 .ig-month-label{padding:8px 10px 3px;font-size:11px;font-weight:900;color:var(--mu);letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid var(--bd);}
-.ig-cal-wrap{padding:6px 8px 4px;}
-.ig-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:1px;}
-.ig-cal-dow-cell{text-align:center;font-size:9px;font-weight:700;color:var(--mu);padding:3px 0;}
+.ig-cal-wrap{padding:6px 8px 8px;}
+.ig-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--bd);border-bottom:none;border-radius:6px 6px 0 0;overflow:hidden;}
+.ig-cal-dow-cell{text-align:center;font-size:9px;font-weight:700;color:var(--mu);padding:4px 0;background:var(--al);}
 .ig-cal-dow-cell.sun{color:#c53030;}.ig-cal-dow-cell.sat{color:#2045a8;}
-.ig-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);row-gap:1px;}
-.ig-cal-day{position:relative;display:flex;flex-direction:column;align-items:stretch;padding:2px 0 4px;}
+.ig-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--bd);border-radius:0 0 6px 6px;overflow:hidden;}
+.ig-cal-day{position:relative;display:flex;flex-direction:column;align-items:stretch;padding:2px 0 4px;border-right:1px solid var(--bd);border-bottom:1px solid var(--bd);}
+.ig-cal-day:nth-child(7n){border-right:none;}
+.ig-cal-day.empty{background:var(--al);opacity:.4;}
 .ig-cal-dn{font-size:10px;font-family:'DM Mono',monospace;color:var(--tx);line-height:1.6;z-index:1;text-align:center;flex-shrink:0;}
 .ig-cal-day.sun .ig-cal-dn{color:#c53030;}
 .ig-cal-day.sat .ig-cal-dn{color:#2045a8;}
@@ -982,6 +984,7 @@ function loadProject(pn){
     var lkb2=document.getElementById('lock-banner');
     if(lkb2){lkb2.innerHTML='🔒 확정된 현장입니다 · 수정이 잠겨있습니다';lkb2.style.background='';lkb2.style.borderColor='';lkb2.style.color='';}
     var _pcEl=document.getElementById('pnchips');if(_pcEl)_pcEl.classList.remove('cloud-viewing');
+    rCloudChips(); /* 비활성화 반영 */
   }
   var arr=getRecent();
   var item=arr.find(function(x){return x.pn===pn;});
@@ -1818,6 +1821,7 @@ function sw(m){
     _updLockOverlay();
     var rb=document.querySelector('.ro-badge.cloud-badge');if(rb)rb.remove();
     var _pcEl2=document.getElementById('pnchips');if(_pcEl2)_pcEl2.classList.remove('cloud-viewing');
+    rCloudChips(); /* 비활성화 반영 */
     /* lock-banner 원상복구 */
     var lkb2=document.getElementById('lock-banner');
     if(lkb2){
@@ -2825,7 +2829,7 @@ function rIntegrated() {
       h += '</div>';
     }
     h += '<div class="ig-cal-grid">';
-    for (var i = 0; i < startDow; i++) h += '<div class="ig-cal-day"></div>';
+    for (var i = 0; i < startDow; i++) h += '<div class="ig-cal-day empty"></div>';
     for (var d2 = 1; d2 <= dim; d2++) {
       var ds = y + '-' + zz(m+1) + '-' + zz(d2);
       var dw = new Date(y, m, d2).getDay();
