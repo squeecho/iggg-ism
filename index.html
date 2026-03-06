@@ -590,7 +590,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
         <div class="archive-chips" id="archiveChips"></div>
       </div>
       <!-- 다른 기기 / 공유 현장 -->
-      <div id="cloudChipsWrap" style="display:none;margin-top:14px;">
+      <div id="cloudChipsWrap" style="margin-top:14px;">
         <div id="cloudChipsHeader" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;user-select:none;">
           <div style="display:flex;align-items:center;gap:6px;">
             <div style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.5px;">☁️ 공유된 확정 현장</div>
@@ -598,6 +598,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
           </div>
           <button onclick="loadCloudSites().then(rCloudChips)" style="border:none;background:none;font-size:12px;color:#3b82f6;font-weight:700;cursor:pointer;padding:2px 6px;">↻ 새로고침</button>
         </div>
+        <div id="cloudChipsBody" style="display:none;">
         <div class="pnchips" id="cloudChips"></div>
         <!-- 지난 공유된 확정현장 -->
         <div class="archive-wrap" id="cloudArchiveWrap" style="display:none;margin-top:10px;">
@@ -609,6 +610,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
           </div>
           <div class="archive-chips" id="cloudArchiveChips"></div>
         </div>
+        </div><!-- /cloudChipsBody -->
       </div>
     </div>
   </div>
@@ -1130,17 +1132,35 @@ function _initMasterLongPress(){
   var hdr=document.getElementById('cloudChipsHeader');
   if(!hdr||hdr._masterBound)return;
   hdr._masterBound=true;
+  var _startX=0,_startY=0;
   function start(e){
-    /* 버튼 클릭은 제외 */
     if(e.target.tagName==='BUTTON')return;
-    _masterLongPressTimer=setTimeout(function(){ _showMasterModal(); },3000);
+    var t=e.touches?e.touches[0]:e;
+    _startX=t.clientX;_startY=t.clientY;
+    clearTimeout(_masterLongPressTimer);
+    hdr.style.transition='opacity .1s';
+    _masterLongPressTimer=setTimeout(function(){
+      hdr.style.opacity='';
+      if(navigator.vibrate)navigator.vibrate(40);
+      _showMasterModal();
+    },2000);
   }
-  function cancel(){ clearTimeout(_masterLongPressTimer); }
+  function move(e){
+    var t=e.touches?e.touches[0]:e;
+    if(Math.abs(t.clientX-_startX)>8||Math.abs(t.clientY-_startY)>8){ cancel(); }
+  }
+  function cancel(){
+    clearTimeout(_masterLongPressTimer);
+    hdr.style.opacity='';
+  }
   hdr.addEventListener('mousedown',start);
   hdr.addEventListener('touchstart',start,{passive:true});
+  hdr.addEventListener('mousemove',move);
+  hdr.addEventListener('touchmove',move,{passive:true});
   hdr.addEventListener('mouseup',cancel);
   hdr.addEventListener('mouseleave',cancel);
   hdr.addEventListener('touchend',cancel);
+  hdr.addEventListener('touchcancel',cancel);
 }
 
 function _showMasterModal(){
@@ -1217,9 +1237,30 @@ function _exitMasterMode(){
 
 async function deleteCloudSite(pn){
   if(!_masterMode){toast('⛔ 마스터 모드가 아닙니다');return;}
-  if(!confirm('☁️ "'+pn+'" 현장을 Firebase에서 완전 삭제할까요?\n모든 기기에서 사라집니다.'))return;
+  _showDeleteConfirmModal(pn);
+}
+
+function _showDeleteConfirmModal(pn){
+  var old=document.getElementById('_delConfirmBg');
+  if(old)old.remove();
+  var bg=document.createElement('div');
+  bg.id='_delConfirmBg';
+  bg.className='master-modal-bg';
+  bg.innerHTML=''
+    +'<div class="master-modal" style="gap:10px;">'
+    +'<div class="master-modal-title" style="color:#f87171;">🗑️ 클라우드 삭제</div>'
+    +'<div class="master-modal-sub" style="color:#fca5a5;font-size:12px;line-height:1.6;margin-top:0;">☁️ <b style="color:#fff">'+esc(pn)+'</b><br>모든 기기에서 완전히 삭제됩니다.<br>이 작업은 되돌릴 수 없습니다.</div>'
+    +'<div class="master-modal-btns" style="margin-top:4px;">'
+    +'<button class="master-modal-cancel" onclick="document.getElementById(\'_delConfirmBg\').remove()">취소</button>'
+    +'<button class="master-modal-ok" style="background:#ef4444;" onclick="_confirmDeleteCloud(\''+esc(pn)+'\')">삭제 확인</button>'
+    +'</div></div>';
+  document.body.appendChild(bg);
+}
+
+async function _confirmDeleteCloud(pn){
+  var bg=document.getElementById('_delConfirmBg');
+  if(bg)bg.remove();
   await deleteFromCloud(pn);
-  /* _cloudSites 로컬 캐시에서도 제거 */
   _cloudSites=(_cloudSites||[]).filter(function(s){return s.pn!==pn;});
   loadCloudSites().then(rCloudChips);
   toast('🗑️ "'+pn+'" 삭제됐어요');
@@ -1343,12 +1384,13 @@ function renderDrop(){rChips();}
 /* ── 클라우드 공유 현장 칩 ── */
 function rCloudChips() {
   var wrap = document.getElementById('cloudChipsWrap');
+  var body = document.getElementById('cloudChipsBody');
   var el = document.getElementById('cloudChips');
   if (!el || !wrap) return;
 
   /* Firebase 미준비 시 재시도 */
   if (!_fbReady) {
-    wrap.style.display = '';
+    if(body)body.style.display = '';
     el.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:4px 0">Firebase 연결 대기 중...</div>';
     setTimeout(function(){ loadCloudSites().then(rCloudChips); }, 1500);
     return;
@@ -1359,10 +1401,11 @@ function rCloudChips() {
   var remote = (_cloudSites || []).filter(function(s){ return s.pn && localPns.indexOf(s.pn) < 0; });
 
   if (!remote.length) {
-    wrap.style.display = 'none';
+    if(body)body.style.display = 'none';
+    el.innerHTML = '';
     return;
   }
-  wrap.style.display = '';
+  if(body)body.style.display = '';
 
   /* 오늘 날짜 기준으로 진행중 / 지난 현장 분리 */
   var today = new Date().toISOString().slice(0,10);
@@ -1407,14 +1450,20 @@ function rCloudChips() {
         return buildCloudChip(site).replace('pnchip cloud confirmed','pnchip cloud confirmed archived');
       }).join('');
       caEl.querySelectorAll('.cloud-chip-btn').forEach(function(chip){
-        chip.onclick = function(){ loadCloudProject(chip.dataset.cloudpn); };
+        chip.onclick = function(e){
+          if(e.target.closest('.cloud-del-btn'))return;
+          loadCloudProject(chip.dataset.cloudpn);
+        };
       });
     }
   }
 
   /* 이벤트 직접 바인딩 (진행중) */
   el.querySelectorAll('.cloud-chip-btn').forEach(function(chip){
-    chip.onclick = function(){ loadCloudProject(chip.dataset.cloudpn); };
+    chip.onclick = function(e){
+      if(e.target.closest('.cloud-del-btn'))return;
+      loadCloudProject(chip.dataset.cloudpn);
+    };
   });
 
   /* 마스터 모드 longpress 초기화 */
@@ -2524,12 +2573,13 @@ async function loadCloudSites() {
 /* 확정 버튼 핸들러 — toggleConfirmed 자체에서 Firebase 처리 */
 document.addEventListener('DOMContentLoaded', function(){
   initFirebase();
+  _initMasterLongPress();
   /* 초기 로드 시 클라우드 현장 칩 표시 - 로딩 표시 후 Firebase 완료되면 렌더 */
   setTimeout(function(){
-    var wrap = document.getElementById('cloudChipsWrap');
+    var body = document.getElementById('cloudChipsBody');
     var el = document.getElementById('cloudChips');
-    if (wrap && el) {
-      wrap.style.display = '';
+    if (body && el) {
+      body.style.display = '';
       el.innerHTML = '<div style="font-size:11px;color:var(--mu);padding:4px 0">☁️ 불러오는 중...</div>';
     }
     loadCloudSites().then(rCloudChips);
