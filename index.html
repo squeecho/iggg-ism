@@ -2740,7 +2740,7 @@ function rIntegrated() {
           else if (isE)   bc += 'rng-e';
           else             bc += 'rng-m';
           var rIdx = (task.split && rng.sd === task.sd2) ? 1 : 0;
-          bars += '<div class="'+bc+' ig-bar-tap no-print" style="background:'+color+';cursor:pointer"'
+          bars += '<div class="'+bc+' ig-bar-tap" style="background:'+color+';cursor:pointer"'
             + ' data-pn="'+esc(entry.site.pn)+'" data-tid="'+(curTid||0)+'" data-ridx="'+rIdx+'">'
             + (showLabel ? '<span class="ig-cal-bar-label">'+esc(entry.site.pn)+'</span>' : '')
             + '</div>';
