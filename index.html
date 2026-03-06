@@ -134,25 +134,27 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-badge{background:rgba(255,255,255,0.2);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;font-family:'DM Mono',monospace;}
 
 /* 달력 */
-.ig-month-label{padding:12px 14px 4px;font-size:13px;font-weight:900;color:var(--mu);letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid var(--bd);}
-.ig-cal-wrap{padding:8px 10px 6px;}
-.ig-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:2px;}
-.ig-cal-dow-cell{text-align:center;font-size:10px;font-weight:700;color:var(--mu);padding:4px 0;}
+.ig-month-label{padding:8px 10px 3px;font-size:11px;font-weight:900;color:var(--mu);letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid var(--bd);}
+.ig-cal-wrap{padding:6px 8px 4px;}
+.ig-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:1px;}
+.ig-cal-dow-cell{text-align:center;font-size:9px;font-weight:700;color:var(--mu);padding:3px 0;}
 .ig-cal-dow-cell.sun{color:#c53030;}.ig-cal-dow-cell.sat{color:#2045a8;}
-.ig-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);row-gap:3px;}
-.ig-cal-day{position:relative;min-height:52px;display:flex;flex-direction:column;align-items:center;padding:2px 0 3px;}
-.ig-cal-dn{font-size:11px;font-family:'DM Mono',monospace;color:var(--tx);line-height:1.7;z-index:1;position:relative;flex-shrink:0;}
+.ig-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);row-gap:1px;}
+.ig-cal-day{position:relative;display:flex;flex-direction:column;align-items:stretch;padding:2px 0 2px;}
+.ig-cal-dn{font-size:10px;font-family:'DM Mono',monospace;color:var(--tx);line-height:1.6;z-index:1;text-align:center;flex-shrink:0;}
 .ig-cal-day.sun .ig-cal-dn{color:#c53030;}
 .ig-cal-day.sat .ig-cal-dn{color:#2045a8;}
 .ig-cal-day.hol .ig-cal-dn{color:#b45309;}
-.ig-cal-day.today .ig-cal-dn{font-weight:900;text-decoration:underline;}
-.ig-cal-bars{display:flex;flex-direction:column;gap:2px;width:100%;padding:0 1px;}
-.ig-cal-bar{height:15px;border-radius:3px;width:100%;display:flex;align-items:center;overflow:hidden;position:relative;}
-.ig-cal-bar-label{font-size:8px;color:rgba(255,255,255,.95);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;flex:1;min-width:0;pointer-events:none;letter-spacing:-.2px;}
-.ig-cal-bar.rng-s{border-radius:3px 0 0 3px;margin-left:3px;}
-.ig-cal-bar.rng-e{border-radius:0 3px 3px 0;margin-right:3px;}
-.ig-cal-bar.rng-m{border-radius:0;}
-.ig-cal-bar.rng-se{border-radius:3px;margin:0 3px;}
+.ig-cal-day.today .ig-cal-dn{}
+.ig-cal-bars{display:flex;flex-direction:column;gap:1px;width:100%;padding:0;}
+/* ★ width 버그 수정: rng-s/e/se 마진만큼 width를 calc로 보정 */
+.ig-cal-bar{height:12px;border-radius:2px;width:100%;display:flex;align-items:center;overflow:hidden;}
+.ig-cal-bar-label{font-size:7px;color:rgba(255,255,255,.95);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 3px;flex:1;min-width:0;pointer-events:none;letter-spacing:-.3px;}
+.ig-cal-bar.rng-s{border-radius:2px 0 0 2px;margin-left:2px;width:calc(100% - 2px);}
+.ig-cal-bar.rng-e{border-radius:0 2px 2px 0;margin-right:2px;width:calc(100% - 2px);}
+.ig-cal-bar.rng-m{border-radius:0;width:100%;}
+.ig-cal-bar.rng-se{border-radius:2px;margin:0 2px;width:calc(100% - 4px);}
+.ig-cal-next-month{border-top:1px dashed var(--bd);}
 
 /* 업체별 섹션 */
 .ig-ctor-section{border-top:1px solid var(--bd);padding:12px 14px 10px;}
@@ -202,6 +204,8 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-ctor-toggle-nm{font-size:14px;font-weight:700;flex:1;}
 .ig-ctor-toggle-chk{width:22px;height:22px;border-radius:50%;border:2px solid #cbd5e1;background:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .14s;flex-shrink:0;}
 .ig-ctor-toggle-row.on .ig-ctor-toggle-chk{background:#16a34a;border-color:#16a34a;color:#fff;}
+.ig-ctor-del-btn{border:none;background:none;color:#cbd5e1;font-size:16px;font-weight:900;cursor:pointer;padding:2px 4px;line-height:1;flex-shrink:0;border-radius:6px;transition:color .12s,background .12s;}
+.ig-ctor-del-btn:hover{color:#dc2626;background:#fee2e2;}
 .ig-ctor-new-row{display:flex;gap:8px;margin-bottom:8px;}
 .ig-ctor-new-fi{flex:1;border:1.5px solid var(--bd);border-radius:10px;padding:10px 12px;font-size:14px;font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);outline:none;}
 .ig-ctor-new-fi:focus{border-color:var(--bar);background:#fff;}
@@ -1934,14 +1938,17 @@ function rIntegrated() {
     });
   }
 
-  /* 달력 렌더 */
-  function makeCalHtml(siteList) {
-    var y = _igY, m = _igM;
+  /* 달력 단일 월 렌더 (내부 헬퍼) */
+  function renderOneMonth(y, m, siteList, showDow) {
     var startDow = new Date(y, m, 1).getDay();
     var dim = new Date(y, m + 1, 0).getDate();
-    var h = '<div class="ig-cal-wrap"><div class="ig-cal-dow">';
-    DC.forEach(function(cls,i){ h += '<div class="ig-cal-dow-cell '+cls+'">'+DW[i]+'</div>'; });
-    h += '</div><div class="ig-cal-grid">';
+    var h = '';
+    if (showDow) {
+      h += '<div class="ig-cal-dow">';
+      DC.forEach(function(cls,i){ h += '<div class="ig-cal-dow-cell '+cls+'">'+DW[i]+'</div>'; });
+      h += '</div>';
+    }
+    h += '<div class="ig-cal-grid">';
     for (var i = 0; i < startDow; i++) h += '<div class="ig-cal-day"></div>';
     for (var d2 = 1; d2 <= dim; d2++) {
       var ds = y + '-' + zz(m+1) + '-' + zz(d2);
@@ -1950,28 +1957,68 @@ function rIntegrated() {
       var bars = '';
       siteList.forEach(function(entry) {
         var task = entry.task;
-        var sd = task.sd, ed = task.ed;
-        if (!sd || !ed) return;
-        var inRange = ds >= sd && ds <= ed;
-        var useSd = sd, useEd = ed;
-        if (!inRange && task.split && task.sd2 && task.ed2) {
-          if (ds >= task.sd2 && ds <= task.ed2) { inRange=true; useSd=task.sd2; useEd=task.ed2; }
-        }
-        if (!inRange) return;
-        var color = siteColors[entry.site.pn] || '#888';
-        var bc = 'ig-cal-bar';
-        if (ds===useSd && ds===useEd) bc+=' rng-se';
-        else if (ds===useSd) bc+=' rng-s';
-        else if (ds===useEd) bc+=' rng-e';
-        else bc+=' rng-m';
-        var isStart = (ds === useSd);
-        bars += '<div class="'+bc+'" style="background:'+color+'">'
-          + (isStart ? '<span class="ig-cal-bar-label">'+esc(entry.site.pn)+'</span>' : '')
-          + '</div>';
+        var ranges = [{sd:task.sd, ed:task.ed}];
+        if (task.split && task.sd2 && task.ed2) ranges.push({sd:task.sd2, ed:task.ed2});
+        ranges.forEach(function(rng) {
+          var sd = rng.sd, ed = rng.ed;
+          if (!sd || !ed) return;
+          if (ds < sd || ds > ed) return;
+          var color = siteColors[entry.site.pn] || '#888';
+          /* 월 경계 처리: 셀이 속한 달의 첫날/마지막날도 경계로 봄 */
+          var mFirst = y + '-' + zz(m+1) + '-01';
+          var mLast  = y + '-' + zz(m+1) + '-' + zz(dim);
+          var isS = (ds === sd) || (ds === mFirst && sd < mFirst); /* 시작 또는 이 달 첫날 */
+          var isE = (ds === ed) || (ds === mLast  && ed > mLast);  /* 끝 또는 이 달 마지막날 */
+          var showLabel = (ds === sd); /* 실제 시작일에만 현장명 */
+          var bc = 'ig-cal-bar ';
+          if (isS && isE) bc += 'rng-se';
+          else if (isS)   bc += 'rng-s';
+          else if (isE)   bc += 'rng-e';
+          else             bc += 'rng-m';
+          bars += '<div class="'+bc+'" style="background:'+color+'">'
+            + (showLabel ? '<span class="ig-cal-bar-label">'+esc(entry.site.pn)+'</span>' : '')
+            + '</div>';
+        });
       });
-      h += '<div class="'+cls+'"><span class="ig-cal-dn">'+d2+'</span>'+(bars?'<div class="ig-cal-bars">'+bars+'</div>':'')+'</div>';
+      h += '<div class="'+cls+'"><span class="ig-cal-dn">'+d2+'</span>'
+         + (bars ? '<div class="ig-cal-bars">'+bars+'</div>' : '')
+         + '</div>';
     }
-    return h + '</div></div>';
+    return h + '</div>';
+  }
+
+  /* 해당 siteList 중 다음 달에도 일정이 있는지 확인 */
+  function hasTaskInNextMonth(siteList, ny, nm) {
+    var nmStart = ny + '-' + zz(nm+1) + '-01';
+    var nmEnd   = ny + '-' + zz(nm+1) + '-' + zz(new Date(ny, nm+1, 0).getDate());
+    return siteList.some(function(entry) {
+      var t = entry.task;
+      if (t.sd && t.ed && t.ed >= nmStart && t.sd <= nmEnd) return true;
+      if (t.split && t.sd2 && t.ed2 && t.ed2 >= nmStart && t.sd2 <= nmEnd) return true;
+      return false;
+    });
+  }
+
+  /* 달력 렌더 (현재 달 + 필요시 다음 달) */
+  function makeCalHtml(siteList) {
+    var ny = _igY, nm = _igM + 1;
+    if (nm > 11) { nm = 0; ny++; }
+    var showNext = hasTaskInNextMonth(siteList, ny, nm);
+
+    var MNlabel = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    var h = '<div class="ig-cal-wrap">';
+    /* 현재 달 */
+    h += '<div class="ig-month-label">' + _igY + '. ' + MNlabel[_igM] + '</div>';
+    h += renderOneMonth(_igY, _igM, siteList, true);
+    /* 다음 달 (태스크가 넘어가는 경우만) */
+    if (showNext) {
+      h += '<div class="ig-cal-next-month">';
+      h += '<div class="ig-month-label" style="margin-top:4px">' + ny + '. ' + MNlabel[nm] + '</div>';
+      h += renderOneMonth(ny, nm, siteList, false); /* DOW 헤더 재사용 안 함 */
+      h += '</div>';
+    }
+    h += '</div>';
+    return h;
   }
 
   var html = setupBanner;
@@ -2160,16 +2207,18 @@ function igOpenCtorModal(pn, tid) {
 
 function igRenderCtorModalBody() {
   var all = igAllCtorNames();
-  var sel = _igCtorEdit.selected;
+  var sel = _igCtorEdit.selected; /* 최대 1개 */
+  var current = sel[0] || null;
   var h = '';
 
   if (all.length) {
-    h += '<div class="ig-ctor-modal-section-title">기존 업체</div>';
+    h += '<div class="ig-ctor-modal-section-title">업체 선택 (1개)</div>';
     h += '<div class="ig-ctor-toggle-list">';
     all.forEach(function(name) {
-      var on = sel.indexOf(name) >= 0;
-      h += '<div class="ig-ctor-toggle-row'+(on?' on':'')+'" onclick="igToggleCtorInModal(this,\''+esc(name)+'\')">'
+      var on = (name === current);
+      h += '<div class="ig-ctor-toggle-row'+(on?' on':'')+'" onclick="igSelectCtorInModal(this,\''+esc(name)+'\')">'
          + '<span class="ig-ctor-toggle-nm">'+esc(name)+'</span>'
+         + '<button class="ig-ctor-del-btn" title="업체 삭제" onmousedown="event.preventDefault()" onclick="event.stopPropagation();igDeleteCtor(\''+esc(name)+'\')">✕</button>'
          + '<span class="ig-ctor-toggle-chk">'+(on?'✓':'')+'</span>'
          + '</div>';
     });
@@ -2186,16 +2235,26 @@ function igRenderCtorModalBody() {
   document.getElementById('igCtorModalBody').innerHTML = h;
 }
 
-function igToggleCtorInModal(row, name) {
-  var idx = _igCtorEdit.selected.indexOf(name);
-  if (idx >= 0) {
-    _igCtorEdit.selected.splice(idx, 1);
-    row.classList.remove('on');
-    row.querySelector('.ig-ctor-toggle-chk').textContent = '';
+function igSelectCtorInModal(row, name) {
+  /* 라디오: 이미 선택된 것이면 해제, 아니면 단일 선택 */
+  var current = _igCtorEdit.selected[0] || null;
+  var list = row.closest('.ig-ctor-toggle-list');
+  /* 모든 행 off */
+  if (list) {
+    list.querySelectorAll('.ig-ctor-toggle-row').forEach(function(r) {
+      r.classList.remove('on');
+      var chk = r.querySelector('.ig-ctor-toggle-chk');
+      if (chk) chk.textContent = '';
+    });
+  }
+  if (current === name) {
+    /* 같은 것 탭 → 선택 해제 */
+    _igCtorEdit.selected = [];
   } else {
-    _igCtorEdit.selected.push(name);
+    _igCtorEdit.selected = [name];
     row.classList.add('on');
-    row.querySelector('.ig-ctor-toggle-chk').textContent = '✓';
+    var chk = row.querySelector('.ig-ctor-toggle-chk');
+    if (chk) chk.textContent = '✓';
   }
 }
 
@@ -2203,10 +2262,38 @@ function igAddNewCtorInModal() {
   var inp = document.getElementById('igCtorNewInput');
   var val = inp ? inp.value.trim() : '';
   if (!val) return;
-  if (_igCtorEdit.selected.indexOf(val) < 0) _igCtorEdit.selected.push(val);
+  /* 새 업체는 전체 목록에 추가하고 단일 선택 */
+  var all = igAllCtorNames();
+  if (all.indexOf(val) < 0) {
+    /* 아직 없는 업체 → 어딘가에 임시 저장 (선택에 반영) */
+    window._igNewCtors = window._igNewCtors || [];
+    if (window._igNewCtors.indexOf(val) < 0) window._igNewCtors.push(val);
+  }
+  _igCtorEdit.selected = [val];
   inp.value = '';
   igRenderCtorModalBody();
-  toast(val + ' 추가됨');
+  toast('"' + val + '" 선택됨');
+}
+
+/* 업체 전체 삭제 (모든 현장의 해당 업체를 제거) */
+function igDeleteCtor(name) {
+  if (!confirm('"' + name + '" 업체를 전체 삭제하시겠습니까?\n(모든 현장에서 이 업체가 제거됩니다)')) return;
+  var changed = [];
+  _cloudSites.forEach(function(site) {
+    var dirty = false;
+    (site.tasks||[]).forEach(function(t) {
+      var before = (t.contractors||[]).length;
+      t.contractors = (t.contractors||[]).filter(function(c){ return c.trim() !== name; });
+      if (t.contractors.length !== before) dirty = true;
+    });
+    if (dirty) changed.push(site);
+  });
+  /* 선택 해제 */
+  if (_igCtorEdit.selected[0] === name) _igCtorEdit.selected = [];
+  /* 저장 */
+  changed.forEach(function(s){ saveToCloud(s); });
+  toast('"' + name + '" 삭제 완료');
+  igRenderCtorModalBody();
 }
 
 function igSaveCtorModal() {
@@ -2217,6 +2304,7 @@ function igSaveCtorModal() {
   var task = (site.tasks||[]).find(function(t){ return t.id === tid; });
   if (!task) { igCloseCtorModal(); return; }
   task.contractors = _igCtorEdit.selected.filter(function(c){ return c && c.trim(); });
+  window._igNewCtors = []; /* 임시 목록 초기화 */
   saveToCloud(site);
   toast('저장 완료');
   igCloseCtorModal();
@@ -2237,6 +2325,8 @@ function igAllCtorNames() {
       });
     });
   });
+  /* 이번 모달 세션에서 새로 입력된 업체도 포함 */
+  (window._igNewCtors||[]).forEach(function(c){ if(c) names[c]=true; });
   return Object.keys(names).sort();
 }
 
