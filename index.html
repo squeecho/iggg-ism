@@ -257,8 +257,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-date-modal-cancel{flex:1;padding:13px;background:var(--bg);color:var(--tx);border:1.5px solid var(--bd);border-radius:12px;font-size:14px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;}
 .ig-date-modal-save{flex:2;padding:13px;background:#1e293b;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:900;font-family:'Noto Sans KR',sans-serif;cursor:pointer;transition:background .14s;}
 .ig-date-modal-save:hover{background:#0f172a;}
-.ig-legend-chip-period{cursor:pointer;}
-.ig-legend-chip-period:hover{color:var(--bar);text-decoration:underline;}
+.ig-legend-chip-period{font-size:9px;color:var(--mu);font-family:'DM Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;cursor:default;}
 
 /* 바 탭 날짜 선택 모달 */
 .ig-barpick-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:920;display:flex;align-items:flex-end;justify-content:center;}
@@ -853,9 +852,13 @@ function loadProject(pn){
 }
 function deleteRecent(pn,ev){
   if(ev)ev.stopPropagation();
-  var arr=getRecent().filter(function(x){return x.pn!==pn;});
-  setRecent(arr);
+  var arr=getRecent();
+  var item=arr.find(function(x){return x.pn===pn;});
+  /* 확정 현장이었으면 Firebase에서도 삭제 */
+  if(item&&item.confirmed) deleteFromCloud(pn);
+  setRecent(arr.filter(function(x){return x.pn!==pn;}));
   rChips();
+  rCloudChips();
 }
 function delChip(pn,ev){if(ev){ev.stopPropagation();ev.preventDefault();}deleteRecent(pn,null);}
 function newProject(){
@@ -871,6 +874,15 @@ function toggleConfirmed(pn,e){
   if(ci<0)return;
   arr[ci].confirmed=!arr[ci].confirmed;
   setRecent(arr);
+  /* Firebase 동기화 */
+  if(arr[ci].confirmed){
+    /* 확정 → Firebase에 업로드 */
+    var snap=arr[ci].snap?JSON.parse(arr[ci].snap):null;
+    if(snap){snap.pn=pn;snap.confirmed=true;saveToCloud(snap);}
+  } else {
+    /* 확정 해제 → Firebase에서 삭제 (공유 해제) */
+    deleteFromCloud(pn);
+  }
   /* 현재 활성 프로젝트면 IS_RO 즉시 반영 */
   if(S.pn&&S.pn.trim()===pn){
     IS_RO=!!arr[ci].confirmed;
@@ -880,10 +892,10 @@ function toggleConfirmed(pn,e){
         var cb=document.getElementById('ca');
         if(cb){var nb=document.createElement('span');nb.className='ro-badge';nb.textContent='🔒 확정됨';nb.style.cssText='font-size:11px;font-weight:700;color:#16a34a;background:#dcfce7;border:1px solid #bbf7d0;border-radius:6px;padding:3px 8px;margin-right:4px;';cb.insertBefore(nb,cb.firstChild);}
       }
-      toast('🔒 확정됐어요. 수정·삭제가 잠겼습니다.');
+      toast('🔒 확정됐어요. 다른 기기와 공유됩니다.');
     } else {
       if(rb)rb.remove();
-      toast('🔓 확정 해제됐어요. 편집 가능합니다.');
+      toast('🔓 확정 해제됐어요. 공유가 중단됩니다.');
     }
     _updLockOverlay();
     rEdit();
@@ -905,7 +917,7 @@ function rChips(){
     function fmtDT(s){if(!s||s==='--'||s==='-')return s;var p=s.split(' ');return p[0]+(p[1]?' <span style="opacity:.7">'+p[1]+'</span>':'');}
     var period=(item.sd&&item.ed)?(item.sd.slice(5).replace('-','.')+' ~ '+item.ed.slice(5).replace('-','.')):'기간 미설정';
     var cls='pnchip'+(isActive?' active':'')+(isConfirmed?' confirmed':'');
-    var delBtn=isConfirmed?'':'<button class="pnchip-del" data-i="'+i+'">&#xD7;</button>';
+    var delBtn='<button class="pnchip-del" data-i="'+i+'" title="'+(isConfirmed?'확정 현장 삭제':'삭제')+'">&#xD7;</button>';
     var lockIcon=isConfirmed?'<span class="pnchip-lock">🔒</span>':'';
     var confirmBtn='<button class="pnchip-confirm'+(isConfirmed?' on':'')+'" data-pn="'+nm+'">'+(isConfirmed?'✓ 확정됨':'확정')+'</button>';
     h+='<div class="'+cls+'" data-i="'+i+'">'
@@ -930,7 +942,14 @@ function rChips(){
     };
   });
   el.querySelectorAll('.pnchip-del').forEach(function(b){
-    b.onclick=function(e){e.stopPropagation();deleteRecent(arr2[+b.dataset.i].pn,e);};
+    b.onclick=function(e){
+      e.stopPropagation();
+      var item=arr2[+b.dataset.i];
+      if(item&&item.confirmed){
+        if(!confirm('"'+item.pn+'" 확정 현장을 이 기기에서 삭제할까요?\n(Firebase 데이터는 유지됩니다)'))return;
+      }
+      deleteRecent(item.pn,e);
+    };
   });
   el.querySelectorAll('.pnchip-confirm').forEach(function(b){
     b.onclick=function(e){e.stopPropagation();toggleConfirmed(b.dataset.pn,e);};
@@ -2081,21 +2100,7 @@ async function loadCloudSites() {
   } catch(e) { console.warn('Cloud load failed:', e); _cloudSites = []; }
 }
 
-/* toggleConfirmed 후 클라우드 동기화 훅 */
-var _origToggleConfirmed = typeof toggleConfirmed === 'function' ? toggleConfirmed : null;
-function toggleConfirmedCloud(pn, e) {
-  if (_origToggleConfirmed) _origToggleConfirmed(pn, e);
-  var arr = getRecent();
-  var item = arr.find(function(x){ return x.pn === pn; });
-  if (!item) return;
-  if (item.confirmed) {
-    var snap = item.snap ? JSON.parse(item.snap) : null;
-    if (snap) { snap.pn = pn; snap.confirmed = true; saveToCloud(snap); }
-  } else {
-    deleteFromCloud(pn);
-  }
-}
-/* 확정 버튼 핸들러를 클라우드 버전으로 교체 */
+/* 확정 버튼 핸들러 — toggleConfirmed 자체에서 Firebase 처리 */
 document.addEventListener('DOMContentLoaded', function(){
   initFirebase();
   /* 초기 로드 시 클라우드 현장 칩 표시 - 로딩 표시 후 Firebase 완료되면 렌더 */
@@ -2118,22 +2123,6 @@ document.addEventListener('DOMContentLoaded', function(){
       var rIdx = parseInt(bar.dataset.ridx);
       if (pn) igOpenBarModal(pn, tid, rIdx);
       return;
-    }
-    if (e.target.classList.contains('pnchip-confirm')) {
-      var pn2 = e.target.dataset.pn;
-      if (pn2) {
-        setTimeout(function(){
-          var arr = getRecent();
-          var item = arr.find(function(x){ return x.pn === pn2; });
-          if (!item) return;
-          if (item.confirmed) {
-            var snap = item.snap ? JSON.parse(item.snap) : null;
-            if (snap) { snap.pn = pn2; snap.confirmed = true; saveToCloud(snap); }
-          } else {
-            deleteFromCloud(pn2);
-          }
-        }, 300);
-      }
     }
   }, true);
 });
@@ -2494,7 +2483,7 @@ function makeEntryHtml(entry, tid) {
        + '<div class="ig-legend-chip-bar" style="background:'+color+'"></div>'
        + '<div class="ig-legend-chip-body">'
        +   '<div class="ig-legend-chip-name">'+pnKey+'</div>'
-       +   '<div class="ig-legend-chip-period no-print" onclick="igOpenDateModal(\''+pnKey+'\','+tid+')">✎ '+periodText+'</div>'
+       +   '<div class="ig-legend-chip-period no-print">✎ '+periodText+'</div>'
        +   '<div class="ig-legend-chip-period-print" style="font-size:9px;color:var(--mu);font-family:DM Mono,monospace;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+periodText+'</div>'
        +   '<div class="ig-legend-chip-ctor no-print'+(ctorEmpty?' empty':'')+'" onclick="igOpenCtorModal(\''+pnKey+'\','+tid+')">'
        +     esc(ctorDisp) + (ctorEmpty ? '' : ' ✎')
