@@ -2578,7 +2578,12 @@ document.addEventListener('DOMContentLoaded', function(){
    ========================================================= */
 var IG_TASK_ORDER = [1,2,3,4,5,6,7,8,9,10,11,13,12,14];
 var IG_TASK_NAMES = {1:'가설공사',2:'철거공사',3:'소방공사',4:'목공사',5:'전기공사',6:'도장공사',7:'금속공사',8:'설비공사',9:'타일공사',10:'공조공사',11:'필름공사',13:'기타공사',12:'가스공사',14:'준공청소'};
-var IG_COLORS = ['#3b82f6','#ef4444','#f59e0b','#8b5cf6','#10b981','#f97316','#06b6d4','#ec4899'];
+var IG_COLORS = [
+  '#3b82f6','#f59e0b','#8b5cf6','#10b981',
+  '#ef4444','#06b6d4','#f97316','#ec4899',
+  '#84cc16','#6366f1','#14b8a6','#f43f5e',
+  '#a855f7','#0ea5e9','#22c55e','#fb923c'
+];
 
 /* 공종 접기/펼치기 상태 (localStorage 저장) */
 var IG_COLLAPSE_KEY = 'ig_collapsed_trades';
@@ -2733,7 +2738,8 @@ function rIntegrated() {
           var mLast  = y + '-' + zz(m+1) + '-' + zz(dim);
           var isS = (ds === sd) || (ds === mFirst && sd < mFirst); /* 시작 또는 이 달 첫날 */
           var isE = (ds === ed) || (ds === mLast  && ed > mLast);  /* 끝 또는 이 달 마지막날 */
-          var showLabel = (ds === sd); /* 실제 시작일에만 현장명 */
+          var isRowStart = (dw === 0); /* 일요일 = 새 줄 시작 */
+          var showLabel = (ds === sd) || (ds === mFirst && sd < mFirst) || (isRowStart && ds > sd && ds < ed); /* 시작일 또는 줄 첫날 */
           var bc = 'ig-cal-bar ';
           if (isS && isE) bc += 'rng-se';
           else if (isS)   bc += 'rng-s';
