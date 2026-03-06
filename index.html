@@ -326,13 +326,11 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-barpick-dow-cell.sun{color:#c53030;}.ig-barpick-dow-cell.sat{color:#2045a8;}
 .ig-barpick-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
 .ig-barpick-cell{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:8px;cursor:pointer;font-size:14px;font-family:'DM Mono',monospace;font-weight:600;color:var(--tx);transition:background .1s;-webkit-tap-highlight-color:transparent;position:relative;user-select:none;}
-.ig-barpick-dots{display:flex;gap:2px;justify-content:center;flex-wrap:wrap;max-width:90%;}
-.ig-barpick-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
-.ig-barpick-sched{padding:8px 14px 4px;display:flex;flex-direction:column;gap:5px;max-height:96px;overflow-y:auto;border-top:1px solid var(--bd);}
-.ig-barpick-sched-row{display:flex;align-items:center;gap:8px;font-size:12px;}
-.ig-barpick-sched-bar{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
-.ig-barpick-sched-nm{font-weight:800;color:var(--tx);flex-shrink:0;}
-.ig-barpick-sched-period{font-family:'DM Mono',monospace;color:var(--mu);font-size:11px;}
+.ig-barpick-week{margin-bottom:2px;}
+.ig-barpick-week-dates{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+.ig-barpick-week-bars{display:flex;flex-direction:column;gap:1px;margin-top:2px;}
+.ig-barpick-bar-track{display:grid;grid-template-columns:repeat(7,1fr);}
+.ig-barpick-bar-seg{height:15px;border-radius:3px;display:flex;align-items:center;padding:0 5px;font-size:9px;font-weight:800;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;opacity:.9;}
 .ig-barpick-cell.empty{cursor:default;pointer-events:none;}
 .ig-barpick-cell.sun{color:#c53030;}.ig-barpick-cell.sat{color:#2045a8;}
 .ig-barpick-cell.hol{color:#b45309;}
@@ -889,6 +887,7 @@ function pnBtnClick(){
       if(ci>=0){arr[ci]=Object.assign({},arr[ci],{pn:orig,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});setRecent(arr);try{localStorage.setItem('cs_last',orig);}catch(e){}}
       _cancelPn=orig; /* 취소 시 돌아올 현장 */
       S=defaultState();autoTaskDates();_open=null;_origPn=null;calInit();sync();rEdit();rChips();rChart();
+      setTimeout(function(){var fn=document.getElementById('fn');if(fn){fn.focus();fn.select();}},50);
     } else {
       /* 이름이 바뀜 → rename */
       renameProject(orig,newNm);
@@ -979,25 +978,19 @@ function loadProject(pn){
     IS_RO=!!item.confirmed;
     calInit();sync();rEdit();rChips();
     _undoStack=[];_redoStack=[];_updUR();
+    /* ro-badge 표시/제거 */
+    var cb=document.getElementById('ca');
+    var rb2=document.querySelector('.ro-badge');
     if(IS_RO){
-      /* 확정 프로젝트: 차트 탭으로, 편집 탭 숨김 */
-      document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
-      document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on');});
-      document.getElementById('pc').classList.add('on');
-      document.getElementById('tc2').classList.add('on');
-      var cb=document.getElementById('ca');
-      if(cb&&!cb.querySelector('.ro-badge')){
+      if(cb&&!rb2){
         var rb=document.createElement('span');rb.className='ro-badge';rb.textContent='🔒 확정됨';
         rb.style.cssText='font-size:11px;font-weight:700;color:#16a34a;background:#dcfce7;border:1px solid #bbf7d0;border-radius:6px;padding:3px 8px;margin-right:4px;';
         cb.insertBefore(rb,cb.firstChild);
       }
-      rChart();
     } else {
-      /* 일반 프로젝트: 편집탭 복원 */
-      document.querySelectorAll('.tab').forEach(function(t){t.style.display='';});
-      var rb2=document.querySelector('.ro-badge');if(rb2)rb2.remove();
-      rChart();
+      if(rb2)rb2.remove();
     }
+    rChart();
     toast(pn+(IS_RO?' 🔒 확정 프로젝트입니다':' 불러왔어요!'));
   }catch(e){toast('불러오기 실패');}
 }
@@ -3485,84 +3478,93 @@ function igBarpickRender() {
   var y = _igBar.calY, m = _igBar.calM;
   var MN = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 
-  /* 힌트 */
-  var hints = ['① 시작일을 선택하세요', '② 종료일을 선택하세요'];
-  document.getElementById('igBarpickHint').textContent = hints[_igBar.step];
-
-  /* 월 레이블 */
+  document.getElementById('igBarpickHint').textContent =
+    ['① 시작일을 선택하세요','② 종료일을 선택하세요'][_igBar.step];
   document.getElementById('igBarpickNavLabel').textContent = y + '년 ' + MN[m];
 
-  /* ── 같은 공종(tid), 다른 현장의 일정 수집 ── */
-  var sameTidEntries = []; /* {pn, color, sd, ed, label} */
+  /* ── 같은 공종(tid), 다른 현장 일정 수집 ── */
+  var entries = [];
+  var monthFirstDs = y+'-'+zz(m+1)+'-01';
+  var dim = new Date(y, m+1, 0).getDate();
+  var monthLastDs  = y+'-'+zz(m+1)+'-'+zz(dim);
+
   _cloudSites.forEach(function(site) {
-    if (site.pn === _igBar.pn) return; /* 수정 중인 현장 제외 */
+    if (site.pn === _igBar.pn) return;
     (site.tasks||[]).forEach(function(t) {
       if (!t.on || t.id !== _igBar.tid) return;
       var color = (window._igSiteColors && window._igSiteColors[site.pn]) || '#888';
-      var pnShort = site.pn;
-      if (t.sd && t.ed) sameTidEntries.push({pn:pnShort, color:color, sd:t.sd, ed:t.ed});
-      if (t.split && t.sd2 && t.ed2) sameTidEntries.push({pn:pnShort, color:color, sd:t.sd2, ed:t.ed2});
+      if (t.sd && t.ed) entries.push({pn:site.pn, color:color, sd:t.sd, ed:t.ed});
+      if (t.split && t.sd2 && t.ed2) entries.push({pn:site.pn, color:color, sd:t.sd2, ed:t.ed2});
     });
   });
 
-  /* ── 달력 그리드 ── */
-  var startDow = new Date(y, m, 1).getDay();
-  var dim = new Date(y, m + 1, 0).getDate();
+  /* ── 달력 빌드 (주차별 구조) ── */
+  var startDow = new Date(y, m, 1).getDay(); /* 1일의 요일 */
+  var numWeeks = Math.ceil((startDow + dim) / 7);
 
+  /* 요일 헤더 */
   var h = '<div class="ig-barpick-dow">';
   _DW_BP.forEach(function(d,i){ h += '<div class="ig-barpick-dow-cell '+_DC_BP[i]+'">'+d+'</div>'; });
-  h += '</div><div class="ig-barpick-grid">';
-
-  for (var i = 0; i < startDow; i++) h += '<div class="ig-barpick-cell empty"></div>';
-  for (var d2 = 1; d2 <= dim; d2++) {
-    var ds = y + '-' + zz(m+1) + '-' + zz(d2);
-    var dw = new Date(y, m, d2).getDay();
-    var cls = 'ig-barpick-cell';
-    if (dw===0) cls += ' sun'; else if (dw===6) cls += ' sat';
-    if (isH(ds)) cls += ' hol';
-
-    var sd = _igBar.sd, ed = _igBar.ed;
-    if (sd && ed && ds > sd && ds < ed) cls += ' in-range';
-    if (sd && ds === sd) cls += ' range-start';
-    if (ed && ds === ed) cls += ' range-end';
-
-    /* 이 날에 일정 있는 다른 현장 도트 */
-    var dots = '';
-    sameTidEntries.forEach(function(e) {
-      if (ds >= e.sd && ds <= e.ed) {
-        dots += '<div class="ig-barpick-dot" style="background:'+e.color+'" title="'+e.pn+'"></div>';
-      }
-    });
-    var dotsHtml = dots ? '<div class="ig-barpick-dots">'+dots+'</div>' : '';
-
-    h += '<div class="'+cls+'" onclick="igBarpickTap(\''+ds+'\')">'+d2+dotsHtml+'</div>';
-  }
   h += '</div>';
-  document.getElementById('igBarpickCal').innerHTML = h;
 
-  /* ── 현장별 일정 목록 (달력 하단) ── */
-  var schedEl = document.getElementById('igBarpickSched');
-  if (schedEl) {
-    if (!sameTidEntries.length) {
-      schedEl.style.display = 'none';
-    } else {
-      schedEl.style.display = '';
-      var sh = '';
-      sameTidEntries.forEach(function(e) {
-        var sdFmt = e.sd.slice(5).replace('-','/');
-        var edFmt = e.ed.slice(5).replace('-','/');
-        var dur = dif(e.sd, e.ed) + 1;
-        sh += '<div class="ig-barpick-sched-row">'
-            + '<div class="ig-barpick-sched-bar" style="background:'+e.color+'"></div>'
-            + '<div class="ig-barpick-sched-nm">'+esc(e.pn)+'</div>'
-            + '<div class="ig-barpick-sched-period">'+sdFmt+' ~ '+edFmt+' ('+dur+'일)</div>'
-            + '</div>';
-      });
-      schedEl.innerHTML = sh;
+  var sd = _igBar.sd, ed = _igBar.ed;
+
+  for (var w = 0; w < numWeeks; w++) {
+    h += '<div class="ig-barpick-week">';
+    h += '<div class="ig-barpick-week-dates">';
+
+    /* 날짜 셀 7개 */
+    for (var col = 0; col < 7; col++) {
+      var dayNum = w * 7 + col - startDow + 1;
+      if (dayNum < 1 || dayNum > dim) {
+        h += '<div class="ig-barpick-cell empty"></div>';
+        continue;
+      }
+      var ds = y+'-'+zz(m+1)+'-'+zz(dayNum);
+      var cls = 'ig-barpick-cell';
+      if (col===0) cls += ' sun'; else if (col===6) cls += ' sat';
+      if (isH(ds)) cls += ' hol';
+      if (sd && ed && ds > sd && ds < ed) cls += ' in-range';
+      if (sd && ds === sd) cls += ' range-start';
+      if (ed && ds === ed) cls += ' range-end';
+      h += '<div class="'+cls+'" onclick="igBarpickTap(\''+ds+'\')">'+dayNum+'</div>';
     }
+    h += '</div>'; /* week-dates */
+
+    /* ── 이 주에 걸치는 바 렌더 ── */
+    /* 이 주의 첫 번째/마지막 월내 날짜 */
+    var wFirstDay = Math.max(1, w*7 - startDow + 1);
+    var wLastDay  = Math.min(dim, (w+1)*7 - startDow);
+    var wFirstDs  = y+'-'+zz(m+1)+'-'+zz(wFirstDay);
+    var wLastDs   = y+'-'+zz(m+1)+'-'+zz(wLastDay);
+
+    var barsHtml = '';
+    entries.forEach(function(e) {
+      /* 월 바깥이면 월 경계로 클리핑 */
+      var eStart = e.sd < monthFirstDs ? monthFirstDs : e.sd;
+      var eEnd   = e.ed > monthLastDs  ? monthLastDs  : e.ed;
+      /* 이 주와 겹치는지 */
+      if (eStart > wLastDs || eEnd < wFirstDs) return;
+      /* 주 내 클리핑 */
+      var barDs = eStart > wFirstDs ? eStart : wFirstDs;
+      var barDe = eEnd   < wLastDs  ? eEnd   : wLastDs;
+      var barStartDay = parseInt(barDs.slice(8));
+      var barEndDay   = parseInt(barDe.slice(8));
+      var colS = new Date(y, m, barStartDay).getDay() + 1; /* CSS 1-indexed */
+      var colE = new Date(y, m, barEndDay).getDay()   + 2; /* exclusive */
+      /* 현장명 (너무 길면 자름) */
+      var label = esc(e.pn);
+      barsHtml += '<div class="ig-barpick-bar-track">'
+        + '<div class="ig-barpick-bar-seg" style="grid-column:'+colS+'/'+colE+';background:'+e.color+'" title="'+label+'">'
+        + label
+        + '</div></div>';
+    });
+
+    if (barsHtml) h += '<div class="ig-barpick-week-bars">'+barsHtml+'</div>';
+    h += '</div>'; /* week */
   }
 
-  /* 선택 표시 */
+  document.getElementById('igBarpickCal').innerHTML = h;
   igBarpickUpdateSel();
 }
 
@@ -3772,7 +3774,6 @@ function igCloseDateModal() {
       <button class="ig-barpick-nav-btn" onclick="igBarpickMoveMonth(1)">&#8594;</button>
     </div>
     <div class="ig-barpick-cal" id="igBarpickCal"></div>
-    <div class="ig-barpick-sched" id="igBarpickSched"></div>
     <div class="ig-barpick-sel-row">
       <div class="ig-barpick-sel-box active" id="igBarpickSdBox" onclick="igBarpickSdBoxTap()">
         <div class="ig-barpick-sel-label">시작일</div>
