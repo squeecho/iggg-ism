@@ -253,6 +253,45 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-date-modal-save:hover{background:#0f172a;}
 .ig-legend-chip-period{cursor:pointer;}
 .ig-legend-chip-period:hover{color:var(--bar);text-decoration:underline;}
+
+/* 바 탭 날짜 선택 모달 */
+.ig-barpick-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:920;display:flex;align-items:flex-end;justify-content:center;}
+.ig-barpick-box{background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:480px;display:flex;flex-direction:column;max-height:92vh;overflow:hidden;}
+.ig-barpick-hd{padding:14px 16px 8px;border-bottom:1.5px solid var(--bd);flex-shrink:0;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}
+.ig-barpick-hd-left{flex:1;min-width:0;}
+.ig-barpick-title{font-size:14px;font-weight:900;color:var(--tx);}
+.ig-barpick-sub{font-size:11px;color:var(--mu);margin-top:1px;}
+.ig-barpick-hint{font-size:12px;color:var(--bar);font-weight:700;margin-top:6px;min-height:18px;}
+.ig-barpick-hd-close{border:none;background:none;font-size:22px;color:var(--mu);cursor:pointer;padding:0 2px;flex-shrink:0;}
+.ig-barpick-nav{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 4px;flex-shrink:0;}
+.ig-barpick-nav-btn{border:1.5px solid var(--bd);background:var(--bg);cursor:pointer;font-size:16px;color:var(--tx);padding:7px 18px;border-radius:8px;line-height:1;}
+.ig-barpick-nav-label{font-size:15px;font-weight:900;color:var(--tx);}
+.ig-barpick-cal{padding:0 10px 6px;flex:1;overflow-y:auto;}
+.ig-barpick-dow{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:3px;}
+.ig-barpick-dow-cell{text-align:center;font-size:10px;font-weight:700;color:var(--mu);padding:4px 0;}
+.ig-barpick-dow-cell.sun{color:#c53030;}.ig-barpick-dow-cell.sat{color:#2045a8;}
+.ig-barpick-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
+.ig-barpick-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;font-size:14px;font-family:'DM Mono',monospace;font-weight:600;color:var(--tx);transition:background .1s;-webkit-tap-highlight-color:transparent;position:relative;user-select:none;}
+.ig-barpick-cell.empty{cursor:default;pointer-events:none;}
+.ig-barpick-cell.sun{color:#c53030;}.ig-barpick-cell.sat{color:#2045a8;}
+.ig-barpick-cell.hol{color:#b45309;}
+.ig-barpick-cell:not(.empty):hover{background:#f1f5f9;}
+.ig-barpick-cell.in-range{background:#dbeafe;border-radius:0;color:var(--tx);}
+.ig-barpick-cell.range-start,.ig-barpick-cell.range-end{background:#1e293b !important;color:#fff !important;font-weight:900;}
+.ig-barpick-cell.range-start{border-radius:8px 0 0 8px;}
+.ig-barpick-cell.range-end{border-radius:0 8px 8px 0;}
+.ig-barpick-cell.range-start.range-end{border-radius:8px;}
+.ig-barpick-sel-row{display:flex;gap:8px;padding:10px 14px;border-top:1.5px solid var(--bd);flex-shrink:0;}
+.ig-barpick-sel-box{flex:1;background:var(--bg);border-radius:10px;border:1.5px solid var(--bd);padding:8px 10px;text-align:center;transition:border-color .14s;}
+.ig-barpick-sel-box.active{border-color:var(--bar);background:#eff6ff;}
+.ig-barpick-sel-label{font-size:9px;font-weight:700;color:var(--mu);letter-spacing:.5px;text-transform:uppercase;}
+.ig-barpick-sel-date{font-size:14px;font-weight:900;color:var(--tx);font-family:'DM Mono',monospace;margin-top:3px;min-height:20px;}
+.ig-barpick-sel-date.empty{color:#cbd5e1;font-weight:500;font-size:12px;}
+.ig-barpick-ft{padding:10px 14px 26px;display:flex;gap:8px;flex-shrink:0;}
+.ig-barpick-cancel{flex:1;padding:13px;background:var(--bg);color:var(--tx);border:1.5px solid var(--bd);border-radius:12px;font-size:13px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;}
+.ig-barpick-save{flex:2;padding:13px;background:#16a34a;color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:900;font-family:'Noto Sans KR',sans-serif;cursor:pointer;transition:background .14s;}
+.ig-barpick-save:disabled{background:#cbd5e1;cursor:not-allowed;}
+.ig-barpick-save:not(:disabled):hover{background:#15803d;}
 .tl{display:flex;flex-direction:column;gap:10px;}
 .tc{background:var(--sf);border-radius:12px;border:1.5px solid var(--bd);overflow:hidden;}
 .tc.off{opacity:.52;}
@@ -1140,7 +1179,58 @@ function scaleTasks(oldSd,oldEd,newSd,newEd){
     }
   });
 }
-function sw(m){document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on');});document.getElementById('p'+m).classList.add('on');var tabId=m==='e'?'te':m==='c'?'tc2':'ti';document.getElementById(tabId).classList.add('on');if(m==='c')rChart();if(m==='e')rEdit();if(m==='i'){loadCloudSites().then(rIntegrated);}}
+function sw(m){
+  document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on');});
+  document.getElementById('p'+m).classList.add('on');
+  var tabId=m==='e'?'te':m==='c'?'tc2':'ti';
+  document.getElementById(tabId).classList.add('on');
+  if(m==='c') swChart();
+  if(m==='e') rEdit();
+  if(m==='i'){loadCloudSites().then(rIntegrated);}
+}
+
+/* 차트탭 전환: Firebase 최신 데이터로 S 동기화 후 렌더 */
+async function swChart() {
+  rChart(); /* 일단 현재 S로 즉시 렌더 */
+  if (!_fbReady || !_db || !S || !S.pn) return;
+  try {
+    var key = sanitizeKey(S.pn);
+    var doc = await _db.collection('sites').doc(key).get();
+    if (!doc.exists) return;
+    var cloud = doc.data();
+    if (!cloud || !cloud.tasks) return;
+
+    /* 로컬 savedAt vs Firebase _updatedAt 비교 */
+    var arr = getRecent();
+    var ci = arr.findIndex(function(x){ return x.pn === S.pn; });
+    var localTs = ci >= 0 ? (arr[ci].savedAt || 0) : 0;
+    var cloudTs = cloud._updatedAt || 0;
+
+    if (cloudTs <= localTs) return; /* 로컬이 최신이면 스킵 */
+
+    /* Firebase가 더 최신 → S 업데이트 */
+    var prevPn = S.pn;
+    Object.assign(S, cloud);
+    S.pn = prevPn; /* pn 유지 */
+    delete S._updatedAt;
+    delete S.confirmed;
+
+    /* 로컬스토리지 snap 갱신 */
+    if (ci >= 0) {
+      arr[ci] = Object.assign({}, arr[ci], {
+        sd: S.sd, ed: S.ed,
+        savedAt: cloudTs,
+        snap: JSON.stringify(S)
+      });
+      setRecent(arr);
+    }
+
+    if (typeof syncPeriod === 'function') syncPeriod();
+    rChart();
+    toast('☁️ 최신 일정으로 업데이트됨');
+  } catch(e) { console.warn('chart sync failed', e); }
+}
 
 /* EDIT RENDER */
 function rEdit(){
@@ -2031,7 +2121,9 @@ function rIntegrated() {
           else if (isS)   bc += 'rng-s';
           else if (isE)   bc += 'rng-e';
           else             bc += 'rng-m';
-          bars += '<div class="'+bc+'" style="background:'+color+'">'
+          var safePn = entry.site.pn.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          var rIdx = (task.split && rng.sd === task.sd2) ? 1 : 0;
+          bars += '<div class="'+bc+' no-print" style="background:'+color+';cursor:pointer" onclick="event.stopPropagation();igOpenBarModal(\''+safePn+'\','+tid+','+rIdx+')">'
             + (showLabel ? '<span class="ig-cal-bar-label">'+esc(entry.site.pn)+'</span>' : '')
             + '</div>';
         });
@@ -2601,6 +2693,184 @@ function igSaveDateModal() {
   rIntegrated();
 }
 
+/* ── 바 탭 날짜 선택 모달 ── */
+var _igBar = {pn:'', tid:0, rIdx:0, sd:'', ed:'', step:0 /* 0=시작선택, 1=종료선택 */, calY:0, calM:0};
+var _DW_BP = ['일','월','화','수','목','금','토'];
+var _DC_BP = ['sun','','','','','','sat'];
+
+function igOpenBarModal(pn, tid, rIdx) {
+  var site = _cloudSites.find(function(s){ return s.pn === pn; });
+  var task = site ? (site.tasks||[]).find(function(t){ return t.id===tid; }) : null;
+  if (!site || !task) return;
+
+  var curSd = (rIdx === 1 ? task.sd2 : task.sd) || '';
+  var curEd = (rIdx === 1 ? task.ed2 : task.ed) || '';
+
+  _igBar.pn = pn; _igBar.tid = tid; _igBar.rIdx = rIdx;
+  _igBar.sd = curSd; _igBar.ed = curEd;
+  _igBar.step = 0; /* 시작일 먼저 */
+
+  /* 달력 초기 위치: 현재 sd 기준 */
+  var base = curSd ? new Date(curSd) : new Date();
+  _igBar.calY = base.getFullYear();
+  _igBar.calM = base.getMonth();
+
+  var tname = IG_TASK_NAMES[tid] || '공종'+tid;
+  var rLabel = rIdx === 1 ? ' (기간 2)' : '';
+  document.getElementById('igBarpickTitle').textContent = pn + '  ·  ' + tname + rLabel;
+
+  igBarpickRender();
+  document.getElementById('igBarpickOv').style.display = 'flex';
+}
+
+function igBarpickRender() {
+  var y = _igBar.calY, m = _igBar.calM;
+  var MN = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+
+  /* 힌트 */
+  var hints = ['① 시작일을 선택하세요', '② 종료일을 선택하세요'];
+  document.getElementById('igBarpickHint').textContent = hints[_igBar.step];
+
+  /* 월 레이블 */
+  document.getElementById('igBarpickNavLabel').textContent = y + '년 ' + MN[m];
+
+  /* 달력 그리드 */
+  var startDow = new Date(y, m, 1).getDay();
+  var dim = new Date(y, m + 1, 0).getDate();
+  var td = today();
+
+  var h = '<div class="ig-barpick-dow">';
+  _DW_BP.forEach(function(d,i){ h += '<div class="ig-barpick-dow-cell '+_DC_BP[i]+'">'+d+'</div>'; });
+  h += '</div><div class="ig-barpick-grid">';
+
+  for (var i = 0; i < startDow; i++) h += '<div class="ig-barpick-cell empty"></div>';
+  for (var d2 = 1; d2 <= dim; d2++) {
+    var ds = y + '-' + zz(m+1) + '-' + zz(d2);
+    var dw = new Date(y, m, d2).getDay();
+    var cls = 'ig-barpick-cell';
+    if (dw===0) cls += ' sun'; else if (dw===6) cls += ' sat';
+    if (isH(ds)) cls += ' hol';
+
+    var sd = _igBar.sd, ed = _igBar.ed;
+    if (sd && ed && ds > sd && ds < ed) cls += ' in-range';
+    if (sd && ds === sd) cls += ' range-start';
+    if (ed && ds === ed) cls += ' range-end';
+
+    h += '<div class="'+cls+'" onclick="igBarpickTap(\''+ds+'\')">'+ d2 +'</div>';
+  }
+  h += '</div>';
+  document.getElementById('igBarpickCal').innerHTML = h;
+
+  /* 선택 표시 */
+  igBarpickUpdateSel();
+}
+
+function igBarpickUpdateSel() {
+  var sdEl = document.getElementById('igBarpickSd');
+  var edEl = document.getElementById('igBarpickEd');
+  var sdBox = document.getElementById('igBarpickSdBox');
+  var edBox = document.getElementById('igBarpickEdBox');
+
+  var sd = _igBar.sd, ed = _igBar.ed;
+  sdEl.className = 'ig-barpick-sel-date' + (sd ? '' : ' empty');
+  edEl.className = 'ig-barpick-sel-date' + (ed ? '' : ' empty');
+  sdEl.textContent = sd ? sd.slice(5).replace('-','/') : '미선택';
+  edEl.textContent = ed ? ed.slice(5).replace('-','/') : '미선택';
+
+  sdBox.classList.toggle('active', _igBar.step === 0);
+  edBox.classList.toggle('active', _igBar.step === 1);
+
+  var saveBtn = document.getElementById('igBarpickSave');
+  saveBtn.disabled = !(sd && ed && sd <= ed);
+}
+
+function igBarpickTap(ds) {
+  if (_igBar.step === 0) {
+    /* 시작일 선택 → 종료일도 초기화 */
+    _igBar.sd = ds;
+    _igBar.ed = '';
+    _igBar.step = 1;
+  } else {
+    if (ds < _igBar.sd) {
+      /* 시작일보다 앞 → 시작일로 교체, 다시 종료 선택 */
+      _igBar.sd = ds;
+      _igBar.ed = '';
+    } else {
+      _igBar.ed = ds;
+      _igBar.step = 1; /* 완료 상태 유지, 재선택 가능 */
+    }
+  }
+  igBarpickRender();
+}
+
+function igBarpickMoveMonth(n) {
+  _igBar.calM += n;
+  if (_igBar.calM > 11) { _igBar.calM = 0; _igBar.calY++; }
+  if (_igBar.calM < 0)  { _igBar.calM = 11; _igBar.calY--; }
+  igBarpickRender();
+}
+
+function igBarpickSdBoxTap() {
+  _igBar.step = 0;
+  igBarpickUpdateSel();
+}
+
+function igBarpickSave() {
+  var pn = _igBar.pn, tid = _igBar.tid, rIdx = _igBar.rIdx;
+  var sd = _igBar.sd, ed = _igBar.ed;
+  if (!sd || !ed || sd > ed) return;
+
+  var site = _cloudSites.find(function(s){ return s.pn === pn; });
+  var task = site ? (site.tasks||[]).find(function(t){ return t.id===tid; }) : null;
+  if (!site || !task) { igBarpickClose(); return; }
+
+  if (rIdx === 1) {
+    task.sd2 = sd; task.ed2 = ed; task.split = true;
+  } else {
+    task.sd = sd; task.ed = ed;
+  }
+
+  /* Firebase 저장 */
+  saveToCloud(site);
+
+  /* 로컬스토리지 snap 업데이트 */
+  var arr = getRecent();
+  var ci = arr.findIndex(function(x){ return x.pn === pn; });
+  if (ci >= 0) {
+    try {
+      var snapObj = arr[ci].snap ? JSON.parse(arr[ci].snap) : null;
+      if (snapObj && snapObj.tasks) {
+        var st = snapObj.tasks.find(function(t){ return t.id === tid; });
+        if (st) {
+          if (rIdx === 1) { st.sd2 = sd; st.ed2 = ed; st.split = true; }
+          else { st.sd = sd; st.ed = ed; }
+        }
+        arr[ci].snap = JSON.stringify(snapObj);
+        setRecent(arr);
+      }
+    } catch(e) {}
+  }
+
+  /* S 즉시 반영 */
+  if (typeof S !== 'undefined' && S && S.pn === pn && S.tasks) {
+    var st2 = S.tasks.find(function(t){ return t.id === tid; });
+    if (st2) {
+      if (rIdx === 1) { st2.sd2 = sd; st2.ed2 = ed; st2.split = true; }
+      else { st2.sd = sd; st2.ed = ed; }
+    }
+    if (typeof syncPeriod === 'function') syncPeriod();
+    if (typeof rChart === 'function') rChart();
+  }
+
+  toast('일정 수정 완료 ✓');
+  igBarpickClose();
+  rIntegrated();
+}
+
+function igBarpickClose() {
+  document.getElementById('igBarpickOv').style.display = 'none';
+}
+
 function igCloseDateModal() {
   document.getElementById('igDateModalOv').style.display = 'none';
 }
@@ -2666,6 +2936,38 @@ function igCloseDateModal() {
     <div class="ig-date-modal-ft">
       <button class="ig-date-modal-cancel" onclick="igCloseDateModal()">취소</button>
       <button class="ig-date-modal-save" onclick="igSaveDateModal()">✓ 저장 · 공정표 반영</button>
+    </div>
+  </div>
+</div>
+<!-- 바 탭 날짜 선택 모달 -->
+<div id="igBarpickOv" class="ig-barpick-ov" style="display:none" onclick="if(event.target===this)igBarpickClose()">
+  <div class="ig-barpick-box">
+    <div class="ig-barpick-hd">
+      <div class="ig-barpick-hd-left">
+        <div class="ig-barpick-title" id="igBarpickTitle">일정 수정</div>
+        <div class="ig-barpick-hint" id="igBarpickHint">① 시작일을 선택하세요</div>
+      </div>
+      <button class="ig-barpick-hd-close" onclick="igBarpickClose()">&#215;</button>
+    </div>
+    <div class="ig-barpick-nav">
+      <button class="ig-barpick-nav-btn" onclick="igBarpickMoveMonth(-1)">&#8592;</button>
+      <span class="ig-barpick-nav-label" id="igBarpickNavLabel"></span>
+      <button class="ig-barpick-nav-btn" onclick="igBarpickMoveMonth(1)">&#8594;</button>
+    </div>
+    <div class="ig-barpick-cal" id="igBarpickCal"></div>
+    <div class="ig-barpick-sel-row">
+      <div class="ig-barpick-sel-box active" id="igBarpickSdBox" onclick="igBarpickSdBoxTap()">
+        <div class="ig-barpick-sel-label">시작일</div>
+        <div class="ig-barpick-sel-date empty" id="igBarpickSd">미선택</div>
+      </div>
+      <div class="ig-barpick-sel-box" id="igBarpickEdBox">
+        <div class="ig-barpick-sel-label">종료일</div>
+        <div class="ig-barpick-sel-date empty" id="igBarpickEd">미선택</div>
+      </div>
+    </div>
+    <div class="ig-barpick-ft">
+      <button class="ig-barpick-cancel" onclick="igBarpickClose()">취소</button>
+      <button class="ig-barpick-save" id="igBarpickSave" onclick="igBarpickSave()" disabled>✓ 저장 · 공정표 반영</button>
     </div>
   </div>
 </div>
