@@ -1511,21 +1511,17 @@ async function loadCloudProject(pn) {
     } catch(e) { toast('로드 실패'); return; }
   }
 
-  /* ── 편집탭에서 확정 칩처럼 활성화 ── */
+  /* ── S·_origPn 건드리지 않음 — 로컬 입력창/칩 상태 완전 보존 ── */
   var loaded = Object.assign({}, site);
   delete loaded._updatedAt;
-
-  /* S에 로드 (로컬 저장 없이) — _origPn은 건드리지 않아 로컬 현장 보호 */
-  var _prevS = S, _prevOrigPn = _origPn;
-  S = loaded;
-  _origPn = null;   /* 저장 버튼 비활성 — 공유 현장은 수정 불가 */
-  IS_RO = true;
   _cloudView = loaded;
+  IS_RO = true;
 
-  /* 편집탭 렌더 (잠금 상태로) */
-  calInit(); sync(); rEdit(); rChips(); rCloudChips();
-  var _pnchipsEl=document.getElementById('pnchips');if(_pnchipsEl)_pnchipsEl.classList.add('cloud-viewing');
+  /* 잠금 오버레이만 적용, 칩만 리렌더 */
   _updLockOverlay();
+  rChips();
+  rCloudChips();
+  var _pnchipsEl=document.getElementById('pnchips');if(_pnchipsEl)_pnchipsEl.classList.add('cloud-viewing');
 
   /* lock-banner: 확정됨 배너 대신 공유 현장 안내 */
   var lkb = document.getElementById('lock-banner');
