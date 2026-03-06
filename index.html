@@ -2176,10 +2176,11 @@ function rIntegrated() {
       var nmClass = isUnassigned ? 'ig-ctor-nm unassigned' : 'ig-ctor-nm';
       var bdgClass = isUnassigned ? 'ig-ctor-badge unassigned' : 'ig-ctor-badge';
       var icon = isUnassigned ? '○' : '●';
+      var displayName = isUnassigned ? '' : esc(ctorName);
 
       var s = '<div class="ig-ctor-section">';
       s += '<div class="ig-ctor-hd">'
-        + '<span class="'+nmClass+'">'+icon+' '+esc(ctorName||'미지정')+'</span>'
+        + (displayName ? '<span class="'+nmClass+'">'+icon+' '+displayName+'</span>' : '')
         + '<span class="'+bdgClass+' no-print">'+siteList.length+'개 현장</span>'
         + '</div>';
       s += makeCalHtml(siteList);
@@ -2187,8 +2188,9 @@ function rIntegrated() {
       siteList.forEach(function(entry) { s += makeEntryHtml(entry, tid); });
       s += '</div></div></div>';
       /* 업체별 이미지 저장 버튼 */
+      var btnLabel = displayName ? displayName + '  ·  ' + tname : tname;
       s += '<button class="ig-ctor-save-btn no-print" onclick="doIGCtorImg(this,\''+tname+'\',\''+safeCtorName+'\')">'
-         + '📷 &nbsp;' + esc(ctorName||'미지정') + '  ·  ' + tname + ' &nbsp;이미지 저장'
+         + '📷 &nbsp;' + btnLabel + ' &nbsp;이미지 저장'
          + '</button>';
       return s;
     }
@@ -2197,7 +2199,7 @@ function rIntegrated() {
       html += renderCtorSection(ctorName, groups[ctorName], false);
     });
     if (unassigned.length) {
-      html += renderCtorSection('미지정', unassigned, true);
+      html += renderCtorSection('', unassigned, true);
     }
 
     html += '</div>'; /* ig-trade-body */
@@ -2231,7 +2233,7 @@ function makeEntryHtml(entry, tid) {
     periodText = '기간 미설정';
   }
   var ctors = (task.contractors||[]).filter(function(c){ return c && c.trim(); });
-  var ctorDisp = ctors.length ? ctors[0] : '담당 미지정';
+  var ctorDisp = ctors.length ? ctors[0] : '';
   var ctorEmpty = !ctors.length;
 
   return '<div class="ig-legend-chip">'
