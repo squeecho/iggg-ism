@@ -532,7 +532,10 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
       <div class="pnchips" id="pnchips"></div>
       <!-- 다른 기기 / 공유 현장 -->
       <div id="cloudChipsWrap" style="display:none;margin-top:14px;">
-        <div style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.5px;margin-bottom:7px;">☁️ 공유된 확정 현장</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
+          <div style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.5px;">☁️ 공유된 확정 현장</div>
+          <button onclick="loadCloudSites().then(rCloudChips)" style="border:none;background:none;font-size:12px;color:#3b82f6;font-weight:700;cursor:pointer;padding:2px 6px;">↻ 새로고침</button>
+        </div>
         <div class="pnchips" id="cloudChips"></div>
       </div>
     </div>
@@ -941,23 +944,37 @@ function rCloudChips() {
   var el = document.getElementById('cloudChips');
   if (!el || !wrap) return;
 
+  /* Firebase 미준비 시 재시도 */
+  if (!_fbReady) {
+    wrap.style.display = '';
+    el.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:4px 0">Firebase 연결 대기 중...</div>';
+    setTimeout(function(){ loadCloudSites().then(rCloudChips); }, 1500);
+    return;
+  }
+
   var localPns = getRecent().map(function(x){ return x.pn; });
   /* 로컬에 없는 클라우드 현장만 표시 */
   var remote = (_cloudSites || []).filter(function(s){ return s.pn && localPns.indexOf(s.pn) < 0; });
 
-  if (!remote.length) { wrap.style.display = 'none'; return; }
+  if (!remote.length) {
+    /* 클라우드에 아무것도 없으면 섹션 숨김, 있는데 전부 로컬이면도 숨김 */
+    wrap.style.display = _cloudSites.length === 0 ? 'none' : 'none';
+    return;
+  }
   wrap.style.display = '';
 
   var h = '';
   remote.forEach(function(site) {
-    var nm = esc(site.pn);
-    var isActive = (S && S.pn === site.pn);
+    var rawPn = site.pn;
+    var nm = esc(rawPn);
+    var isActive = (_cloudView && _cloudView.pn === rawPn);
     var period = (site.sd && site.ed) ? site.sd.slice(5).replace('-','.') + ' ~ ' + site.ed.slice(5).replace('-','.') : '기간 미설정';
     var cls = 'pnchip cloud confirmed' + (isActive ? ' active' : '');
-    h += '<div class="'+cls+'" onclick="loadCloudProject(\''+nm+'\')">'
+    /* data 속성으로 현장명 전달 (한글/특수문자 안전) */
+    h += '<div class="'+cls+' cloud-chip-btn" data-cloudpn="'+nm+'">'
       + '<div class="pnchip-body"><span class="pnchip-nm">☁️ '+nm+'</span><span class="pnchip-lock">🔒</span></div>'
       + '<div class="pnchip-meta">'
-      + '<div class="pnchip-row"><b>확정 현장</b>&nbsp;(다른 기기)</div>'
+      + '<div class="pnchip-row"><b>확정 현장</b>&nbsp;· 다른 기기</div>'
       + '</div>'
       + '<div class="pnchip-period">'+period+'</div>'
       + '<div class="pnchip-footer" style="justify-content:center">'
@@ -966,6 +983,11 @@ function rCloudChips() {
       + '</div>';
   });
   el.innerHTML = h;
+
+  /* 이벤트 직접 바인딩 */
+  el.querySelectorAll('.cloud-chip-btn').forEach(function(chip){
+    chip.onclick = function(){ loadCloudProject(chip.dataset.cloudpn); };
+  });
 }
 
 async function loadCloudProject(pn) {
@@ -2076,8 +2098,16 @@ function toggleConfirmedCloud(pn, e) {
 /* 확정 버튼 핸들러를 클라우드 버전으로 교체 */
 document.addEventListener('DOMContentLoaded', function(){
   initFirebase();
-  /* 초기 로드 시 클라우드 현장 칩 표시 */
-  setTimeout(function(){ if (_fbReady) loadCloudSites().then(rCloudChips); }, 800);
+  /* 초기 로드 시 클라우드 현장 칩 표시 - 로딩 표시 후 Firebase 완료되면 렌더 */
+  setTimeout(function(){
+    var wrap = document.getElementById('cloudChipsWrap');
+    var el = document.getElementById('cloudChips');
+    if (wrap && el) {
+      wrap.style.display = '';
+      el.innerHTML = '<div style="font-size:11px;color:var(--mu);padding:4px 0">☁️ 불러오는 중...</div>';
+    }
+    loadCloudSites().then(rCloudChips);
+  }, 400);
   document.addEventListener('click', function(e){
     /* 바 탭 → 날짜 선택 모달 */
     var bar = e.target.closest ? e.target.closest('.ig-bar-tap') : null;
