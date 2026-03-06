@@ -1212,31 +1212,36 @@ function rChips(){
   var archCount=document.getElementById('archiveCount');
   if(!el)return;
 
-  var active=arr.filter(function(x){return !x.confirmed;});
-  var archived=arr.filter(function(x){return !!x.confirmed;});
+  var today=new Date().toISOString().slice(0,10);
+  var active=arr.filter(function(x){return !x.confirmed || (x.ed && x.ed>=today);});
+  var archived=arr.filter(function(x){return !!x.confirmed && (!x.ed || x.ed<today);});
 
   /* ── 활성 칩 렌더 ── */
   if(!active.length){el.innerHTML='';} else {
     var h='';
     active.forEach(function(item){
-      var realIdx=arr.indexOf(item);
       var nm=esc(item.pn);
       var isActive=(item.pn===S.pn);
+      var isConfirmed=!!item.confirmed;
       var created=item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'--';
       var saved=item.savedAt?item.savedAt.slice(2).replace(/-/g,'.'):(item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'-');
       function fmtDT(s){if(!s||s==='--'||s==='-')return s;var p=s.split(' ');return p[0]+(p[1]?' <span style="opacity:.7">'+p[1]+'</span>':'');}
       var period=(item.sd&&item.ed)?(item.sd.slice(5).replace('-','.')+' ~ '+item.ed.slice(5).replace('-','.')):'기간 미설정';
-      var cls='pnchip'+(isActive?' active':'');
+      var cls='pnchip'+(isActive?' active':'')+(isConfirmed?' confirmed':'');
       var delBtn='<button class="pnchip-del" data-pn="'+nm+'" title="삭제">&#xD7;</button>';
-      var confirmBtn='<button class="pnchip-confirm" data-pn="'+nm+'">확정</button>';
+      var lockIcon=isConfirmed?'<span style="font-size:11px;">🔒</span>':'';
+      var confirmBtn=isConfirmed
+        ?'<button class="pnchip-confirm on" data-pn="'+nm+'">✓ 확정됨</button>'
+        :'<button class="pnchip-confirm" data-pn="'+nm+'">확정</button>';
+      var statusTxt=isConfirmed?'수정 잠금':'편집 가능';
       h+='<div class="'+cls+'" data-pn="'+nm+'">'
-        +'<div class="pnchip-body"><span class="pnchip-nm">'+nm+'</span>'+delBtn+'</div>'
+        +'<div class="pnchip-body"><span class="pnchip-nm">'+lockIcon+' '+nm+'</span>'+delBtn+'</div>'
         +'<div class="pnchip-meta">'
         +'<div class="pnchip-row"><b>등록</b>&nbsp;'+fmtDT(created)+'</div>'
         +'<div class="pnchip-row"><b>저장</b>&nbsp;'+fmtDT(saved)+'</div>'
         +'</div>'
         +'<div class="pnchip-period">'+period+'</div>'
-        +'<div class="pnchip-footer">'+confirmBtn+'<span style="font-size:10px;color:var(--mu)">편집 가능</span></div>'
+        +'<div class="pnchip-footer">'+confirmBtn+'<span style="font-size:10px;color:var(--mu)">'+statusTxt+'</span></div>'
         +'</div>';
     });
     el.innerHTML=h;
