@@ -227,7 +227,32 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-ctor-modal-ft{padding:12px 18px 20px;border-top:1.5px solid var(--bd);flex-shrink:0;}
 .ig-ctor-modal-save{width:100%;padding:14px;background:#16a34a;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:900;font-family:'Noto Sans KR',sans-serif;cursor:pointer;transition:background .14s;}
 .ig-ctor-modal-save:hover{background:#15803d;}
-/* tasks */
+
+/* 날짜 편집 모달 */
+.ig-date-modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:910;display:flex;align-items:flex-end;justify-content:center;}
+.ig-date-modal-box{background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:480px;display:flex;flex-direction:column;overflow:hidden;}
+.ig-date-modal-hd{padding:16px 18px 12px;border-bottom:1.5px solid var(--bd);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.ig-date-modal-title{font-size:15px;font-weight:900;}
+.ig-date-modal-sub{font-size:11px;color:var(--mu);margin-top:2px;}
+.ig-date-modal-close{border:none;background:none;font-size:22px;color:var(--mu);cursor:pointer;padding:0 2px;line-height:1;}
+.ig-date-modal-body{padding:16px 18px;overflow-y:auto;}
+.ig-date-block{background:var(--bg);border-radius:12px;border:1.5px solid var(--bd);padding:14px;margin-bottom:12px;}
+.ig-date-block-title{font-size:10px;font-weight:700;color:var(--mu);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;}
+.ig-date-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.ig-date-row:last-child{margin-bottom:0;}
+.ig-date-lbl{font-size:12px;font-weight:700;color:var(--tx);width:32px;flex-shrink:0;}
+.ig-date-input{flex:1;border:1.5px solid var(--bd);border-radius:10px;padding:10px 12px;font-size:14px;font-family:'DM Mono',monospace;background:#fff;color:var(--tx);outline:none;}
+.ig-date-input:focus{border-color:var(--bar);}
+.ig-date-dur{font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;text-align:right;margin-top:4px;}
+.ig-date-split-toggle{display:flex;align-items:center;gap:8px;padding:10px 0 2px;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.ig-date-split-toggle input[type=checkbox]{width:18px;height:18px;accent-color:var(--bar);}
+.ig-date-split-toggle span{font-size:13px;font-weight:700;color:var(--tx);}
+.ig-date-modal-ft{padding:12px 18px 28px;border-top:1.5px solid var(--bd);display:flex;gap:8px;flex-shrink:0;}
+.ig-date-modal-cancel{flex:1;padding:13px;background:var(--bg);color:var(--tx);border:1.5px solid var(--bd);border-radius:12px;font-size:14px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;}
+.ig-date-modal-save{flex:2;padding:13px;background:#1e293b;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:900;font-family:'Noto Sans KR',sans-serif;cursor:pointer;transition:background .14s;}
+.ig-date-modal-save:hover{background:#0f172a;}
+.ig-legend-chip-period{cursor:pointer;}
+.ig-legend-chip-period:hover{color:var(--bar);text-decoration:underline;}
 .tl{display:flex;flex-direction:column;gap:10px;}
 .tc{background:var(--sf);border-radius:12px;border:1.5px solid var(--bd);overflow:hidden;}
 .tc.off{opacity:.52;}
@@ -2240,7 +2265,8 @@ function makeEntryHtml(entry, tid) {
        + '<div class="ig-legend-chip-bar" style="background:'+color+'"></div>'
        + '<div class="ig-legend-chip-body">'
        +   '<div class="ig-legend-chip-name">'+pnKey+'</div>'
-       +   '<div class="ig-legend-chip-period">'+periodText+'</div>'
+       +   '<div class="ig-legend-chip-period no-print" onclick="igOpenDateModal(\''+pnKey+'\','+tid+')">✎ '+periodText+'</div>'
+       +   '<div class="ig-legend-chip-period-print" style="font-size:9px;color:var(--mu);font-family:DM Mono,monospace;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+periodText+'</div>'
        +   '<div class="ig-legend-chip-ctor no-print'+(ctorEmpty?' empty':'')+'" onclick="igOpenCtorModal(\''+pnKey+'\','+tid+')">'
        +     esc(ctorDisp) + (ctorEmpty ? '' : ' ✎')
        +   '</div>'
@@ -2460,10 +2486,90 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
   }
 }
 
-/* 구 doIGImg 호환 */
-async function doIGImg(btn, tradeName) {
-  return doIGCtorImg(btn, tradeName, '전체');
+/* ── 날짜 편집 모달 ── */
+var _igDateEdit = {pn:'', tid:0};
+
+function igOpenDateModal(pn, tid) {
+  var site = _cloudSites.find(function(s){ return s.pn === pn; });
+  var task = site ? (site.tasks||[]).find(function(t){ return t.id===tid; }) : null;
+  if (!site || !task) return;
+
+  _igDateEdit.pn = pn;
+  _igDateEdit.tid = tid;
+
+  var tname = IG_TASK_NAMES[tid] || '공종'+tid;
+  document.getElementById('igDateModalTitle').textContent = '일정 수정';
+  document.getElementById('igDateModalSub').textContent = pn + '  ·  ' + tname;
+
+  document.getElementById('igDateSd').value  = task.sd  || '';
+  document.getElementById('igDateEd').value  = task.ed  || '';
+  document.getElementById('igDateSd2').value = task.sd2 || '';
+  document.getElementById('igDateEd2').value = task.ed2 || '';
+
+  var hasSplit = !!(task.split && task.sd2 && task.ed2);
+  document.getElementById('igDateSplitChk').checked = hasSplit;
+  document.getElementById('igDateBlock2').style.display = hasSplit ? '' : 'none';
+
+  igDateUpdateDur();
+  document.getElementById('igDateModalOv').style.display = 'flex';
+  document.getElementById('igDateSd').focus();
 }
+
+function igDateUpdateDur() {
+  var sd = document.getElementById('igDateSd').value;
+  var ed = document.getElementById('igDateEd').value;
+  var dur1 = (sd && ed && sd <= ed) ? (dif(sd, ed) + 1) + '일' : '';
+  document.getElementById('igDateDur1').textContent = dur1;
+
+  var chk = document.getElementById('igDateSplitChk').checked;
+  if (chk) {
+    var sd2 = document.getElementById('igDateSd2').value;
+    var ed2 = document.getElementById('igDateEd2').value;
+    var dur2 = (sd2 && ed2 && sd2 <= ed2) ? (dif(sd2, ed2) + 1) + '일' : '';
+    document.getElementById('igDateDur2').textContent = dur2;
+  }
+}
+
+function igDateToggleSplit() {
+  var chk = document.getElementById('igDateSplitChk').checked;
+  document.getElementById('igDateBlock2').style.display = chk ? '' : 'none';
+  igDateUpdateDur();
+}
+
+function igSaveDateModal() {
+  var pn = _igDateEdit.pn;
+  var tid = _igDateEdit.tid;
+  var site = _cloudSites.find(function(s){ return s.pn === pn; });
+  var task = site ? (site.tasks||[]).find(function(t){ return t.id===tid; }) : null;
+  if (!site || !task) { igCloseDateModal(); return; }
+
+  var sd = document.getElementById('igDateSd').value.trim();
+  var ed = document.getElementById('igDateEd').value.trim();
+  if (!sd || !ed) { toast('시작일과 종료일을 모두 입력하세요.'); return; }
+  if (sd > ed) { toast('시작일이 종료일보다 늦습니다.'); return; }
+
+  var hasSplit = document.getElementById('igDateSplitChk').checked;
+  var sd2 = document.getElementById('igDateSd2').value.trim();
+  var ed2 = document.getElementById('igDateEd2').value.trim();
+  if (hasSplit && (!sd2 || !ed2)) { toast('분리 일정의 날짜를 모두 입력하세요.'); return; }
+  if (hasSplit && sd2 > ed2) { toast('분리 일정: 시작일이 종료일보다 늦습니다.'); return; }
+
+  task.sd = sd;
+  task.ed = ed;
+  task.split = hasSplit;
+  if (hasSplit) { task.sd2 = sd2; task.ed2 = ed2; }
+  else { delete task.sd2; delete task.ed2; }
+
+  saveToCloud(site);
+  toast('일정 수정 완료 ✓');
+  igCloseDateModal();
+  rIntegrated();
+}
+
+function igCloseDateModal() {
+  document.getElementById('igDateModalOv').style.display = 'none';
+}
+
 </script>
 <!-- 업체 배정 모달 -->
 <div id="igCtorModalOv" class="ig-ctor-modal-ov" style="display:none" onclick="if(event.target===this)igCloseCtorModal()">
@@ -2478,6 +2584,53 @@ async function doIGImg(btn, tradeName) {
     <div class="ig-ctor-modal-body" id="igCtorModalBody"></div>
     <div class="ig-ctor-modal-ft">
       <button class="ig-ctor-modal-save" onclick="igSaveCtorModal()">✓ 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 날짜 편집 모달 -->
+<div id="igDateModalOv" class="ig-date-modal-ov" style="display:none" onclick="if(event.target===this)igCloseDateModal()">
+  <div class="ig-date-modal-box">
+    <div class="ig-date-modal-hd">
+      <div>
+        <div class="ig-date-modal-title" id="igDateModalTitle">일정 수정</div>
+        <div class="ig-date-modal-sub" id="igDateModalSub"></div>
+      </div>
+      <button class="ig-date-modal-close" onclick="igCloseDateModal()">&#215;</button>
+    </div>
+    <div class="ig-date-modal-body">
+      <div class="ig-date-block">
+        <div class="ig-date-block-title">기간 1</div>
+        <div class="ig-date-row">
+          <span class="ig-date-lbl">시작</span>
+          <input type="date" class="ig-date-input" id="igDateSd" oninput="igDateUpdateDur()">
+        </div>
+        <div class="ig-date-row">
+          <span class="ig-date-lbl">종료</span>
+          <input type="date" class="ig-date-input" id="igDateEd" oninput="igDateUpdateDur()">
+        </div>
+        <div class="ig-date-dur" id="igDateDur1"></div>
+      </div>
+      <label class="ig-date-split-toggle">
+        <input type="checkbox" id="igDateSplitChk" onchange="igDateToggleSplit()">
+        <span>분리 일정 있음</span>
+      </label>
+      <div class="ig-date-block" id="igDateBlock2" style="display:none;margin-top:10px;">
+        <div class="ig-date-block-title">기간 2</div>
+        <div class="ig-date-row">
+          <span class="ig-date-lbl">시작</span>
+          <input type="date" class="ig-date-input" id="igDateSd2" oninput="igDateUpdateDur()">
+        </div>
+        <div class="ig-date-row">
+          <span class="ig-date-lbl">종료</span>
+          <input type="date" class="ig-date-input" id="igDateEd2" oninput="igDateUpdateDur()">
+        </div>
+        <div class="ig-date-dur" id="igDateDur2"></div>
+      </div>
+    </div>
+    <div class="ig-date-modal-ft">
+      <button class="ig-date-modal-cancel" onclick="igCloseDateModal()">취소</button>
+      <button class="ig-date-modal-save" onclick="igSaveDateModal()">✓ 저장 · 공정표 반영</button>
     </div>
   </div>
 </div>
