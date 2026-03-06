@@ -100,6 +100,21 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .pnchip.cloud.active{background:#1e3a5f;border-color:#3b82f6;border-style:solid;}
 .pnchip.cloud.active .pnchip-nm{color:#93c5fd;}
 .pnchip-confirm{border:1.5px solid #94a3b8;background:transparent;color:#64748b;border-radius:7px;font-size:11px;font-weight:700;padding:4px 10px;cursor:pointer;transition:all .15s;letter-spacing:.3px;}
+/* 보관함 */
+.archive-wrap{margin-top:12px;}
+.archive-header{display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f0ede6;border:1.5px solid #d4cfc7;border-radius:10px;cursor:pointer;transition:background .14s;user-select:none;}
+.archive-header:hover{background:#e8e4db;}
+.archive-header-icon{font-size:13px;}
+.archive-header-title{font-size:11px;font-weight:700;color:#78716c;letter-spacing:.5px;flex:1;}
+.archive-header-count{font-size:10px;font-weight:700;color:#a8a29e;background:#e7e2da;border-radius:20px;padding:2px 8px;}
+.archive-header-arrow{font-size:11px;color:#a8a29e;transition:transform .2s;}
+.archive-header-arrow.open{transform:rotate(90deg);}
+.archive-chips{display:none;margin-top:8px;}
+.archive-chips.open{display:flex;flex-wrap:wrap;gap:10px;}
+.pnchip.archived{opacity:.75;border-style:dashed;border-color:#d4cfc7;}
+.pnchip.archived:hover{opacity:1;border-color:var(--barh);}
+.pnchip.archived .pnchip-nm{color:#78716c;}
+.pnchip.archived.active{opacity:1;}
 .pnchip-confirm:hover{border-color:#475569;color:#1e293b;}
 .pnchip-confirm.on{background:#16a34a;border-color:#16a34a;color:#fff;}
 .pnchip-confirm.on:hover{background:#15803d;border-color:#15803d;}
@@ -529,6 +544,16 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
         <button class="pnsb" id="pnSaveBtn" onclick="pnBtnClick()">추가</button>
       </div>
       <div class="pnchips" id="pnchips"></div>
+      <!-- 지난 확정현장 (자동 아카이브) -->
+      <div class="archive-wrap" id="archiveWrap" style="display:none;">
+        <div class="archive-header" id="archiveHeader" onclick="toggleArchive()">
+          <span class="archive-header-icon">🗂️</span>
+          <span class="archive-header-title">지난 확정현장</span>
+          <span class="archive-header-count" id="archiveCount">0</span>
+          <span class="archive-header-arrow" id="archiveArrow">▶</span>
+        </div>
+        <div class="archive-chips" id="archiveChips"></div>
+      </div>
       <!-- 다른 기기 / 공유 현장 -->
       <div id="cloudChipsWrap" style="display:none;margin-top:14px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
@@ -536,6 +561,16 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
           <button onclick="loadCloudSites().then(rCloudChips)" style="border:none;background:none;font-size:12px;color:#3b82f6;font-weight:700;cursor:pointer;padding:2px 6px;">↻ 새로고침</button>
         </div>
         <div class="pnchips" id="cloudChips"></div>
+        <!-- 지난 공유된 확정현장 -->
+        <div class="archive-wrap" id="cloudArchiveWrap" style="display:none;margin-top:10px;">
+          <div class="archive-header" onclick="toggleCloudArchive()">
+            <span class="archive-header-icon">🗂️</span>
+            <span class="archive-header-title">지난 공유된 확정현장</span>
+            <span class="archive-header-count" id="cloudArchiveCount">0</span>
+            <span class="archive-header-arrow" id="cloudArchiveArrow">▶</span>
+          </div>
+          <div class="archive-chips" id="cloudArchiveChips"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -807,9 +842,14 @@ function saveProject(){
     var ds=defaultState();ds.pn=nm;
     S=ds;autoTaskDates();ds=S;
     var upd={pn:nm,sd:ds.sd,ed:ds.ed,createdAt:now,savedAt:now,snap:JSON.stringify(ds)};
-    arr.unshift(upd);if(arr.length>8)arr=arr.slice(0,8);
+    arr.unshift(upd);if(arr.length>50)arr=arr.slice(0,50);
     setRecent(arr);try{localStorage.setItem('cs_last',nm);}catch(e){}
     S=ds;_open=null;calInit();sync();rEdit();rChips();rChart();
+    /* 새로 추가된 칩으로 스크롤 */
+    setTimeout(function(){
+      var activeChip=document.querySelector('#pnchips .pnchip.active');
+      if(activeChip)activeChip.scrollIntoView({behavior:'smooth',block:'nearest'});
+    },50);
     toast(nm+' 등록됐어요!');
   }else{
     var upd=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});
@@ -821,7 +861,7 @@ function loadProject(pn){
   var arr=getRecent();
   var item=arr.find(function(x){return x.pn===pn;});
   if(!item)return;
-  if(S.pn&&S.pn!==pn){var cur=getRecent();var ci=cur.findIndex(function(x){return x.pn===S.pn;});var now2=nowTS();var upd=Object.assign({},ci>=0?cur[ci]:{},{pn:S.pn,sd:S.sd,ed:S.ed,createdAt:(ci>=0?cur[ci].createdAt:now2),savedAt:now2,snap:JSON.stringify(S)});if(ci>=0){cur[ci]=upd;}else{cur.unshift(upd);if(cur.length>8)cur=cur.slice(0,8);}setRecent(cur);}
+  if(S.pn&&S.pn!==pn){var cur=getRecent();var ci=cur.findIndex(function(x){return x.pn===S.pn;});var now2=nowTS();var upd=Object.assign({},ci>=0?cur[ci]:{},{pn:S.pn,sd:S.sd,ed:S.ed,createdAt:(ci>=0?cur[ci].createdAt:now2),savedAt:now2,snap:JSON.stringify(S)});if(ci>=0){cur[ci]=upd;}else{cur.unshift(upd);if(cur.length>50)cur=cur.slice(0,50);}setRecent(cur);}
   try{
     var loaded=JSON.parse(item.snap);
     S=loaded;_open=null;
@@ -873,85 +913,166 @@ function toggleConfirmed(pn,e){
   var ci=arr.findIndex(function(x){return x.pn===pn;});
   if(ci<0)return;
   arr[ci].confirmed=!arr[ci].confirmed;
-  setRecent(arr);
-  /* Firebase 동기화 */
+
+  /* ── FIFO: 확정 현장 최대 30개 유지 ──
+     새로 확정될 때, 기존 확정 현장이 30개 이상이면
+     createdAt 기준 가장 오래된 확정 현장을 로컬에서 자동 삭제 */
   if(arr[ci].confirmed){
-    /* 확정 → Firebase에 업로드 */
-    var snap=arr[ci].snap?JSON.parse(arr[ci].snap):null;
+    var confirmed=arr.filter(function(x){return !!x.confirmed;});
+    var MAX_CONFIRMED=30;
+    while(confirmed.length>MAX_CONFIRMED){
+      /* createdAt 오름차순 정렬 → 가장 오래된 것 */
+      confirmed.sort(function(a,b){return (a.createdAt||'').localeCompare(b.createdAt||'');});
+      var oldest=confirmed.shift();
+      arr=arr.filter(function(x){return x.pn!==oldest.pn;});
+    }
+  }
+
+  setRecent(arr);
+
+  /* Firebase 동기화 */
+  var item=arr.find(function(x){return x.pn===pn;});
+  if(item&&item.confirmed){
+    var snap=item.snap?JSON.parse(item.snap):null;
     if(snap){snap.pn=pn;snap.confirmed=true;saveToCloud(snap);}
   } else {
-    /* 확정 해제 → Firebase에서 삭제 (공유 해제) */
     deleteFromCloud(pn);
   }
+
   /* 현재 활성 프로젝트면 IS_RO 즉시 반영 */
   if(S.pn&&S.pn.trim()===pn){
-    IS_RO=!!arr[ci].confirmed;
+    var cur=arr.find(function(x){return x.pn===pn;});
+    IS_RO=!!(cur&&cur.confirmed);
     var rb=document.querySelector('.ro-badge');
     if(IS_RO){
       if(!rb){
         var cb=document.getElementById('ca');
         if(cb){var nb=document.createElement('span');nb.className='ro-badge';nb.textContent='🔒 확정됨';nb.style.cssText='font-size:11px;font-weight:700;color:#16a34a;background:#dcfce7;border:1px solid #bbf7d0;border-radius:6px;padding:3px 8px;margin-right:4px;';cb.insertBefore(nb,cb.firstChild);}
       }
-      toast('🔒 확정됐어요. 다른 기기와 공유됩니다.');
+      toast('🔒 확정됐어요. 지난 확정현장으로 이동하고 다른 기기와 공유됩니다.');
     } else {
       if(rb)rb.remove();
-      toast('🔓 확정 해제됐어요. 공유가 중단됩니다.');
+      toast('🔓 확정 해제됐어요. 활성 현장으로 이동합니다.');
     }
     _updLockOverlay();
     rEdit();
   }
   rChips();
 }
+function toggleArchive(){
+  var chips=document.getElementById('archiveChips');
+  var arrow=document.getElementById('archiveArrow');
+  if(!chips)return;
+  var isOpen=chips.classList.contains('open');
+  chips.classList.toggle('open',!isOpen);
+  if(arrow)arrow.classList.toggle('open',!isOpen);
+}
+function toggleCloudArchive(){
+  var chips=document.getElementById('cloudArchiveChips');
+  var arrow=document.getElementById('cloudArchiveArrow');
+  if(!chips)return;
+  var isOpen=chips.classList.contains('open');
+  chips.classList.toggle('open',!isOpen);
+  if(arrow)arrow.classList.toggle('open',!isOpen);
+}
 function rChips(){
   var arr=getRecent();
   var el=document.getElementById('pnchips');
+  var archWrap=document.getElementById('archiveWrap');
+  var archEl=document.getElementById('archiveChips');
+  var archCount=document.getElementById('archiveCount');
   if(!el)return;
-  if(!arr.length){el.innerHTML='';return;}
-  var h='';
-  arr.forEach(function(item,i){
+
+  var active=arr.filter(function(x){return !x.confirmed;});
+  var archived=arr.filter(function(x){return !!x.confirmed;});
+
+  /* ── 활성 칩 렌더 ── */
+  if(!active.length){el.innerHTML='';} else {
+    var h='';
+    active.forEach(function(item){
+      var realIdx=arr.indexOf(item);
+      var nm=esc(item.pn);
+      var isActive=(item.pn===S.pn);
+      var created=item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'--';
+      var saved=item.savedAt?item.savedAt.slice(2).replace(/-/g,'.'):(item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'-');
+      function fmtDT(s){if(!s||s==='--'||s==='-')return s;var p=s.split(' ');return p[0]+(p[1]?' <span style="opacity:.7">'+p[1]+'</span>':'');}
+      var period=(item.sd&&item.ed)?(item.sd.slice(5).replace('-','.')+' ~ '+item.ed.slice(5).replace('-','.')):'기간 미설정';
+      var cls='pnchip'+(isActive?' active':'');
+      var delBtn='<button class="pnchip-del" data-pn="'+nm+'" title="삭제">&#xD7;</button>';
+      var confirmBtn='<button class="pnchip-confirm" data-pn="'+nm+'">확정</button>';
+      h+='<div class="'+cls+'" data-pn="'+nm+'">'
+        +'<div class="pnchip-body"><span class="pnchip-nm">'+nm+'</span>'+delBtn+'</div>'
+        +'<div class="pnchip-meta">'
+        +'<div class="pnchip-row"><b>등록</b>&nbsp;'+fmtDT(created)+'</div>'
+        +'<div class="pnchip-row"><b>저장</b>&nbsp;'+fmtDT(saved)+'</div>'
+        +'</div>'
+        +'<div class="pnchip-period">'+period+'</div>'
+        +'<div class="pnchip-footer">'+confirmBtn+'<span style="font-size:10px;color:var(--mu)">편집 가능</span></div>'
+        +'</div>';
+    });
+    el.innerHTML=h;
+  }
+
+  /* ── 보관함 칩 렌더 ── */
+  if(!archWrap||!archEl)return;
+  if(!archived.length){archWrap.style.display='none';return;}
+  archWrap.style.display='';
+  if(archCount)archCount.textContent=archived.length;
+  var ah='';
+  archived.forEach(function(item){
     var nm=esc(item.pn);
     var isActive=(item.pn===S.pn);
-    var isConfirmed=!!item.confirmed;
     var created=item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'--';
     var saved=item.savedAt?item.savedAt.slice(2).replace(/-/g,'.'):(item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'-');
     function fmtDT(s){if(!s||s==='--'||s==='-')return s;var p=s.split(' ');return p[0]+(p[1]?' <span style="opacity:.7">'+p[1]+'</span>':'');}
     var period=(item.sd&&item.ed)?(item.sd.slice(5).replace('-','.')+' ~ '+item.ed.slice(5).replace('-','.')):'기간 미설정';
-    var cls='pnchip'+(isActive?' active':'')+(isConfirmed?' confirmed':'');
-    var delBtn='<button class="pnchip-del" data-i="'+i+'" title="'+(isConfirmed?'확정 현장 삭제':'삭제')+'">&#xD7;</button>';
-    var lockIcon=isConfirmed?'<span class="pnchip-lock">🔒</span>':'';
-    var confirmBtn='<button class="pnchip-confirm'+(isConfirmed?' on':'')+'" data-pn="'+nm+'">'+(isConfirmed?'✓ 확정됨':'확정')+'</button>';
-    h+='<div class="'+cls+'" data-i="'+i+'">'
-      +'<div class="pnchip-body"><span class="pnchip-nm">'+nm+'</span>'
-      +lockIcon+delBtn+'</div>'
+    var cls='pnchip archived confirmed'+(isActive?' active':'');
+    var delBtn='<button class="pnchip-del" data-pn="'+nm+'" title="삭제 (Firebase 유지)">&#xD7;</button>';
+    var unarchBtn='<button class="pnchip-confirm on" data-pn="'+nm+'" title="확정 해제 후 활성으로 이동">✓ 확정됨</button>';
+    ah+='<div class="'+cls+'" data-pn="'+nm+'">'
+      +'<div class="pnchip-body"><span class="pnchip-nm"><span style="font-size:11px;">🔒</span> '+nm+'</span>'+delBtn+'</div>'
       +'<div class="pnchip-meta">'
       +'<div class="pnchip-row"><b>등록</b>&nbsp;'+fmtDT(created)+'</div>'
       +'<div class="pnchip-row"><b>저장</b>&nbsp;'+fmtDT(saved)+'</div>'
       +'</div>'
       +'<div class="pnchip-period">'+period+'</div>'
-      +'<div class="pnchip-footer">'+confirmBtn+'<span style="font-size:10px;color:var(--mu)">'+(isConfirmed?'수정 잠금':'편집 가능')+'</span></div>'
+      +'<div class="pnchip-footer">'+unarchBtn+'<span style="font-size:10px;color:var(--mu)">수정 잠금</span></div>'
       +'</div>';
   });
-  el.innerHTML=h;
+  archEl.innerHTML=ah;
+
+  /* ── 이벤트 바인딩 (활성) ── */
   var arr2=getRecent();
   el.querySelectorAll('.pnchip').forEach(function(chip){
     chip.onclick=function(e){
       if(e.target.classList.contains('pnchip-del'))return;
       if(e.target.classList.contains('pnchip-confirm'))return;
-      var item=arr2[+chip.dataset.i];
-      loadProject(item.pn);
+      loadProject(chip.dataset.pn);
     };
   });
   el.querySelectorAll('.pnchip-del').forEach(function(b){
-    b.onclick=function(e){
-      e.stopPropagation();
-      var item=arr2[+b.dataset.i];
-      if(item&&item.confirmed){
-        if(!confirm('"'+item.pn+'" 확정 현장을 이 기기에서 삭제할까요?\n(Firebase 데이터는 유지됩니다)'))return;
-      }
-      deleteRecent(item.pn,e);
-    };
+    b.onclick=function(e){e.stopPropagation();deleteRecent(b.dataset.pn,e);};
   });
   el.querySelectorAll('.pnchip-confirm').forEach(function(b){
+    b.onclick=function(e){e.stopPropagation();toggleConfirmed(b.dataset.pn,e);};
+  });
+
+  /* ── 이벤트 바인딩 (보관함) ── */
+  archEl.querySelectorAll('.pnchip').forEach(function(chip){
+    chip.onclick=function(e){
+      if(e.target.classList.contains('pnchip-del'))return;
+      if(e.target.classList.contains('pnchip-confirm'))return;
+      loadProject(chip.dataset.pn);
+    };
+  });
+  archEl.querySelectorAll('.pnchip-del').forEach(function(b){
+    b.onclick=function(e){
+      e.stopPropagation();
+      if(!confirm('"'+b.dataset.pn+'" 확정 현장을 이 기기에서 삭제할까요?\n(Firebase 데이터는 유지됩니다)'))return;
+      deleteRecent(b.dataset.pn,e);
+    };
+  });
+  archEl.querySelectorAll('.pnchip-confirm').forEach(function(b){
     b.onclick=function(e){e.stopPropagation();toggleConfirmed(b.dataset.pn,e);};
   });
 }
@@ -976,34 +1097,55 @@ function rCloudChips() {
   var remote = (_cloudSites || []).filter(function(s){ return s.pn && localPns.indexOf(s.pn) < 0; });
 
   if (!remote.length) {
-    /* 클라우드에 아무것도 없으면 섹션 숨김, 있는데 전부 로컬이면도 숨김 */
-    wrap.style.display = _cloudSites.length === 0 ? 'none' : 'none';
+    wrap.style.display = 'none';
     return;
   }
   wrap.style.display = '';
 
-  var h = '';
-  remote.forEach(function(site) {
+  /* 오늘 날짜 기준으로 진행중 / 지난 현장 분리 */
+  var today = new Date().toISOString().slice(0,10);
+  var current = remote.filter(function(s){ return !s.ed || s.ed >= today; });
+  var past    = remote.filter(function(s){ return s.ed && s.ed < today; });
+
+  function buildCloudChip(site){
     var rawPn = site.pn;
     var nm = esc(rawPn);
     var isActive = (_cloudView && _cloudView.pn === rawPn);
     var period = (site.sd && site.ed) ? site.sd.slice(5).replace('-','.') + ' ~ ' + site.ed.slice(5).replace('-','.') : '기간 미설정';
     var cls = 'pnchip cloud confirmed' + (isActive ? ' active' : '');
-    /* data 속성으로 현장명 전달 (한글/특수문자 안전) */
-    h += '<div class="'+cls+' cloud-chip-btn" data-cloudpn="'+nm+'">'
+    return '<div class="'+cls+' cloud-chip-btn" data-cloudpn="'+nm+'">'
       + '<div class="pnchip-body"><span class="pnchip-nm">☁️ '+nm+'</span><span class="pnchip-lock">🔒</span></div>'
-      + '<div class="pnchip-meta">'
-      + '<div class="pnchip-row"><b>확정 현장</b>&nbsp;· 다른 기기</div>'
-      + '</div>'
+      + '<div class="pnchip-meta"><div class="pnchip-row"><b>확정 현장</b>&nbsp;· 다른 기기</div></div>'
       + '<div class="pnchip-period">'+period+'</div>'
       + '<div class="pnchip-footer" style="justify-content:center">'
       + '<span style="font-size:11px;font-weight:700;color:#2563eb">📊 차트 보기</span>'
-      + '</div>'
-      + '</div>';
-  });
-  el.innerHTML = h;
+      + '</div></div>';
+  }
 
-  /* 이벤트 직접 바인딩 */
+  /* ── 진행중 클라우드 칩 ── */
+  el.innerHTML = current.map(buildCloudChip).join('') ||
+    '<div style="font-size:11px;color:#94a3b8;padding:4px 0">진행중인 공유 현장이 없습니다</div>';
+
+  /* ── 지난 공유된 확정현장 ── */
+  var caWrap = document.getElementById('cloudArchiveWrap');
+  var caEl   = document.getElementById('cloudArchiveChips');
+  var caCount= document.getElementById('cloudArchiveCount');
+  if(caWrap && caEl){
+    if(!past.length){
+      caWrap.style.display = 'none';
+    } else {
+      caWrap.style.display = '';
+      if(caCount) caCount.textContent = past.length;
+      caEl.innerHTML = past.map(function(site){
+        return buildCloudChip(site).replace('pnchip cloud confirmed','pnchip cloud confirmed archived');
+      }).join('');
+      caEl.querySelectorAll('.cloud-chip-btn').forEach(function(chip){
+        chip.onclick = function(){ loadCloudProject(chip.dataset.cloudpn); };
+      });
+    }
+  }
+
+  /* 이벤트 직접 바인딩 (진행중) */
   el.querySelectorAll('.cloud-chip-btn').forEach(function(chip){
     chip.onclick = function(){ loadCloudProject(chip.dataset.cloudpn); };
   });
@@ -1798,7 +1940,7 @@ async function doIMG(){
     var gtF=document.getElementById('gt');var cW=gtF?(gtF.offsetWidth+4):tbl.scrollWidth;var oPW=tbl.style.width;tbl.style.width=cW+'px';var sw2=document.getElementById('scw');var oSW=sw2?sw2.style.width:'';if(sw2)sw2.style.width=cW+'px';await new Promise(function(r){setTimeout(r,80);});var cH=tbl.scrollHeight;
     var canvas=await html2canvas(tbl,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,scrollX:0,scrollY:-window.scrollY,width:cW,height:cH,windowWidth:cW});tbl.style.width=oPW;if(sw2)sw2.style.width=oSW;
     var a=document.createElement('a');
-    a.download=today().replace(/-/g,'').substring(2)+' '+(S.pn||'현장명')+' 일정표.png';
+    a.download=today().replace(/-/g,'').substring(2)+' '+( (_cloudView&&_cloudView.pn) ? _cloudView.pn : (S.pn||'현장명') )+' 일정표.png';
     a.href=canvas.toDataURL('image/png');
     document.body.appendChild(a);
     a.click();
@@ -1845,7 +1987,7 @@ async function doPDF(){
     var x=margin+(pw-fw)/2,y=margin+(ph-fh)/2;
     var pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});
     pdf.addImage(canvas.toDataURL('image/png'),'PNG',x,y,fw,fh);
-    var fn=today().replace(/-/g,'').substring(2)+' '+(S.pn||'현장명')+' 일정표';pdf.save(fn+'.pdf');
+    var fn=today().replace(/-/g,'').substring(2)+' '+( (_cloudView&&_cloudView.pn) ? _cloudView.pn : (S.pn||'현장명') )+' 일정표';pdf.save(fn+'.pdf');
     toast('PDF 저장 완료!');
   }catch(err){console.error(err);toast('PDF 오류 — 브라우저 인쇄(Ctrl+P)로 저장해주세요.');}
   finally{sels.forEach(function(el){el.style.position=el.dataset.op||'';});ca.style.visibility='';document.getElementById('pov').style.display='none';document.querySelectorAll('.no-print').forEach(function(el){el.style.display='';});}
