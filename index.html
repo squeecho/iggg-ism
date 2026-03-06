@@ -660,7 +660,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 
 <script>
 var WK=['일','월','화','수','목','금','토'];
-var _open=null,IS_RO=false;
+var _open=null,IS_RO=false,_origPn=null;
 var RK='cs_recent';
 var _undoStack=[],_redoStack=[];
 function pushUndo(){_undoStack.push(JSON.stringify(S));if(_undoStack.length>30)_undoStack.shift();_redoStack=[];_updUR();}
@@ -841,13 +841,51 @@ var S=defaultState();
 function getRecent(){try{return JSON.parse(localStorage.getItem(RK)||'[]');}catch(e){return[];}}
 function setRecent(arr){try{localStorage.setItem(RK,JSON.stringify(arr));}catch(e){}}
 function pnBtnClick(){
-  var registered=S.pn&&getRecent().some(function(x){return x.pn===S.pn.trim();});
-  if(registered){
-    var nm=S.pn.trim();var arr=getRecent();var ci=arr.findIndex(function(x){return x.pn===nm;});
-    var now=nowTS();
-    if(ci>=0){arr[ci]=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});setRecent(arr);try{localStorage.setItem('cs_last',nm);}catch(e){}}
-    S=defaultState();autoTaskDates();_open=null;calInit();sync();rEdit();rChips();rChart();
-  }else{saveProject();}
+  var newNm=S.pn.trim();
+  if(!newNm){toast('현장명을 먼저 입력해주세요');return;}
+  var arr=getRecent();
+  /* _origPn: 현재 편집 중인 현장의 원래 이름 */
+  var orig=_origPn&&_origPn.trim();
+  var isExisting=orig&&arr.some(function(x){return x.pn===orig;});
+
+  if(isExisting){
+    if(newNm===orig){
+      /* 이름 변경 없음 → 저장 후 새 현장 모드 */
+      var ci=arr.findIndex(function(x){return x.pn===orig;});
+      var now=nowTS();
+      if(ci>=0){arr[ci]=Object.assign({},arr[ci],{pn:orig,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});setRecent(arr);try{localStorage.setItem('cs_last',orig);}catch(e){}}
+      S=defaultState();autoTaskDates();_open=null;_origPn=null;calInit();sync();rEdit();rChips();rChart();
+    } else {
+      /* 이름이 바뀜 → rename */
+      renameProject(orig,newNm);
+    }
+  } else {
+    saveProject();
+  }
+}
+function renameProject(oldNm,newNm){
+  if(!newNm){toast('현장명을 입력해주세요');return;}
+  var arr=getRecent();
+  /* 새 이름 중복 체크 */
+  if(arr.some(function(x){return x.pn===newNm;})){
+    toast('"'+newNm+'" 이름이 이미 존재합니다');return;
+  }
+  var ci=arr.findIndex(function(x){return x.pn===oldNm;});
+  if(ci<0)return;
+  var now=nowTS();
+  S.pn=newNm;
+  arr[ci]=Object.assign({},arr[ci],{pn:newNm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});
+  setRecent(arr);
+  try{localStorage.setItem('cs_last',newNm);}catch(e){}
+  _origPn=newNm;
+  /* 확정 현장이면 Firebase도 갱신 */
+  if(arr[ci].confirmed){
+    deleteFromCloud(oldNm);
+    var snap=arr[ci].snap?JSON.parse(arr[ci].snap):null;
+    if(snap){snap.pn=newNm;snap.confirmed=true;saveToCloud(snap);}
+  }
+  sync();rChips();rChart();
+  toast('"'+oldNm+'" → "'+newNm+'" 이름이 변경됐어요!');
 }
 function saveProject(){
   if(!S.pn.trim()){toast('현장명을 먼저 입력해주세요');return;}
@@ -855,14 +893,12 @@ function saveProject(){
   var arr=getRecent();var ci=arr.findIndex(function(x){return x.pn===nm;});
   var now=nowTS();var isNew=ci<0;
   if(isNew){
-    /* 신규 등록: defaultState 후 autoTaskDates 적용하여 공종 날짜 비율 계산 */
     var ds=defaultState();ds.pn=nm;
     S=ds;autoTaskDates();ds=S;
     var upd={pn:nm,sd:ds.sd,ed:ds.ed,createdAt:now,savedAt:now,snap:JSON.stringify(ds)};
     arr.unshift(upd);if(arr.length>50)arr=arr.slice(0,50);
     setRecent(arr);try{localStorage.setItem('cs_last',nm);}catch(e){}
-    S=ds;_open=null;calInit();sync();rEdit();rChips();rChart();
-    /* 새로 추가된 칩으로 스크롤 */
+    S=ds;_open=null;_origPn=nm;calInit();sync();rEdit();rChips();rChart();
     setTimeout(function(){
       var activeChip=document.querySelector('#pnchips .pnchip.active');
       if(activeChip)activeChip.scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -871,6 +907,7 @@ function saveProject(){
   }else{
     var upd=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});
     arr[ci]=upd;setRecent(arr);try{localStorage.setItem('cs_last',nm);}catch(e){}
+    _origPn=nm;
     sync();rChips();toast(nm+' 저장됐어요!');
   }
 }
@@ -881,7 +918,7 @@ function loadProject(pn){
   if(S.pn&&S.pn!==pn){var cur=getRecent();var ci=cur.findIndex(function(x){return x.pn===S.pn;});var now2=nowTS();var upd=Object.assign({},ci>=0?cur[ci]:{},{pn:S.pn,sd:S.sd,ed:S.ed,createdAt:(ci>=0?cur[ci].createdAt:now2),savedAt:now2,snap:JSON.stringify(S)});if(ci>=0){cur[ci]=upd;}else{cur.unshift(upd);if(cur.length>50)cur=cur.slice(0,50);}setRecent(cur);}
   try{
     var loaded=JSON.parse(item.snap);
-    S=loaded;_open=null;
+    S=loaded;_open=null;_origPn=pn;
     IS_RO=!!item.confirmed;
     calInit();sync();rEdit();rChips();
     _undoStack=[];_redoStack=[];_updUR();
@@ -929,16 +966,77 @@ function toggleConfirmed(pn,e){
   var arr=getRecent();
   var ci=arr.findIndex(function(x){return x.pn===pn;});
   if(ci<0)return;
-  arr[ci].confirmed=!arr[ci].confirmed;
 
-  /* ── FIFO: 확정 현장 최대 30개 유지 ──
-     새로 확정될 때, 기존 확정 현장이 30개 이상이면
-     createdAt 기준 가장 오래된 확정 현장을 로컬에서 자동 삭제 */
+  /* 확정 해제는 충돌 체크 불필요 → 바로 처리 */
   if(arr[ci].confirmed){
+    _doConfirmToggle(pn,false);
+    return;
+  }
+
+  /* 확정 시도 → Firebase 충돌 먼저 확인 */
+  _checkCloudConflict(pn).then(function(exists){
+    if(exists){
+      _showConflictModal(pn);
+    } else {
+      _doConfirmToggle(pn,true);
+    }
+  });
+}
+
+async function _checkCloudConflict(pn){
+  if(!_fbReady||!_db)return false;
+  try{
+    var key=sanitizeKey(pn);
+    var doc=await _db.collection('sites').doc(key).get();
+    return doc.exists;
+  }catch(e){return false;}
+}
+
+function _showConflictModal(pn){
+  var bg=document.createElement('div');
+  bg.className='master-modal-bg';
+  bg.id='conflictModalBg';
+  bg.innerHTML=''
+    +'<div class="master-modal" style="gap:12px;">'
+    +'<div class="master-modal-title" style="color:#fbbf24;">⚠️ 이름 충돌</div>'
+    +'<div style="color:#cbd5e1;font-size:12px;line-height:1.8;text-align:center;">'
+    +'"<b style=\'color:#f1f5f9\'>'+esc(pn)+'</b>" 이름이<br>이미 다른 기기에서 확정되어 있습니다.<br>'
+    +'<span style="color:#fbbf24;font-size:11px;">현장명을 변경한 후 다시 확정해주세요.</span>'
+    +'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">'
+    +'<button class="master-modal-ok" style="background:#7c3aed;" onclick="_closeConflictModal();_openRenameFromConflict(\''+esc(pn)+'\')">✏️ 이름 변경하러 가기</button>'
+    +'<button class="master-modal-cancel" onclick="_closeConflictModal()">취소</button>'
+    +'</div></div>';
+  document.body.appendChild(bg);
+}
+
+function _closeConflictModal(){
+  var bg=document.getElementById('conflictModalBg');
+  if(bg)bg.remove();
+}
+
+function _openRenameFromConflict(pn){
+  /* 편집탭으로 이동 후 현장명 입력창 포커스 */
+  var editTab=document.getElementById('t1');
+  if(editTab)editTab.click();
+  setTimeout(function(){
+    var fn=document.getElementById('fn');
+    if(fn){fn.focus();fn.select();}
+    toast('현장명을 변경한 후 다시 확정해주세요');
+  },200);
+}
+
+function _doConfirmToggle(pn,confirming){
+  var arr=getRecent();
+  var ci=arr.findIndex(function(x){return x.pn===pn;});
+  if(ci<0)return;
+  arr[ci].confirmed=confirming;
+
+  /* FIFO: 확정 현장 최대 30개 유지 */
+  if(confirming){
     var confirmed=arr.filter(function(x){return !!x.confirmed;});
     var MAX_CONFIRMED=30;
     while(confirmed.length>MAX_CONFIRMED){
-      /* createdAt 오름차순 정렬 → 가장 오래된 것 */
       confirmed.sort(function(a,b){return (a.createdAt||'').localeCompare(b.createdAt||'');});
       var oldest=confirmed.shift();
       arr=arr.filter(function(x){return x.pn!==oldest.pn;});
@@ -1339,7 +1437,13 @@ function sync(){
   var fs=document.getElementById('fs');if(fs&&document.activeElement!==fs)fs.value=S.sd;
   var fe=document.getElementById('fend');if(fe)fe.value=S.ed||'';
   var btn=document.getElementById('pnSaveBtn');
-  if(btn){var reg=S.pn&&getRecent().some(function(x){return x.pn===S.pn.trim();});btn.textContent=reg?'새 현장 +':'추가';}
+  if(btn){
+    var isExisting=_origPn&&getRecent().some(function(x){return x.pn===_origPn;});
+    var isRename=isExisting&&S.pn.trim()&&S.pn.trim()!==_origPn;
+    btn.textContent=isRename?'이름 변경':isExisting?'새 현장 +':'추가';
+    btn.style.background=isRename?'#7c3aed':'';
+    btn.style.borderColor=isRename?'#7c3aed':'';
+  }
   upBadge();
   if(typeof calRender==='function')calRender();
   autoSave();
@@ -2158,7 +2262,7 @@ function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.c
 loadH();calInit();
 (function(){
   if(location.hash&&location.hash.indexOf('d=')>=0)return;
-  try{var last=localStorage.getItem('cs_last');if(!last)return;var arr=getRecent();var item=arr.find(function(x){return x.pn===last;});if(!item)return;S=JSON.parse(item.snap);_open=null;IS_RO=!!item.confirmed;}catch(e){}
+  try{var last=localStorage.getItem('cs_last');if(!last)return;var arr=getRecent();var item=arr.find(function(x){return x.pn===last;});if(!item)return;S=JSON.parse(item.snap);_open=null;_origPn=last;IS_RO=!!item.confirmed;}catch(e){}
 })();
 sync();rEdit();rChips();
 
