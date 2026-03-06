@@ -2094,7 +2094,7 @@ function rIntegrated() {
   }
 
   /* 달력 단일 월 렌더 (내부 헬퍼) */
-  function renderOneMonth(y, m, siteList, showDow) {
+  function renderOneMonth(y, m, siteList, showDow, curTid) {
     var startDow = new Date(y, m, 1).getDay();
     var dim = new Date(y, m + 1, 0).getDate();
     var h = '';
@@ -2132,7 +2132,7 @@ function rIntegrated() {
           else             bc += 'rng-m';
           var rIdx = (task.split && rng.sd === task.sd2) ? 1 : 0;
           bars += '<div class="'+bc+' ig-bar-tap no-print" style="background:'+color+';cursor:pointer"'
-            + ' data-pn="'+esc(entry.site.pn)+'" data-tid="'+tid+'" data-ridx="'+rIdx+'">'
+            + ' data-pn="'+esc(entry.site.pn)+'" data-tid="'+(curTid||0)+'" data-ridx="'+rIdx+'">'
             + (showLabel ? '<span class="ig-cal-bar-label">'+esc(entry.site.pn)+'</span>' : '')
             + '</div>';
         });
@@ -2157,21 +2157,19 @@ function rIntegrated() {
   }
 
   /* 달력 렌더 (현재 달 + 필요시 다음 달) */
-  function makeCalHtml(siteList) {
+  function makeCalHtml(siteList, curTid) {
     var ny = _igY, nm = _igM + 1;
     if (nm > 11) { nm = 0; ny++; }
     var showNext = hasTaskInNextMonth(siteList, ny, nm);
 
     var MNlabel = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     var h = '<div class="ig-cal-wrap">';
-    /* 현재 달 */
     h += '<div class="ig-month-label">' + _igY + '. ' + MNlabel[_igM] + '</div>';
-    h += renderOneMonth(_igY, _igM, siteList, true);
-    /* 다음 달 (태스크가 넘어가는 경우만) */
+    h += renderOneMonth(_igY, _igM, siteList, true, curTid);
     if (showNext) {
       h += '<div class="ig-cal-next-month">';
       h += '<div class="ig-month-label" style="margin-top:4px">' + ny + '. ' + MNlabel[nm] + '</div>';
-      h += renderOneMonth(ny, nm, siteList, false); /* DOW 헤더 재사용 안 함 */
+      h += renderOneMonth(ny, nm, siteList, false, curTid);
       h += '</div>';
     }
     h += '</div>';
@@ -2309,7 +2307,7 @@ function rIntegrated() {
         + (displayName ? '<span class="'+nmClass+'">'+icon+' '+displayName+'</span>' : '')
         + '<span class="'+bdgClass+' no-print">'+siteList.length+'개 현장</span>'
         + '</div>';
-      s += makeCalHtml(siteList);
+      s += makeCalHtml(siteList, tid);
       s += '<div class="ig-legend"><div class="ig-legend-chips">';
       siteList.forEach(function(entry) { s += makeEntryHtml(entry, tid); });
       s += '</div></div></div>';
