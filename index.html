@@ -1799,8 +1799,8 @@ function sw(m){
   document.getElementById('p'+m).classList.add('on');
   var tabId=m==='e'?'te':m==='c'?'tc2':'ti';
   document.getElementById(tabId).classList.add('on');
-  /* 탭 전환 시 공유현장 뷰 해제 */
-  if(_cloudView){
+  /* 편집/통합탭 전환 시 공유현장 뷰 해제 (차트탭은 유지 — read-only 차트 그대로) */
+  if(_cloudView && m !== 'c'){
     _cloudView=null;
     IS_RO=false;
     /* 로컬 현장 IS_RO 재확인 */
