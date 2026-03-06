@@ -216,11 +216,11 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 /* 범례 — 컴팩트 칩 그리드 */
 .ig-legend{display:flex;flex-direction:column;gap:0;padding:0;}
 .ig-legend-chips{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:10px 12px 10px;}
-.ig-legend-chip{display:flex;align-items:stretch;background:#fff;border-radius:8px;border:1.5px solid var(--bd);overflow:hidden;min-width:0;}
+.ig-legend-chip{display:flex;align-items:stretch;background:#fff;border-radius:8px;border:1.5px solid var(--bd);overflow:hidden;min-width:0;cursor:pointer;transition:border-color .14s,box-shadow .14s;-webkit-tap-highlight-color:transparent;}
+.ig-legend-chip:hover{border-color:var(--bar);box-shadow:0 2px 8px rgba(0,0,0,.08);}
 .ig-legend-chip-bar{width:4px;flex-shrink:0;}
 .ig-legend-chip-body{flex:1;min-width:0;padding:6px 7px;}
 .ig-legend-chip-name{font-size:11px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;}
-.ig-legend-chip-period{font-size:9px;color:var(--mu);font-family:'DM Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;}
 .ig-legend-chip-ctor{font-size:9px;font-weight:700;color:#15803d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;border-top:1px solid var(--bd);margin-top:4px;padding-top:3px;cursor:pointer;}
 .ig-legend-chip-ctor.empty{color:#94a3b8;font-weight:500;}
 
@@ -1051,7 +1051,7 @@ function _closeConflictModal(){
 
 function _openRenameFromConflict(pn){
   /* 편집탭으로 이동 후 현장명 입력창 포커스 */
-  var editTab=document.getElementById('t1');
+  var editTab=document.getElementById('te');
   if(editTab)editTab.click();
   setTimeout(function(){
     var fn=document.getElementById('fn');
@@ -1341,7 +1341,7 @@ function rChips(){
   archEl.querySelectorAll('.pnchip-del').forEach(function(b){
     b.onclick=function(e){
       e.stopPropagation();
-      if(!confirm('"'+b.dataset.pn+'" 확정 현장을 이 기기에서 삭제할까요?\n(Firebase 데이터는 유지됩니다)'))return;
+      if(!confirm('"'+b.dataset.pn+'" 확정 현장을 삭제할까요?\n(이 기기 및 Firebase 클라우드에서 모두 삭제됩니다)'))return;
       deleteRecent(b.dataset.pn,e);
     };
   });
@@ -2375,9 +2375,9 @@ function tcalClick(el){
   /* 단일 날짜 모드 (준공청소 등) */
   if(_tc.single){
     var t=S.tasks.find(function(x){return x.id===_tc.id;});
-    if(t){t.sd=ds;t.ed=ds;}
+    pushUndo();if(t){t.sd=ds;t.ed=ds;}
     _tc.single=false;
-    pushUndo();setTimeout(function(){closeTCal();rEdit();rChart();upBadge();},280);
+    setTimeout(function(){closeTCal();rEdit();rChart();upBadge();},280);
     return;
   }
   /* 비고 날짜 모드: 단일 날짜 선택 */
@@ -2986,14 +2986,15 @@ function makeEntryHtml(entry, tid) {
   var ctorDisp = ctors.length ? ctors[0] : '';
   var ctorEmpty = !ctors.length;
 
-  return '<div class="ig-legend-chip">'
+  var ctorLabel = ctorEmpty ? '+ 업체 배정' : esc(ctorDisp) + ' ✎';
+  return '<div class="ig-legend-chip" onclick="igOpenCtorModal(\''+pnKey+'\','+tid+')" title="업체 배정">'
        + '<div class="ig-legend-chip-bar" style="background:'+color+'"></div>'
        + '<div class="ig-legend-chip-body">'
        +   '<div class="ig-legend-chip-name">'+pnKey+'</div>'
-       +   '<div class="ig-legend-chip-period no-print">✎ '+periodText+'</div>'
+       +   '<div class="ig-legend-chip-period no-print">'+periodText+'</div>'
        +   '<div class="ig-legend-chip-period-print" style="font-size:9px;color:var(--mu);font-family:DM Mono,monospace;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+periodText+'</div>'
-       +   '<div class="ig-legend-chip-ctor no-print'+(ctorEmpty?' empty':'')+'" onclick="igOpenCtorModal(\''+pnKey+'\','+tid+')">'
-       +     esc(ctorDisp) + (ctorEmpty ? '' : ' ✎')
+       +   '<div class="ig-legend-chip-ctor no-print'+(ctorEmpty?' empty':'')+'">'
+       +     ctorLabel
        +   '</div>'
        + '</div>'
        + '</div>';
@@ -3076,7 +3077,7 @@ function igAddNewCtorInModal() {
   var val = inp ? inp.value.trim() : '';
   if (!val) return;
   /* 새 업체는 전체 목록에 추가하고 단일 선택 */
-  var all = igAllCtorNames();
+  var all = igAllCtorNames(_igCtorEdit.tid);
   if (all.indexOf(val) < 0) {
     /* 아직 없는 업체 → 어딘가에 임시 저장 (선택에 반영) */
     window._igNewCtors = window._igNewCtors || [];
@@ -3092,6 +3093,7 @@ function igAddNewCtorInModal() {
 function igDeleteCtor(name) {
   var tname = IG_TASK_NAMES[_igCtorEdit.tid] || '공종'+_igCtorEdit.tid;
   if (!confirm('"' + name + '" 업체를\n[' + tname + '] 공종에서 삭제하시겠습니까?')) return;
+  pushIgUndo();
   var tid = _igCtorEdit.tid;
   var changed = [];
   _cloudSites.forEach(function(site) {
@@ -3117,6 +3119,7 @@ function igSaveCtorModal() {
   if (!site) { igCloseCtorModal(); return; }
   var task = (site.tasks||[]).find(function(t){ return t.id === tid; });
   if (!task) { igCloseCtorModal(); return; }
+  pushIgUndo();
   task.contractors = _igCtorEdit.selected.filter(function(c){ return c && c.trim(); });
   window._igNewCtors = []; /* 임시 목록 초기화 */
   saveToCloud(site);
@@ -3280,6 +3283,7 @@ function igSaveDateModal() {
   if (hasSplit && sd2 > ed2) { toast('분리 일정: 시작일이 종료일보다 늦습니다.'); return; }
 
   /* 1. _cloudSites 메모리 업데이트 */
+  pushIgUndo();
   task.sd = sd; task.ed = ed;
   task.split = hasSplit;
   if (hasSplit) { task.sd2 = sd2; task.ed2 = ed2; }
@@ -3500,14 +3504,14 @@ function igBarpickSave() {
   var task = site ? (site.tasks||[]).find(function(t){ return t.id===tid; }) : null;
   if (!site || !task) { igBarpickClose(); return; }
 
+  /* Undo 스냅샷 저장 */
+  pushIgUndo();
+
   if (rIdx === 1) {
     task.sd2 = sd; task.ed2 = ed; task.split = true;
   } else {
     task.sd = sd; task.ed = ed;
   }
-
-  /* Undo 스냅샷 저장 */
-  pushIgUndo();
 
   /* Firebase 저장 */
   saveToCloud(site);
