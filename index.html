@@ -92,7 +92,13 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .pnchip.active .pnchip-period{color:rgba(255,255,255,.5);border-color:rgba(255,255,255,.12);}
 .pnchip-footer{padding:6px 10px 8px;border-top:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:6px;}
 .pnchip.active .pnchip-footer{border-color:rgba(255,255,255,.12);}
-.pnchip.confirmed .pnchip-footer{border-color:#bbf7d0;}
+.pnchip.cloud{border-color:#3b82f6;border-style:dashed;}
+.pnchip.cloud .pnchip-nm{color:#1d4ed8;}
+.pnchip.cloud .pnchip-row,.pnchip.cloud .pnchip-period{color:#93c5fd;}
+.pnchip.cloud .pnchip-row b{color:#60a5fa;}
+.pnchip.cloud .pnchip-footer{border-color:#bfdbfe;background:#eff6ff;}
+.pnchip.cloud.active{background:#1e3a5f;border-color:#3b82f6;border-style:solid;}
+.pnchip.cloud.active .pnchip-nm{color:#93c5fd;}
 .pnchip-confirm{border:1.5px solid #94a3b8;background:transparent;color:#64748b;border-radius:7px;font-size:11px;font-weight:700;padding:4px 10px;cursor:pointer;transition:all .15s;letter-spacing:.3px;}
 .pnchip-confirm:hover{border-color:#475569;color:#1e293b;}
 .pnchip-confirm.on{background:#16a34a;border-color:#16a34a;color:#fff;}
@@ -524,6 +530,11 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
         <button class="pnsb" id="pnSaveBtn" onclick="pnBtnClick()">추가</button>
       </div>
       <div class="pnchips" id="pnchips"></div>
+      <!-- 다른 기기 / 공유 현장 -->
+      <div id="cloudChipsWrap" style="display:none;margin-top:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.5px;margin-bottom:7px;">☁️ 공유된 확정 현장</div>
+        <div class="pnchips" id="cloudChips"></div>
+      </div>
     </div>
   </div>
   <!-- 잠금 영역: 공사기간 + 공종 + 비고 -->
@@ -923,6 +934,77 @@ function rChips(){
   });
 }
 function renderDrop(){rChips();}
+
+/* ── 클라우드 공유 현장 칩 ── */
+function rCloudChips() {
+  var wrap = document.getElementById('cloudChipsWrap');
+  var el = document.getElementById('cloudChips');
+  if (!el || !wrap) return;
+
+  var localPns = getRecent().map(function(x){ return x.pn; });
+  /* 로컬에 없는 클라우드 현장만 표시 */
+  var remote = (_cloudSites || []).filter(function(s){ return s.pn && localPns.indexOf(s.pn) < 0; });
+
+  if (!remote.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+
+  var h = '';
+  remote.forEach(function(site) {
+    var nm = esc(site.pn);
+    var isActive = (S && S.pn === site.pn);
+    var period = (site.sd && site.ed) ? site.sd.slice(5).replace('-','.') + ' ~ ' + site.ed.slice(5).replace('-','.') : '기간 미설정';
+    var cls = 'pnchip cloud confirmed' + (isActive ? ' active' : '');
+    h += '<div class="'+cls+'" onclick="loadCloudProject(\''+nm+'\')">'
+      + '<div class="pnchip-body"><span class="pnchip-nm">☁️ '+nm+'</span><span class="pnchip-lock">🔒</span></div>'
+      + '<div class="pnchip-meta">'
+      + '<div class="pnchip-row"><b>확정 현장</b>&nbsp;(다른 기기)</div>'
+      + '</div>'
+      + '<div class="pnchip-period">'+period+'</div>'
+      + '<div class="pnchip-footer" style="justify-content:center">'
+      + '<span style="font-size:11px;font-weight:700;color:#2563eb">📊 차트 보기</span>'
+      + '</div>'
+      + '</div>';
+  });
+  el.innerHTML = h;
+}
+
+async function loadCloudProject(pn) {
+  var site = (_cloudSites || []).find(function(s){ return s.pn === pn; });
+  if (!site) {
+    /* _cloudSites에 없으면 Firebase에서 직접 로드 */
+    if (!_fbReady || !_db) { toast('Firebase 연결 필요'); return; }
+    try {
+      var doc = await _db.collection('sites').doc(sanitizeKey(pn)).get();
+      if (!doc.exists) { toast('현장 데이터 없음'); return; }
+      site = doc.data();
+    } catch(e) { toast('로드 실패'); return; }
+  }
+  try {
+    var loaded = Object.assign({}, site);
+    delete loaded._updatedAt;
+    S = loaded;
+    IS_RO = true;
+    _open = null;
+    calInit(); sync(); rEdit(); rChips(); rCloudChips();
+    _undoStack = []; _redoStack = []; _updUR();
+    /* 차트탭으로 이동 */
+    document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
+    document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on');});
+    document.getElementById('pc').classList.add('on');
+    document.getElementById('tc2').classList.add('on');
+    /* 읽기 전용 배지 */
+    var ca = document.getElementById('ca');
+    if (ca && !ca.querySelector('.ro-badge')) {
+      var rb = document.createElement('span');
+      rb.className = 'ro-badge';
+      rb.textContent = '☁️ 공유 현장 · 보기 전용';
+      rb.style.cssText = 'font-size:11px;font-weight:700;color:#1d4ed8;background:#dbeafe;border:1px solid #93c5fd;border-radius:6px;padding:3px 8px;margin-right:4px;';
+      ca.insertBefore(rb, ca.firstChild);
+    }
+    rChart();
+    toast('☁️ ' + pn + ' 불러왔어요!');
+  } catch(e) { toast('불러오기 실패'); }
+}
 window.addEventListener('beforeunload',function(){
   if(!S.pn||!S.pn.trim())return;
   var nm=S.pn.trim();var arr=getRecent();var ci=arr.findIndex(function(x){return x.pn===nm;});
@@ -1186,7 +1268,7 @@ function sw(m){
   var tabId=m==='e'?'te':m==='c'?'tc2':'ti';
   document.getElementById(tabId).classList.add('on');
   if(m==='c') swChart();
-  if(m==='e') rEdit();
+  if(m==='e'){ rEdit(); loadCloudSites().then(rCloudChips); }
   if(m==='i'){loadCloudSites().then(rIntegrated);}
 }
 
@@ -1978,6 +2060,8 @@ function toggleConfirmedCloud(pn, e) {
 /* 확정 버튼 핸들러를 클라우드 버전으로 교체 */
 document.addEventListener('DOMContentLoaded', function(){
   initFirebase();
+  /* 초기 로드 시 클라우드 현장 칩 표시 */
+  setTimeout(function(){ if (_fbReady) loadCloudSites().then(rCloudChips); }, 800);
   document.addEventListener('click', function(e){
     /* 바 탭 → 날짜 선택 모달 */
     var bar = e.target.closest ? e.target.closest('.ig-bar-tap') : null;
