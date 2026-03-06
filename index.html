@@ -591,12 +591,15 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
       </div>
       <!-- 다른 기기 / 공유 현장 -->
       <div id="cloudChipsWrap" style="margin-top:14px;">
-        <div id="cloudChipsHeader" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;user-select:none;">
+        <div id="cloudChipsHeader" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:default;">
           <div style="display:flex;align-items:center;gap:6px;">
             <div style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.5px;">☁️ 공유된 확정 현장</div>
             <span id="masterBadge" class="master-active-badge" style="display:none;">🔑 마스터</span>
           </div>
-          <button onclick="loadCloudSites().then(rCloudChips)" style="border:none;background:none;font-size:12px;color:#3b82f6;font-weight:700;cursor:pointer;padding:2px 6px;">↻ 새로고침</button>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <button id="masterToggleBtn" onclick="_showMasterModal()" title="마스터 모드" style="border:none;background:none;font-size:14px;color:var(--mu2);cursor:pointer;padding:2px 5px;line-height:1;opacity:.5;">🔒</button>
+            <button onclick="loadCloudSites().then(rCloudChips)" style="border:none;background:none;font-size:12px;color:#3b82f6;font-weight:700;cursor:pointer;padding:2px 6px;">↻ 새로고침</button>
+          </div>
         </div>
         <div id="cloudChipsBody" style="display:none;">
         <div class="pnchips" id="cloudChips"></div>
@@ -1128,49 +1131,12 @@ async function _sha256(str){
   return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
 }
 
-function _initMasterLongPress(){
-  var hdr=document.getElementById('cloudChipsHeader');
-  if(!hdr||hdr._masterBound)return;
-  hdr._masterBound=true;
-  var _startX=0,_startY=0;
-  function start(e){
-    if(e.target.tagName==='BUTTON')return;
-    var t=e.touches?e.touches[0]:e;
-    _startX=t.clientX;_startY=t.clientY;
-    clearTimeout(_masterLongPressTimer);
-    hdr.style.transition='opacity .1s';
-    _masterLongPressTimer=setTimeout(function(){
-      hdr.style.opacity='';
-      if(navigator.vibrate)navigator.vibrate(40);
-      _showMasterModal();
-    },2000);
-  }
-  function move(e){
-    var t=e.touches?e.touches[0]:e;
-    if(Math.abs(t.clientX-_startX)>8||Math.abs(t.clientY-_startY)>8){ cancel(); }
-  }
-  function cancel(){
-    clearTimeout(_masterLongPressTimer);
-    hdr.style.opacity='';
-  }
-  hdr.addEventListener('mousedown',start);
-  hdr.addEventListener('touchstart',start,{passive:true});
-  hdr.addEventListener('mousemove',move);
-  hdr.addEventListener('touchmove',move,{passive:true});
-  hdr.addEventListener('mouseup',cancel);
-  hdr.addEventListener('mouseleave',cancel);
-  hdr.addEventListener('touchend',cancel);
-  hdr.addEventListener('touchcancel',cancel);
-}
-
 function _showMasterModal(){
-  /* 잠금 체크 */
   if(Date.now()<_masterLockUntil){
     var remain=Math.ceil((_masterLockUntil-Date.now())/60000);
     toast('⛔ '+remain+'분 후에 다시 시도하세요');
     return;
   }
-  /* 이미 마스터 모드면 해제 */
   if(_masterMode){ _exitMasterMode(); return; }
 
   var bg=document.createElement('div');
@@ -1208,6 +1174,8 @@ async function _submitMaster(){
     _closeMasterModal();
     var badge=document.getElementById('masterBadge');
     if(badge)badge.style.display='';
+    var mbtn=document.getElementById('masterToggleBtn');
+    if(mbtn){mbtn.textContent='🔓';mbtn.style.opacity='1';mbtn.title='마스터 모드 해제';}
     toast('🔑 마스터 모드 활성화 — 클라우드 삭제 가능');
     loadCloudSites().then(rCloudChips);
     /* 5분 후 자동 해제 */
@@ -1231,6 +1199,8 @@ function _exitMasterMode(){
   _masterMode=false;
   var badge=document.getElementById('masterBadge');
   if(badge)badge.style.display='none';
+  var mbtn=document.getElementById('masterToggleBtn');
+  if(mbtn){mbtn.textContent='🔒';mbtn.style.opacity='.5';mbtn.title='마스터 모드';}
   toast('🔒 마스터 모드 해제');
   loadCloudSites().then(rCloudChips);
 }
@@ -1466,8 +1436,7 @@ function rCloudChips() {
     };
   });
 
-  /* 마스터 모드 longpress 초기화 */
-  _initMasterLongPress();
+  /* 마스터 모드 longpress 초기화 불필요 (버튼 방식으로 변경) */
 }
 
 async function loadCloudProject(pn) {
@@ -2573,7 +2542,6 @@ async function loadCloudSites() {
 /* 확정 버튼 핸들러 — toggleConfirmed 자체에서 Firebase 처리 */
 document.addEventListener('DOMContentLoaded', function(){
   initFirebase();
-  _initMasterLongPress();
   /* 초기 로드 시 클라우드 현장 칩 표시 - 로딩 표시 후 Firebase 완료되면 렌더 */
   setTimeout(function(){
     var body = document.getElementById('cloudChipsBody');
