@@ -979,7 +979,7 @@ function loadProject(pn){
   var arr=getRecent();
   var item=arr.find(function(x){return x.pn===pn;});
   if(!item)return;
-  if(S.pn&&S.pn!==pn){var cur=getRecent();var ci=cur.findIndex(function(x){return x.pn===S.pn;});var now2=nowTS();var upd=Object.assign({},ci>=0?cur[ci]:{},{pn:S.pn,sd:S.sd,ed:S.ed,createdAt:(ci>=0?cur[ci].createdAt:now2),savedAt:now2,snap:JSON.stringify(S)});if(ci>=0){cur[ci]=upd;}else{cur.unshift(upd);if(cur.length>50)cur=cur.slice(0,50);}setRecent(cur);}
+  if(S.pn&&S.pn!==pn&&!_cloudView){var cur=getRecent();var ci=cur.findIndex(function(x){return x.pn===S.pn;});if(ci>=0){var now2=nowTS();cur[ci]=Object.assign({},cur[ci],{pn:S.pn,sd:S.sd,ed:S.ed,savedAt:now2,snap:JSON.stringify(S)});setRecent(cur);}}
   try{
     var loaded=JSON.parse(item.snap);
     S=loaded;_open=null;_origPn=pn;
@@ -1437,7 +1437,7 @@ function rCloudChips() {
       + '<div class="pnchip-meta"><div class="pnchip-row"><b>확정 현장</b>&nbsp;· 다른 기기</div></div>'
       + '<div class="pnchip-period">'+period+'</div>'
       + '<div class="pnchip-footer" style="justify-content:center">'
-      + '<span style="font-size:11px;font-weight:700;color:#2563eb">📊 차트 보기</span>'
+      + '<span style="font-size:11px;font-weight:700;color:#2563eb">🔒 보기 전용</span>'
       + '</div></div>';
   }
 
@@ -1479,6 +1479,7 @@ function rCloudChips() {
 }
 
 async function loadCloudProject(pn) {
+  clearTimeout(_asTimer); /* cloud 데이터가 로컬에 자동저장되는 것 방지 */
   var site = (_cloudSites || []).find(function(s){ return s.pn === pn; });
   if (!site) {
     if (!_fbReady || !_db) { toast('Firebase 연결 필요'); return; }
@@ -1971,9 +1972,9 @@ function rNE(){
   });
   h+='</tbody></table>';c.innerHTML=h;
 }
-function addNote(){S.notes.push({id:++_ns,label:'',type:'manual',dt:'',chk:false});rNE();}
+function addNote(){if(IS_RO)return;S.notes.push({id:++_ns,label:'',type:'manual',dt:'',chk:false});rNE();}
 function upN(id,k,v){if(IS_RO)return;var n=S.notes.find(function(x){return x.id===id;});if(n)n[k]=v;}
-function delN(id){S.notes=S.notes.filter(function(n){return n.id!==id;});rNE();}
+function delN(id){if(IS_RO)return;S.notes=S.notes.filter(function(n){return n.id!==id;});rNE();}
 function togCk(id){if(IS_RO)return;var n=S.notes.find(function(x){return x.id===id;});if(n){n.chk=!n.chk;rSC();}}
 
 /* CHART */
@@ -2463,7 +2464,7 @@ function tcalClick(el){
 
 /* 비고 날짜 팝업 */
 var _ncalId=null;
-function openNCal(id){
+function openNCal(id){if(IS_RO)return;
   if(IS_RO)return;
   _ncalId=id;
   var n=S.notes.find(function(x){return x.id===id;});
