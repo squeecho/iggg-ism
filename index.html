@@ -121,17 +121,30 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-refresh:hover{border-color:var(--bar);color:var(--bar);}
 
 /* 현장 칩 스트립 */
-.ig-site-strip{display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
+.ig-site-strip{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;}
 .ig-site-pill{display:inline-flex;align-items:center;gap:5px;background:#fff;border:1.5px solid var(--bd);border-radius:20px;padding:5px 11px 5px 8px;font-size:12px;font-weight:700;color:var(--tx);white-space:nowrap;line-height:1;}
 .ig-site-pill-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
 .ig-site-pill-sub{font-size:10px;font-weight:500;color:var(--mu);margin-left:2px;}
 .ig-site-pill.past{opacity:.55;}
 
+/* 공종 필터 패널 */
+.ig-filter-panel{background:var(--sf);border:1.5px solid var(--bd);border-radius:12px;padding:10px 12px;margin-bottom:14px;}
+.ig-filter-label{font-size:10px;font-weight:700;color:var(--mu);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;}
+.ig-filter-chips{display:flex;flex-wrap:wrap;gap:6px;}
+.ig-filter-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--bd);background:var(--bg);color:var(--mu);transition:all .14s;-webkit-tap-highlight-color:transparent;user-select:none;}
+.ig-filter-chip.on{background:#1e293b;border-color:#1e293b;color:#fff;}
+.ig-filter-chip-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:#94a3b8;}
+.ig-filter-chip.on .ig-filter-chip-dot{background:rgba(255,255,255,.6);}
+
 /* 공종 카드 */
-.ig-trade{background:var(--sf);border:1.5px solid var(--bd);border-radius:16px;margin-bottom:20px;overflow:hidden;}
-.ig-trade-hd{display:flex;align-items:center;gap:8px;padding:14px 16px 12px;background:var(--tx);flex-wrap:wrap;}
-.ig-trade-nm{font-size:16px;font-weight:900;color:#fff;letter-spacing:-0.3px;}
+.ig-trade{background:var(--sf);border:1.5px solid var(--bd);border-radius:16px;margin-bottom:14px;overflow:hidden;}
+.ig-trade.collapsed .ig-trade-body{display:none;}
+.ig-trade-hd{display:flex;align-items:center;gap:8px;padding:12px 14px 10px;background:var(--tx);flex-wrap:wrap;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.ig-trade-hd:active{opacity:.85;}
+.ig-trade-nm{font-size:15px;font-weight:900;color:#fff;letter-spacing:-0.3px;}
 .ig-badge{background:rgba(255,255,255,0.2);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;font-family:'DM Mono',monospace;}
+.ig-trade-chevron{margin-left:auto;font-size:14px;color:rgba(255,255,255,.6);transition:transform .2s;flex-shrink:0;}
+.ig-trade.collapsed .ig-trade-chevron{transform:rotate(-90deg);}
 
 /* 달력 */
 .ig-month-label{padding:8px 10px 3px;font-size:11px;font-weight:900;color:var(--mu);letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid var(--bd);}
@@ -1878,6 +1891,24 @@ var IG_TASK_ORDER = [1,2,3,4,5,6,7,8,9,10,11,13,12,14];
 var IG_TASK_NAMES = {1:'가설공사',2:'철거공사',3:'소방공사',4:'목공사',5:'전기공사',6:'도장공사',7:'금속공사',8:'설비공사',9:'타일공사',10:'공조공사',11:'필름공사',13:'기타공사',12:'가스공사',14:'준공청소'};
 var IG_COLORS = ['#3b82f6','#ef4444','#f59e0b','#8b5cf6','#10b981','#f97316','#06b6d4','#ec4899'];
 
+/* 공종 접기/펼치기 상태 (localStorage 저장) */
+var IG_COLLAPSE_KEY = 'ig_collapsed_trades';
+function igGetCollapsed() {
+  try { return JSON.parse(localStorage.getItem(IG_COLLAPSE_KEY) || '{}'); } catch(e){ return {}; }
+}
+function igSetCollapsed(obj) {
+  try { localStorage.setItem(IG_COLLAPSE_KEY, JSON.stringify(obj)); } catch(e){}
+}
+function igToggleTrade(tid) {
+  var c = igGetCollapsed();
+  c[tid] = !c[tid];
+  igSetCollapsed(c);
+  var card = document.getElementById('ig-trade-'+tid);
+  if (card) card.classList.toggle('collapsed', !!c[tid]);
+  var chip = document.getElementById('ig-chip-'+tid);
+  if (chip) chip.classList.toggle('on', !c[tid]);
+}
+
 var _igY = new Date().getFullYear();
 var _igM = new Date().getMonth();
 
@@ -2049,9 +2080,39 @@ function rIntegrated() {
   } else {
     html += '<span style="font-size:11px;color:var(--mu);">이 달에 일정 있는 현장 없음</span>';
   }
-  html += '</div>';
+  html += '</div>'; /* ig-site-strip */
 
-  /* 공종별 카드 */
+  /* 공종 필터 패널 */
+  var collapsed = igGetCollapsed();
+  /* 이 달에 표시될 공종 목록을 미리 수집 */
+  var visibleTids = IG_TASK_ORDER.filter(function(tid) {
+    var activeSites = _cloudSites.filter(function(site) {
+      return site.tasks && site.tasks.some(function(t){ return t.id===tid && t.on; });
+    });
+    if (!activeSites.length) return false;
+    return activeSites.some(function(site) {
+      var task = site.tasks.find(function(t){ return t.id===tid && t.on; });
+      if (!task || !task.sd || !task.ed) return false;
+      if (task.ed >= ymStart && task.sd <= ymEnd) return true;
+      if (task.split && task.sd2 && task.ed2 && task.ed2 >= ymStart && task.sd2 <= ymEnd) return true;
+      return false;
+    });
+  });
+
+  if (visibleTids.length > 1) {
+    html += '<div class="ig-filter-panel no-print">';
+    html += '<div class="ig-filter-label">공종 표시 설정</div>';
+    html += '<div class="ig-filter-chips">';
+    visibleTids.forEach(function(tid) {
+      var isOn = !collapsed[tid]; /* 기본 펼침 */
+      var tname = IG_TASK_NAMES[tid] || '공종'+tid;
+      html += '<div class="ig-filter-chip'+(isOn?' on':'')+'" onclick="igToggleTrade('+tid+')" id="ig-chip-'+tid+'">'
+            + '<span class="ig-filter-chip-dot"></span>'
+            + tname
+            + '</div>';
+    });
+    html += '</div></div>';
+  }
   IG_TASK_ORDER.forEach(function(tid) {
     /* 해당 월 OR 전체 기간 내에 작업 있는 현장 (지난 현장도 달력 이동 시 보임) */
     var activeSites = _cloudSites.filter(function(site) {
@@ -2099,13 +2160,16 @@ function rIntegrated() {
     var groupNames = Object.keys(groups);
     var totalCtors = groupNames.length + (unassigned.length ? 1 : 0);
     var tname = IG_TASK_NAMES[tid] || ('공종 '+tid);
+    var isCollapsed = !!collapsed[tid];
 
-    html += '<div class="ig-trade">';
-    html += '<div class="ig-trade-hd">'
+    html += '<div class="ig-trade'+(isCollapsed?' collapsed':'')+'" id="ig-trade-'+tid+'">';
+    html += '<div class="ig-trade-hd" onclick="igToggleTrade('+tid+')">'
           + '<span class="ig-trade-nm">' + tname + '</span>'
           + '<span class="ig-badge">' + monthSiteList.length + '개 현장</span>'
           + (totalCtors > 1 ? '<span class="ig-badge">' + totalCtors + '개 업체</span>' : '')
+          + '<span class="ig-trade-chevron">▾</span>'
           + '</div>';
+    html += '<div class="ig-trade-body">';
 
     function renderCtorSection(ctorName, siteList, isUnassigned) {
       var safeCtorName = (ctorName||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
@@ -2136,6 +2200,7 @@ function rIntegrated() {
       html += renderCtorSection('미지정', unassigned, true);
     }
 
+    html += '</div>'; /* ig-trade-body */
     html += '</div>'; /* ig-trade */
   });
 
@@ -2206,7 +2271,7 @@ function igOpenCtorModal(pn, tid) {
 }
 
 function igRenderCtorModalBody() {
-  var all = igAllCtorNames();
+  var all = igAllCtorNames(_igCtorEdit.tid); /* ★ tid 기준 */
   var sel = _igCtorEdit.selected; /* 최대 1개 */
   var current = sel[0] || null;
   var h = '';
@@ -2275,22 +2340,23 @@ function igAddNewCtorInModal() {
   toast('"' + val + '" 선택됨');
 }
 
-/* 업체 전체 삭제 (모든 현장의 해당 업체를 제거) */
+/* 업체 삭제 — 현재 공종(tid) 내에서만 제거 */
 function igDeleteCtor(name) {
-  if (!confirm('"' + name + '" 업체를 전체 삭제하시겠습니까?\n(모든 현장에서 이 업체가 제거됩니다)')) return;
+  var tname = IG_TASK_NAMES[_igCtorEdit.tid] || '공종'+_igCtorEdit.tid;
+  if (!confirm('"' + name + '" 업체를\n[' + tname + '] 공종에서 삭제하시겠습니까?')) return;
+  var tid = _igCtorEdit.tid;
   var changed = [];
   _cloudSites.forEach(function(site) {
     var dirty = false;
     (site.tasks||[]).forEach(function(t) {
+      if (t.id !== tid) return; /* ★ 해당 공종만 */
       var before = (t.contractors||[]).length;
       t.contractors = (t.contractors||[]).filter(function(c){ return c.trim() !== name; });
       if (t.contractors.length !== before) dirty = true;
     });
     if (dirty) changed.push(site);
   });
-  /* 선택 해제 */
   if (_igCtorEdit.selected[0] === name) _igCtorEdit.selected = [];
-  /* 저장 */
   changed.forEach(function(s){ saveToCloud(s); });
   toast('"' + name + '" 삭제 완료');
   igRenderCtorModalBody();
@@ -2315,17 +2381,18 @@ function igCloseCtorModal() {
   document.getElementById('igCtorModalOv').style.display = 'none';
 }
 
-/* 전체 업체명 목록 (자동완성용) */
-function igAllCtorNames() {
+/* 공종별 업체명 목록 (tid 기준으로만 수집) */
+function igAllCtorNames(tid) {
   var names = {};
   _cloudSites.forEach(function(site) {
     (site.tasks||[]).forEach(function(t) {
+      if (t.id !== tid) return; /* ★ 공종 필터 */
       (t.contractors||[]).forEach(function(c) {
         if (c && c.trim()) names[c.trim()] = true;
       });
     });
   });
-  /* 이번 모달 세션에서 새로 입력된 업체도 포함 */
+  /* 이번 모달 세션에서 새로 입력된 업체도 포함 (동일 tid) */
   (window._igNewCtors||[]).forEach(function(c){ if(c) names[c]=true; });
   return Object.keys(names).sort();
 }
