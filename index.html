@@ -390,7 +390,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .cta .btn{flex:1;justify-content:center;padding:13px;font-size:14px;}
 /* CHART */
 .cp{padding:12px 12px 30px;}
-.ca{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;}
+.ca{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;position:sticky;top:90px;z-index:350;background:var(--bg);padding:8px 0 8px;border-bottom:1.5px solid var(--bd);}
 .cw{background:var(--sf);border-radius:0;border:2px solid #b8b2a8;overflow:hidden;}
 .cs{overflow-x:auto;}
 .gt{border-collapse:collapse;table-layout:fixed;}
@@ -2807,7 +2807,7 @@ function rIntegrated() {
     + '</div>';
 
   /* 새로고침 + Undo/Redo 버튼 */
-  html += '<div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+  html += '<div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;position:sticky;top:90px;z-index:350;background:var(--bg);padding:8px 0 8px;border-bottom:1.5px solid var(--bd);">'
     + '<div style="display:flex;gap:6px;">'
     + '<button class="btn bur" id="igBtnUndo" onclick="igDoUndo()" title="실행 취소" style="font-size:12px;padding:6px 12px;">↩ Undo</button>'
     + '<button class="btn bur" id="igBtnRedo" onclick="igDoRedo()" title="다시 실행" style="font-size:12px;padding:6px 12px;">↪ Redo</button>'
