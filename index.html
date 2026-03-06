@@ -971,7 +971,6 @@ function rCloudChips() {
 async function loadCloudProject(pn) {
   var site = (_cloudSites || []).find(function(s){ return s.pn === pn; });
   if (!site) {
-    /* _cloudSites에 없으면 Firebase에서 직접 로드 */
     if (!_fbReady || !_db) { toast('Firebase 연결 필요'); return; }
     try {
       var doc = await _db.collection('sites').doc(sanitizeKey(pn)).get();
@@ -979,31 +978,31 @@ async function loadCloudProject(pn) {
       site = doc.data();
     } catch(e) { toast('로드 실패'); return; }
   }
-  try {
-    var loaded = Object.assign({}, site);
-    delete loaded._updatedAt;
-    S = loaded;
-    IS_RO = true;
-    _open = null;
-    calInit(); sync(); rEdit(); rChips(); rCloudChips();
-    _undoStack = []; _redoStack = []; _updUR();
-    /* 차트탭으로 이동 */
-    document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
-    document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on');});
-    document.getElementById('pc').classList.add('on');
-    document.getElementById('tc2').classList.add('on');
-    /* 읽기 전용 배지 */
-    var ca = document.getElementById('ca');
-    if (ca && !ca.querySelector('.ro-badge')) {
-      var rb = document.createElement('span');
-      rb.className = 'ro-badge';
-      rb.textContent = '☁️ 공유 현장 · 보기 전용';
-      rb.style.cssText = 'font-size:11px;font-weight:700;color:#1d4ed8;background:#dbeafe;border:1px solid #93c5fd;border-radius:6px;padding:3px 8px;margin-right:4px;';
-      ca.insertBefore(rb, ca.firstChild);
-    }
-    rChart();
-    toast('☁️ ' + pn + ' 불러왔어요!');
-  } catch(e) { toast('불러오기 실패'); }
+  /* S, localStorage 절대 수정 안 함 — _cloudView에만 저장 */
+  var loaded = Object.assign({}, site);
+  delete loaded._updatedAt;
+  _cloudView = loaded;
+
+  /* 차트탭으로 이동 */
+  document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on');});
+  document.getElementById('pc').classList.add('on');
+  document.getElementById('tc2').classList.add('on');
+
+  /* 읽기 전용 배지 */
+  var ca = document.getElementById('ca');
+  var existing = ca ? ca.querySelector('.ro-badge') : null;
+  if (existing) existing.remove();
+  if (ca) {
+    var rb = document.createElement('span');
+    rb.className = 'ro-badge cloud-badge';
+    rb.textContent = '☁️ ' + pn + ' · 보기 전용';
+    rb.style.cssText = 'font-size:11px;font-weight:700;color:#1d4ed8;background:#dbeafe;border:1px solid #93c5fd;border-radius:6px;padding:3px 8px;margin-right:4px;';
+    ca.insertBefore(rb, ca.firstChild);
+  }
+
+  rChart(); /* _cloudView 기반으로 렌더 */
+  toast('☁️ ' + pn + ' 불러왔어요!');
 }
 window.addEventListener('beforeunload',function(){
   if(!S.pn||!S.pn.trim())return;
@@ -1267,6 +1266,11 @@ function sw(m){
   document.getElementById('p'+m).classList.add('on');
   var tabId=m==='e'?'te':m==='c'?'tc2':'ti';
   document.getElementById(tabId).classList.add('on');
+  /* 차트탭 벗어날 때 공유현장 뷰 해제 */
+  if(m!=='c'){
+    _cloudView=null;
+    var rb=document.querySelector('.ro-badge.cloud-badge');if(rb)rb.remove();
+  }
   if(m==='c') swChart();
   if(m==='e'){ rEdit(); loadCloudSites().then(rCloudChips); }
   if(m==='i'){loadCloudSites().then(rIntegrated);}
@@ -1274,7 +1278,8 @@ function sw(m){
 
 /* 차트탭 전환: Firebase 최신 데이터로 S 동기화 후 렌더 */
 async function swChart() {
-  rChart(); /* 일단 현재 S로 즉시 렌더 */
+  rChart(); /* 즉시 렌더 */
+  if (_cloudView) return; /* 공유 현장 보기 중엔 로컬 동기화 불필요 */
   if (!_fbReady || !_db || !S || !S.pn) return;
   try {
     var key = sanitizeKey(S.pn);
@@ -1428,7 +1433,17 @@ function togCk(id){if(IS_RO)return;var n=S.notes.find(function(x){return x.id===
 
 /* CHART */
 var CW=30;
-function rChart(){rG();rSC();}
+function rChart(){
+  if(_cloudView){
+    /* 공유 현장 보기: S를 건드리지 않고 임시 교체 후 복원 */
+    var _prevS=S,_prevRO=IS_RO;
+    S=_cloudView;IS_RO=true;
+    rG();rSC();
+    S=_prevS;IS_RO=_prevRO;
+  } else {
+    rG();rSC();
+  }
+}
 function rG(){
   var ds=getDt(),N=ds.length;
   var h='<colgroup><col style="width:32px;min-width:32px"><col style="width:90px;min-width:90px">';
@@ -2005,6 +2020,7 @@ var FIREBASE_CONFIG = {
 var _db = null;
 var _cloudSites = [];
 var _fbReady = false;
+var _cloudView = null; /* 공유 현장 보기 전용 - S를 덮어쓰지 않음 */
 
 function initFirebase() {
   try {
