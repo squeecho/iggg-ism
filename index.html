@@ -164,12 +164,17 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-legend-info{flex:1;min-width:0;}
 .ig-legend-nm{font-size:12px;font-weight:800;color:var(--tx);}
 .ig-legend-dt{font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;margin-bottom:6px;}
-.ig-contractors{display:flex;flex-wrap:wrap;gap:5px;}
-.ig-ct-wrap{display:flex;flex-direction:column;gap:2px;flex:1;min-width:80px;max-width:140px;}
-.ig-ct-label{font-size:10px;font-weight:700;color:var(--mu);letter-spacing:.5px;}
-.ig-ct-input{border:1.5px solid var(--bd);border-radius:7px;padding:6px 8px;font-size:12px;font-family:'Noto Sans KR',sans-serif;background:var(--sf);color:var(--tx);outline:none;width:100%;transition:border-color .14s;}
-.ig-ct-input:focus{border-color:var(--bar);background:#fff;}
-.ig-ct-input.filled{background:#f0fdf4;border-color:#86efac;}
+.ig-contractors{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:5px;}
+.ig-chip{display:inline-flex;align-items:center;background:#f0fdf4;border:1px solid #86efac;border-radius:20px;padding:3px 6px 3px 10px;font-size:11px;font-weight:700;color:#15803d;gap:3px;}
+.ig-chip-x{background:none;border:none;cursor:pointer;color:#86efac;font-size:13px;line-height:1;padding:0 2px;font-weight:900;transition:color .1s;}
+.ig-chip-x:hover{color:#dc2626;}
+.ig-ctor-add-btn{background:none;border:1.5px dashed #cbd5e1;border-radius:20px;padding:3px 10px;font-size:11px;color:#94a3b8;cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:all .14s;}
+.ig-ctor-add-btn:hover{border-color:var(--bar);color:var(--bar);}
+.ig-ctor-input-wrap{position:relative;display:inline-flex;flex-direction:column;}
+.ig-ctor-new-input{border:1.5px solid var(--bar);border-radius:20px;padding:4px 12px;font-size:11px;font-family:'Noto Sans KR',sans-serif;outline:none;width:90px;color:var(--tx);}
+.ig-ctor-suggest{position:absolute;top:calc(100% + 3px);left:0;background:#fff;border:1px solid var(--bd);border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:200;min-width:120px;max-height:160px;overflow-y:auto;display:none;}
+.ig-suggest-item{padding:7px 14px;font-size:12px;cursor:pointer;color:var(--tx);}
+.ig-suggest-item:hover{background:var(--al);}
 
 /* 이미지 저장 버튼 (카드 하단) */
 .ig-save-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:#1e293b;color:#fff;border:none;font-size:14px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;transition:background .14s;margin-top:12px;border-radius:0 0 14px 14px;}
@@ -2007,18 +2012,8 @@ function rIntegrated() {
               + '<div class="ig-legend-info">'
               + '<div class="ig-legend-nm">'+pnKey+'</div>'
               + '<div class="ig-legend-dt">'+dtText+'</div>'
-              + '<div class="ig-contractors">';
-        for (var i=0;i<3;i++){
-          var val=ctors[i]||'';
-          html += '<div class="ig-ct-wrap">'
-                + '<span class="ig-ct-label">업체'+(i+1)+'</span>'
-                + '<input class="ig-ct-input'+(val?' filled':'') +'" type="text" placeholder="업체명" '
-                + 'value="'+esc(val)+'" '
-                + 'data-pn="'+pnKey+'" data-tid="'+tid+'" data-idx="'+i+'" '
-                + 'oninput="igUpdContractor(this)" onblur="igUpdContractor(this,true)">'
-                + '</div>';
-        }
-        html += '</div></div></div>';
+              + makeCtorHtml(ctors, pnKey, tid)
+              + '</div></div>';
       });
       html += '</div></div>';
     });
@@ -2044,18 +2039,8 @@ function rIntegrated() {
               + '<div class="ig-legend-info">'
               + '<div class="ig-legend-nm">'+pnKey+'</div>'
               + '<div class="ig-legend-dt">'+dtText+'</div>'
-              + '<div class="ig-contractors">';
-        for(var i=0;i<3;i++){
-          var val=ctors[i]||'';
-          html += '<div class="ig-ct-wrap">'
-                + '<span class="ig-ct-label">업체'+(i+1)+'</span>'
-                + '<input class="ig-ct-input'+(val?' filled':'') +'" type="text" placeholder="업체명" '
-                + 'value="'+esc(val)+'" '
-                + 'data-pn="'+pnKey+'" data-tid="'+tid+'" data-idx="'+i+'" '
-                + 'oninput="igUpdContractor(this)" onblur="igUpdContractor(this,true)">'
-                + '</div>';
-        }
-        html += '</div></div></div>';
+              + makeCtorHtml(ctors, pnKey, tid)
+              + '</div></div>';
       });
       html += '</div></div>';
     }
@@ -2070,59 +2055,144 @@ function rIntegrated() {
 }
 
 var _igSaveTimers = {};
-function igUpdContractor(input, rerender) {
-  var pn = input.dataset.pn;
-  var tid = parseInt(input.dataset.tid);
-  var idx = parseInt(input.dataset.idx);
-  var val = input.value;
+/* 업체 칩 HTML 생성 */
+function makeCtorHtml(ctors, pnKey, tid) {
+  var filtered = (ctors||[]).filter(function(c){ return c && c.trim(); });
+  var h = '<div class="ig-contractors" data-pn="'+pnKey+'" data-tid="'+tid+'">';
+  filtered.forEach(function(ct, i) {
+    h += '<div class="ig-chip">'+esc(ct)
+       + '<button class="ig-chip-x no-print" onmousedown="event.preventDefault();igRemoveCtor(event,'+i+')">×</button>'
+       + '</div>';
+  });
+  h += '<button class="ig-ctor-add-btn no-print" onclick="igShowCtorInput(this)">+ 추가</button>';
+  h += '<div class="ig-ctor-input-wrap no-print" style="display:none">'
+     + '<input class="ig-ctor-new-input" placeholder="업체명"'
+     + ' oninput="igRefreshSuggest(this)"'
+     + ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();igConfirmNewCtor(this);}"'
+     + ' onblur="var _el=this;setTimeout(function(){igCancelCtorInput(_el);},160)">'
+     + '<div class="ig-ctor-suggest"></div>'
+     + '</div>';
+  h += '</div>';
+  return h;
+}
 
-  input.classList.toggle('filled', !!val);
+/* 전체 업체명 목록 (자동완성용) */
+function igAllCtorNames() {
+  var names = {};
+  _cloudSites.forEach(function(site) {
+    (site.tasks||[]).forEach(function(t) {
+      (t.contractors||[]).forEach(function(c) {
+        if (c && c.trim()) names[c.trim()] = true;
+      });
+    });
+  });
+  return Object.keys(names).sort();
+}
 
+function igShowCtorInput(btn) {
+  var container = btn.closest('.ig-contractors');
+  btn.style.display = 'none';
+  var wrap = container.querySelector('.ig-ctor-input-wrap');
+  var input = container.querySelector('.ig-ctor-new-input');
+  wrap.style.display = 'inline-flex';
+  input.value = '';
+  input.focus();
+  igRefreshSuggest(input);
+}
+
+function igCancelCtorInput(input) {
+  var container = input.closest('.ig-contractors');
+  if (!container) return;
+  var wrap = container.querySelector('.ig-ctor-input-wrap');
+  var addBtn = container.querySelector('.ig-ctor-add-btn');
+  var suggest = container.querySelector('.ig-ctor-suggest');
+  if (wrap) wrap.style.display = 'none';
+  if (addBtn) addBtn.style.display = '';
+  if (suggest) suggest.style.display = 'none';
+}
+
+function igRefreshSuggest(input) {
+  var val = input.value.trim().toLowerCase();
+  var all = igAllCtorNames();
+  var filtered = val ? all.filter(function(n){ return n.toLowerCase().indexOf(val)>=0; }) : all;
+  var container = input.closest('.ig-contractors');
+  var suggest = container.querySelector('.ig-ctor-suggest');
+  if (!filtered.length) { suggest.style.display='none'; return; }
+  suggest.innerHTML = filtered.map(function(n){
+    return '<div class="ig-suggest-item" onmousedown="event.preventDefault();igPickSuggest(this)">'+esc(n)+'</div>';
+  }).join('');
+  suggest.style.display = 'block';
+}
+
+function igPickSuggest(item) {
+  var container = item.closest('.ig-contractors');
+  var input = container.querySelector('.ig-ctor-new-input');
+  input.value = item.textContent;
+  igConfirmNewCtor(input);
+}
+
+function igConfirmNewCtor(input) {
+  var val = input.value.trim();
+  var container = input.closest('.ig-contractors');
+  if (!val) { igCancelCtorInput(input); return; }
+  var pn = container.dataset.pn;
+  var tid = parseInt(container.dataset.tid);
   var site = _cloudSites.find(function(s){ return s.pn === pn; });
   if (!site) return;
-  var task = site.tasks && site.tasks.find(function(t){ return t.id === tid; });
+  var task = (site.tasks||[]).find(function(t){ return t.id === tid; });
   if (!task) return;
-  if (!task.contractors) task.contractors = ['','',''];
-  task.contractors[idx] = val;
+  var filtered = (task.contractors||[]).filter(function(c){ return c && c.trim(); });
+  if (filtered.indexOf(val) < 0) filtered.push(val);
+  task.contractors = filtered;
+  saveToCloud(site);
+  toast('업체 추가됨');
+  igCancelCtorInput(input);
+  rIntegrated();
+}
 
-  var timerKey = pn + '_' + tid;
-  clearTimeout(_igSaveTimers[timerKey]);
-  _igSaveTimers[timerKey] = setTimeout(function(){
-    saveToCloud(site);
-    toast('업체명 저장됨');
-    /* blur 시 업체 그룹 재정렬 */
-    if (rerender) rIntegrated();
-  }, rerender ? 50 : 1000);
+function igRemoveCtor(event, idx) {
+  var container = event.target.closest('.ig-contractors');
+  if (!container) return;
+  var pn = container.dataset.pn;
+  var tid = parseInt(container.dataset.tid);
+  var site = _cloudSites.find(function(s){ return s.pn === pn; });
+  if (!site) return;
+  var task = (site.tasks||[]).find(function(t){ return t.id === tid; });
+  if (!task) return;
+  var filtered = (task.contractors||[]).filter(function(c){ return c && c.trim(); });
+  filtered.splice(idx, 1);
+  task.contractors = filtered;
+  saveToCloud(site);
+  toast('업체 삭제됨');
+  rIntegrated();
 }
 
 /* 통합 탭 이미지 저장 (공종별) */
 async function doIGImg(btn, tradeName) {
   if (typeof html2canvas === 'undefined') { toast('라이브러리 로딩 중...'); return; }
-  /* btn의 가장 가까운 .ig-trade 카드 찾기 */
   var card = btn.closest('.ig-trade');
   if (!card) return;
-  /* no-print 요소 임시 숨김 */
   var noprints = card.querySelectorAll('.no-print');
   noprints.forEach(function(el){ el.style.display='none'; });
   toast('이미지 생성 중...');
   await new Promise(function(r){ setTimeout(r, 100); });
   try {
-    var w = card.offsetWidth;
+    var w = card.getBoundingClientRect().width;
     var h = card.scrollHeight;
     var canvas = await html2canvas(card, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
       logging: false,
-      scrollX: 0,
+      scrollX: -window.scrollX,
       scrollY: -window.scrollY,
-      width: w,
+      width: Math.floor(w),
       height: h,
-      windowWidth: w
+      windowWidth: document.documentElement.clientWidth,
+      windowHeight: document.documentElement.clientHeight
     });
     var a = document.createElement('a');
-    /* 파일명: YYMMDD 이견공간일정(공종명) */
-    var d = today().replace(/-/g,'').substring(2); /* YYMMDD */
+    var d = today().replace(/-/g,'').substring(2);
     a.download = d + ' 이견공간일정(' + tradeName + ').png';
     a.href = canvas.toDataURL('image/png');
     document.body.appendChild(a);
