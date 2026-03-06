@@ -1486,13 +1486,8 @@ async function loadCloudProject(pn) {
   delete loaded._updatedAt;
   _cloudView = loaded;
 
-  /* 차트탭으로 이동 */
-  document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
-  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on');});
-  document.getElementById('pc').classList.add('on');
-  document.getElementById('tc2').classList.add('on');
-
-  /* 읽기 전용 배지 */
+  /* _cloudView 세팅 후 sw('c')로 차트탭 전환 — swChart()까지 정상 호출됨 */
+  /* 읽기 전용 배지 삽입 (sw → _cloudView=null 방지용으로 먼저 세팅) */
   var ca = document.getElementById('ca');
   var existing = ca ? ca.querySelector('.ro-badge') : null;
   if (existing) existing.remove();
@@ -1503,8 +1498,8 @@ async function loadCloudProject(pn) {
     rb.style.cssText = 'font-size:11px;font-weight:700;color:#1d4ed8;background:#dbeafe;border:1px solid #93c5fd;border-radius:6px;padding:3px 8px;margin-right:4px;';
     ca.insertBefore(rb, ca.firstChild);
   }
-
-  rChart(); /* _cloudView 기반으로 렌더 */
+  sw('c'); /* 차트탭으로 전환 — swChart() 내부에서 _cloudView 감지 후 rChart() 호출 */
+  rCloudChips(); /* 클릭한 칩 active 반영 */
   toast('☁️ ' + pn + ' 불러왔어요!');
 }
 window.addEventListener('beforeunload',function(){
@@ -3498,11 +3493,14 @@ function igBarpickRender() {
     if (site.pn === _igBar.pn) return;
     (site.tasks||[]).forEach(function(t) {
       if (!t.on || t.id !== _igBar.tid) return;
-      /* 업체 겹침 없으면 표시 안 함 (내 현장에 업체 미배정이면 모두 표시) */
+      var siteCtors = (t.contractors||[]).filter(function(c){ return c && c.trim(); });
       if (myCtors.length > 0) {
-        var siteCtors = (t.contractors||[]).filter(function(c){ return c && c.trim(); });
+        /* 내 현장에 업체 배정됨 → 같은 업체 포함된 현장만 표시 */
         var hasMatch = siteCtors.some(function(c){ return myCtors.indexOf(c) >= 0; });
         if (!hasMatch) return;
+      } else {
+        /* 내 현장에 업체 미배정 → 업체가 배정된 현장은 제외 */
+        if (siteCtors.length > 0) return;
       }
       var color = (window._igSiteColors && window._igSiteColors[site.pn]) || '#888';
       if (t.sd && t.ed) entries.push({pn:site.pn, color:color, sd:t.sd, ed:t.ed});
