@@ -72,6 +72,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .pnsb.ok{background:var(--gn);border-color:var(--gn);}
 .pnchips{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;}
 .pnchip{display:inline-flex;flex-direction:column;background:#fff;border:1.5px solid var(--bd);border-radius:14px;overflow:hidden;transition:border-color .14s,box-shadow .14s;cursor:pointer;min-width:160px;max-width:240px;}
+@media(hover:hover){.pnchip:not(.active):hover{border-color:#94a3b8;box-shadow:0 2px 8px rgba(0,0,0,.08);}}
 .pnchip.active{background:#1e293b;border-color:#1e293b;box-shadow:0 2px 8px rgba(30,41,59,.2);}
 .pnchip.confirmed{border-color:#16a34a;border-width:2px;}
 .pnchip.confirmed.active{background:#14532d;border-color:#16a34a;}
@@ -195,7 +196,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-cal-dow-cell{text-align:center;font-size:9px;font-weight:700;color:var(--mu);padding:4px 0;background:var(--al);}
 .ig-cal-dow-cell.sun{color:#c53030;}.ig-cal-dow-cell.sat{color:#2045a8;}
 .ig-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--bd);border-radius:0 0 6px 6px;overflow:hidden;}
-.ig-cal-day{position:relative;display:flex;flex-direction:column;align-items:stretch;padding:2px 0 4px;border-right:1px solid var(--bd);border-bottom:1px solid var(--bd);min-height:72px;}
+.ig-cal-day{position:relative;display:flex;flex-direction:column;align-items:stretch;padding:2px 0 4px;border-right:1px solid var(--bd);border-bottom:1px solid var(--bd);height:72px;overflow:visible;}
 .ig-cal-day:nth-child(7n){border-right:none;}
 .ig-cal-day.empty{background:var(--al);opacity:.4;}
 .ig-cal-dn{font-size:10px;font-family:'DM Mono',monospace;color:var(--tx);line-height:1.6;z-index:1;text-align:center;flex-shrink:0;}
@@ -203,7 +204,8 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-cal-day.sat .ig-cal-dn{color:#2045a8;}
 .ig-cal-day.hol .ig-cal-dn{color:#b45309;}
 .ig-cal-day.today .ig-cal-dn{}
-.ig-cal-bars{display:flex;flex-direction:column;gap:2px;width:100%;padding:0;}
+.ig-cal-bars{position:absolute;top:22px;left:0;right:0;display:flex;flex-direction:column;gap:2px;width:100%;padding:0;z-index:2;pointer-events:none;}
+.ig-cal-bar{pointer-events:auto;}
 /* ★ width 버그 수정: rng-s/e/se 마진만큼 width를 calc로 보정 */
 .ig-cal-bar{height:16px;border-radius:2px;width:100%;display:flex;align-items:center;overflow:hidden;box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.18);}
 .ig-cal-bar-label{font-size:8px;color:rgba(255,255,255,.98);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;flex:1;min-width:0;pointer-events:none;letter-spacing:-.2px;text-shadow:0 1px 2px rgba(0,0,0,.25);}
@@ -951,6 +953,15 @@ function pnCancelRename(){
 }
 function saveProject(){
   if(!S.pn.trim()){toast('현장명을 먼저 입력해주세요');return;}
+  /* cloud 현장 보기 중이었다면 해제 후 새 현장으로 전환 */
+  if(_cloudView){
+    _cloudView=null;IS_RO=false;
+    var _rb=document.querySelector('.ro-badge.cloud-badge');if(_rb)_rb.remove();
+    var _lkb=document.getElementById('lock-banner');
+    if(_lkb){_lkb.style.display='none';_lkb.innerHTML='🔒 확정된 현장입니다 · 수정이 잠겨있습니다';_lkb.style.background='';_lkb.style.borderColor='';_lkb.style.color='';}
+    var _pcEl=document.getElementById('pnchips');if(_pcEl)_pcEl.classList.remove('cloud-viewing');
+    rCloudChips();
+  }
   var nm=S.pn.trim();S.pn=nm;
   var arr=getRecent();var ci=arr.findIndex(function(x){return x.pn===nm;});
   var now=nowTS();var isNew=ci<0;
