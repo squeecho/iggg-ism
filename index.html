@@ -177,18 +177,18 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-ctor-badge{background:#dcfce7;color:#15803d;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;font-family:'DM Mono',monospace;}
 .ig-ctor-badge.unassigned{background:var(--al);color:var(--mu);}
 
-/* 범례 (리디자인) */
-.ig-legend{display:flex;flex-direction:column;gap:6px;padding:0 2px 4px;}
-.ig-legend-row{display:flex;align-items:stretch;gap:0;background:#fff;border-radius:10px;border:1.5px solid var(--bd);overflow:hidden;}
-.ig-legend-color-bar{width:5px;flex-shrink:0;}
-.ig-legend-body{flex:1;min-width:0;padding:10px 10px 0 10px;}
-.ig-legend-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px;}
-.ig-legend-name{font-size:13px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.ig-legend-dur{font-size:10px;font-weight:700;background:#f1f5f9;color:#475569;border-radius:6px;padding:2px 7px;font-family:'DM Mono',monospace;white-space:nowrap;flex-shrink:0;}
-.ig-legend-period{font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;margin-bottom:8px;}
-.ig-legend-ctor-row{border-top:1px solid var(--bd);padding:8px 0 8px;}
+/* 범례 — 컴팩트 칩 그리드 */
+.ig-legend{display:flex;flex-direction:column;gap:0;padding:0;}
+.ig-legend-chips{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:10px 12px 10px;}
+.ig-legend-chip{display:flex;align-items:stretch;background:#fff;border-radius:8px;border:1.5px solid var(--bd);overflow:hidden;min-width:0;}
+.ig-legend-chip-bar{width:4px;flex-shrink:0;}
+.ig-legend-chip-body{flex:1;min-width:0;padding:6px 7px;}
+.ig-legend-chip-name{font-size:11px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;}
+.ig-legend-chip-period{font-size:9px;color:var(--mu);font-family:'DM Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;}
+.ig-legend-chip-ctor{font-size:9px;font-weight:700;color:#15803d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;border-top:1px solid var(--bd);margin-top:4px;padding-top:3px;cursor:pointer;}
+.ig-legend-chip-ctor.empty{color:#94a3b8;font-weight:500;}
 
-/* 업체 배정 새 UI */
+/* 업체 배정 새 UI (칩 내 인라인 탭) */
 .ig-ctor-btn{display:flex;align-items:center;gap:7px;width:100%;background:none;border:none;cursor:pointer;padding:0;font-family:'Noto Sans KR',sans-serif;text-align:left;}
 .ig-ctor-names{font-size:11px;font-weight:600;color:#15803d;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ig-ctor-names.empty{color:#94a3b8;font-weight:500;}
@@ -2183,9 +2183,9 @@ function rIntegrated() {
         + '<span class="'+bdgClass+'">'+siteList.length+'개 현장</span>'
         + '</div>';
       s += makeCalHtml(siteList);
-      s += '<div class="ig-legend">';
+      s += '<div class="ig-legend"><div class="ig-legend-chips">';
       siteList.forEach(function(entry) { s += makeEntryHtml(entry, tid); });
-      s += '</div></div>';
+      s += '</div></div></div>';
       /* 업체별 이미지 저장 버튼 */
       s += '<button class="ig-ctor-save-btn no-print" onclick="doIGCtorImg(this,\''+tname+'\',\''+safeCtorName+'\')">'
          + '📷 &nbsp;' + esc(ctorName||'미지정') + '  ·  ' + tname + ' &nbsp;이미지 저장'
@@ -2209,7 +2209,7 @@ function rIntegrated() {
 
 var _igSaveTimers = {};
 
-/* 범례 한 행 (리디자인: 카드형, 날짜 1회만 표시) */
+/* 범례 칩 한 개 HTML */
 function makeEntryHtml(entry, tid) {
   var task = entry.task;
   var site = entry.site;
@@ -2221,34 +2221,29 @@ function makeEntryHtml(entry, tid) {
   if (sd && ed) {
     var sdM = parseInt(sd.slice(5,7)), sdD = parseInt(sd.slice(8,10));
     var edM = parseInt(ed.slice(5,7)), edD = parseInt(ed.slice(8,10));
-    periodText = sdM+'/'+sdD+' ~ '+edM+'/'+edD;
+    periodText = sdM+'/'+sdD+'~'+edM+'/'+edD + (durDays?' ('+durDays+'일)':'');
     if (task.split && task.sd2 && task.ed2) {
       var s2M = parseInt(task.sd2.slice(5,7)), s2D = parseInt(task.sd2.slice(8,10));
       var e2M = parseInt(task.ed2.slice(5,7)), e2D = parseInt(task.ed2.slice(8,10));
-      periodText += '  /  '+s2M+'/'+s2D+' ~ '+e2M+'/'+e2D;
+      periodText += '  '+s2M+'/'+s2D+'~'+e2M+'/'+e2D;
     }
   } else {
     periodText = '기간 미설정';
   }
   var ctors = (task.contractors||[]).filter(function(c){ return c && c.trim(); });
-  var ctorDisp = ctors.length ? ctors.join(', ') : '담당 미지정';
+  var ctorDisp = ctors.length ? ctors[0] : '담당 미지정';
   var ctorEmpty = !ctors.length;
 
-  return '<div class="ig-legend-row">'
-       + '<div class="ig-legend-color-bar" style="background:'+color+'"></div>'
-       + '<div class="ig-legend-body">'
-       +   '<div class="ig-legend-top">'
-       +     '<span class="ig-legend-name">'+pnKey+'</span>'
-       +     (durDays ? '<span class="ig-legend-dur">'+durDays+'일</span>' : '')
+  return '<div class="ig-legend-chip">'
+       + '<div class="ig-legend-chip-bar" style="background:'+color+'"></div>'
+       + '<div class="ig-legend-chip-body">'
+       +   '<div class="ig-legend-chip-name">'+pnKey+'</div>'
+       +   '<div class="ig-legend-chip-period">'+periodText+'</div>'
+       +   '<div class="ig-legend-chip-ctor no-print'+(ctorEmpty?' empty':'')+'" onclick="igOpenCtorModal(\''+pnKey+'\','+tid+')">'
+       +     esc(ctorDisp) + (ctorEmpty ? '' : ' ✎')
        +   '</div>'
-       +   '<div class="ig-legend-period">'+periodText+'</div>'
-       +   '<div class="ig-legend-ctor-row">'
-       +     '<button class="ig-ctor-btn no-print" onclick="igOpenCtorModal(\''+pnKey+'\','+tid+')">'
-       +       '<span class="ig-ctor-names'+(ctorEmpty?' empty':'')+'">'+esc(ctorDisp)+'</span>'
-       +       '<span class="ig-ctor-edit-btn'+(ctorEmpty?' empty':'')+'">담당 편집</span>'
-       +     '</button>'
-       +   '</div>'
-       + '</div></div>';
+       + '</div>'
+       + '</div>';
 }
 
 /* 업체 배정 모달 */
