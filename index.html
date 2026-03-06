@@ -109,71 +109,71 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-setup{background:#fff3cd;border:1.5px solid #fcd34d;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:#92400e;line-height:1.6;}
 .ig-setup b{font-weight:700;}
 .ig-setup a{color:#1d4ed8;text-decoration:underline;}
+
 /* 월 네비게이션 */
-.ig-nav{display:flex;align-items:center;justify-content:space-between;background:var(--sf);border:1.5px solid var(--bd);border-radius:12px;padding:10px 14px;margin-bottom:14px;}
-.ig-nav-title{font-size:15px;font-weight:900;color:var(--tx);}
-.ig-nav-btn{border:none;background:none;cursor:pointer;font-size:18px;color:var(--mu);padding:2px 12px;border-radius:6px;}
-.ig-nav-btn:hover{background:var(--al);color:var(--bar);}
-.ig-nav-sub{font-size:11px;color:var(--mu);text-align:center;margin-top:2px;}
+.ig-nav{display:flex;align-items:center;justify-content:space-between;background:var(--sf);border:1.5px solid var(--bd);border-radius:14px;padding:8px 8px;margin-bottom:16px;gap:8px;}
+.ig-nav-center{flex:1;text-align:center;}
+.ig-nav-title{font-size:20px;font-weight:900;color:var(--tx);letter-spacing:-0.5px;}
+.ig-nav-sub{font-size:11px;color:var(--mu);margin-top:2px;}
+.ig-nav-btn{border:1.5px solid var(--bd);background:var(--bg);cursor:pointer;font-size:18px;color:var(--tx);padding:8px 16px;border-radius:10px;line-height:1;transition:background .12s;}
+.ig-nav-btn:hover{background:var(--al);}
 .ig-refresh{border:1.5px solid var(--bd);background:var(--sf);color:var(--mu);border-radius:7px;font-size:12px;font-weight:700;padding:5px 12px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;}
 .ig-refresh:hover{border-color:var(--bar);color:var(--bar);}
+
 /* 공종 카드 */
-.ig-trade{background:var(--sf);border:1.5px solid var(--bd);border-radius:12px;margin-bottom:14px;overflow:hidden;}
-.ig-trade-img-btn{border:none;background:none;cursor:pointer;font-size:14px;margin-left:auto;padding:2px 4px;opacity:.6;transition:opacity .14s;}
-.ig-trade-img-btn:hover{opacity:1;}
-.ig-trade-nm{font-size:13px;font-weight:800;color:var(--tx);}
-.ig-badge{background:var(--bar);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;font-family:'DM Mono',monospace;}
+.ig-trade{background:var(--sf);border:1.5px solid var(--bd);border-radius:16px;margin-bottom:20px;overflow:hidden;}
+.ig-trade-hd{display:flex;align-items:center;gap:8px;padding:14px 16px 12px;background:var(--tx);flex-wrap:wrap;}
+.ig-trade-nm{font-size:16px;font-weight:900;color:#fff;letter-spacing:-0.3px;}
+.ig-badge{background:rgba(255,255,255,0.2);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;font-family:'DM Mono',monospace;}
+.ig-trade-img-btn{margin-left:auto;border:1.5px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.12);border-radius:8px;cursor:pointer;font-size:13px;color:#fff;padding:5px 12px;font-weight:700;font-family:'Noto Sans KR',sans-serif;transition:background .14s;white-space:nowrap;}
+.ig-trade-img-btn:hover{background:rgba(255,255,255,0.25);}
+
 /* 달력 */
-.ig-cal-wrap{padding:10px 12px 0;}
+.ig-month-label{padding:12px 14px 4px;font-size:13px;font-weight:900;color:var(--mu);letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid var(--bd);}
+.ig-cal-wrap{padding:10px 12px 4px;}
 .ig-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:2px;}
-.ig-cal-dow-cell{text-align:center;font-size:10px;font-weight:700;color:var(--mu);padding:3px 0;}
+.ig-cal-dow-cell{text-align:center;font-size:10px;font-weight:700;color:var(--mu);padding:4px 0;}
 .ig-cal-dow-cell.sun{color:#c53030;}.ig-cal-dow-cell.sat{color:#2045a8;}
 .ig-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);row-gap:2px;}
-.ig-cal-day{position:relative;min-height:34px;display:flex;flex-direction:column;align-items:center;padding:2px 0 4px;}
-.ig-cal-dn{font-size:11px;font-family:'DM Mono',monospace;color:var(--tx);line-height:1.6;z-index:1;position:relative;}
+.ig-cal-day{position:relative;min-height:36px;display:flex;flex-direction:column;align-items:center;padding:2px 0 4px;}
+.ig-cal-dn{font-size:11px;font-family:'DM Mono',monospace;color:var(--tx);line-height:1.7;z-index:1;position:relative;}
 .ig-cal-day.sun .ig-cal-dn{color:#c53030;}
 .ig-cal-day.sat .ig-cal-dn{color:#2045a8;}
 .ig-cal-day.hol .ig-cal-dn{color:#b45309;}
 .ig-cal-day.today .ig-cal-dn{font-weight:900;text-decoration:underline;}
 .ig-cal-bars{display:flex;flex-direction:column;gap:1px;width:100%;padding:0 1px;}
-.ig-cal-bar{height:5px;border-radius:3px;width:100%;}
+.ig-cal-bar{height:6px;border-radius:3px;width:100%;}
 .ig-cal-bar.rng-s{border-radius:3px 0 0 3px;margin-left:3px;}
 .ig-cal-bar.rng-e{border-radius:0 3px 3px 0;margin-right:3px;}
 .ig-cal-bar.rng-m{border-radius:0;}
 .ig-cal-bar.rng-se{border-radius:3px;margin:0 3px;}
-/* 범례 + 업체 */
-.ig-legend{padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px;}
-.ig-legend-row{display:flex;align-items:flex-start;gap:8px;}
+
+/* 업체별 섹션 */
+.ig-ctor-section{border-top:1px solid var(--bd);padding:10px 14px 0;}
+.ig-ctor-section:last-of-type{padding-bottom:12px;}
+.ig-ctor-hd{display:flex;align-items:center;gap:7px;margin-bottom:8px;}
+.ig-ctor-nm{font-size:12px;font-weight:900;color:#15803d;}
+.ig-ctor-nm.unassigned{color:var(--mu);}
+.ig-ctor-badge{background:#dcfce7;color:#15803d;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;font-family:'DM Mono',monospace;}
+.ig-ctor-badge.unassigned{background:var(--al);color:var(--mu);}
+
+/* 범례 */
+.ig-legend{display:flex;flex-direction:column;gap:8px;}
+.ig-legend-row{display:flex;align-items:flex-start;gap:8px;background:var(--bg);border-radius:10px;padding:9px 10px;}
 .ig-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:3px;}
 .ig-legend-info{flex:1;min-width:0;}
 .ig-legend-nm{font-size:12px;font-weight:800;color:var(--tx);}
-.ig-legend-dt{font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;margin-bottom:4px;}
-.ig-contractors{display:flex;flex-wrap:wrap;gap:6px;}
+.ig-legend-dt{font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;margin-bottom:6px;}
+.ig-contractors{display:flex;flex-wrap:wrap;gap:5px;}
 .ig-ct-wrap{display:flex;flex-direction:column;gap:2px;flex:1;min-width:80px;max-width:140px;}
 .ig-ct-label{font-size:10px;font-weight:700;color:var(--mu);letter-spacing:.5px;}
-.ig-ct-input{border:1.5px solid var(--bd);border-radius:7px;padding:5px 8px;font-size:12px;font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);outline:none;width:100%;transition:border-color .14s;}
+.ig-ct-input{border:1.5px solid var(--bd);border-radius:7px;padding:6px 8px;font-size:12px;font-family:'Noto Sans KR',sans-serif;background:var(--sf);color:var(--tx);outline:none;width:100%;transition:border-color .14s;}
 .ig-ct-input:focus{border-color:var(--bar);background:#fff;}
-.ig-ct-input.filled{background:#f0fdf4;}
-/* 업체별 섹션 */
-.ig-ctor-section{border-top:1px solid var(--bd);}
-.ig-ctor-section:first-child{border-top:none;}
-.ig-ctor-hd{display:flex;align-items:center;gap:7px;padding:9px 14px 8px;background:#f0fdf4;}
-.ig-ctor-hd.unassigned{background:#f8f7f4;}
-.ig-ctor-nm{font-size:12px;font-weight:800;color:#15803d;}
-.ig-ctor-nm.unassigned{color:var(--mu);}
-.ig-ctor-badge{background:#16a34a;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:20px;font-family:'DM Mono',monospace;}
-.ig-ctor-badge.unassigned{background:var(--mu2);}
-/* 범례 */
-.ig-legend{padding:8px 12px 10px;display:flex;flex-direction:column;gap:7px;}
-.ig-legend-row{display:flex;align-items:flex-start;gap:8px;}
-.ig-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:3px;}
-.ig-legend-info{flex:1;min-width:0;}
-.ig-legend-nm{font-size:12px;font-weight:800;color:var(--tx);}
-.ig-legend-dt{font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;margin-bottom:4px;}
-/* 통합 액션바 */
-.ig-action{display:flex;gap:8px;align-items:center;margin-bottom:14px;}
-.ig-img-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:#1e293b;color:#fff;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;transition:background .14s;}
-.ig-img-btn:hover{background:#0f172a;}
+.ig-ct-input.filled{background:#f0fdf4;border-color:#86efac;}
+
+/* 이미지 저장 버튼 (카드 하단) */
+.ig-save-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:#1e293b;color:#fff;border:none;font-size:14px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;transition:background .14s;margin-top:12px;border-radius:0 0 14px 14px;}
+.ig-save-btn:hover{background:#0f172a;}
 /* tasks */
 .tl{display:flex;flex-direction:column;gap:10px;}
 .tc{background:var(--sf);border-radius:12px;border:1.5px solid var(--bd);overflow:hidden;}
@@ -1920,16 +1920,16 @@ function rIntegrated() {
   }
 
   var html = setupBanner;
-  /* 액션바 */
-  html += '<div class="ig-action no-print">'
-    + '<button class="ig-nav-btn" onclick="igMove(-1)" style="background:var(--sf);border:1.5px solid var(--bd);border-radius:8px;font-size:16px;padding:8px 14px;">&#8592;</button>'
-    + '<div style="flex:1;text-align:center">'
-    + '<div style="font-size:15px;font-weight:900;color:var(--tx)">' + _igY + '년 ' + MN[_igM] + '</div>'
-    + '<div style="font-size:11px;color:var(--mu);margin-top:1px">' + _cloudSites.length + '개 현장</div>'
+  /* 월 네비게이션 */
+  html += '<div class="ig-nav no-print">'
+    + '<button class="ig-nav-btn" onclick="igMove(-1)">&#8592;</button>'
+    + '<div class="ig-nav-center">'
+    + '<div class="ig-nav-title">' + _igY + '년 ' + MN[_igM] + '월</div>'
+    + '<div class="ig-nav-sub">' + _cloudSites.length + '개 현장 확정됨</div>'
     + '</div>'
-    + '<button class="ig-nav-btn" onclick="igMove(1)" style="background:var(--sf);border:1.5px solid var(--bd);border-radius:8px;font-size:16px;padding:8px 14px;">&#8594;</button>'
+    + '<button class="ig-nav-btn" onclick="igMove(1)">&#8594;</button>'
     + '</div>'
-    + '<div class="no-print" style="display:flex;justify-content:flex-end;margin-bottom:4px">'
+    + '<div class="no-print" style="display:flex;justify-content:flex-end;margin-bottom:12px">'
     + '<button class="ig-refresh" onclick="loadCloudSites().then(rIntegrated)">↻ 새로고침</button>'
     + '</div>';
 
@@ -1962,37 +1962,45 @@ function rIntegrated() {
     var totalCtors = groupNames.length + (unassigned.length ? 1 : 0);
     var tname = IG_TASK_NAMES[tid] || ('공종 '+tid);
 
+    /* 전체 현장 리스트 (통합 달력용) */
+    var allEntries = [];
+    activeSites.forEach(function(site) {
+      var task = site.tasks.find(function(t){ return t.id===tid; });
+      if (task) allEntries.push({site:site, task:task});
+    });
+
     html += '<div class="ig-trade">';
+
+    /* 공종 헤더 */
     html += '<div class="ig-trade-hd">'
           + '<span class="ig-trade-nm">' + tname + '</span>'
           + '<span class="ig-badge">' + activeSites.length + '개 현장</span>'
-          + (totalCtors > 1 ? '<span class="ig-badge" style="background:#475569">' + totalCtors + '개 업체</span>' : '')
-          + '<button class="ig-trade-img-btn no-print" onclick="doIGImg(this,\'' + tname + '\')">📷</button>'
+          + (totalCtors > 1 ? '<span class="ig-badge">' + totalCtors + '개 업체</span>' : '')
           + '</div>';
 
-    /* 업체별 섹션 */
+    /* 월 라벨 + 통합 달력 1개 */
+    html += '<div class="ig-month-label">' + _igY + '년 ' + MN[_igM] + '월</div>';
+    html += makeCalHtml(allEntries);
+
+    /* 업체별 섹션 (범례만, 달력 없음) */
     groupNames.forEach(function(ctorName) {
       var entries = groups[ctorName];
       var siteList = entries.map(function(e){ return {site:e.site, task:e.task}; });
-      /* 중복 site 제거 (같은 현장이 여러 슬롯에 있는 경우) */
       var seen = {};
       siteList = siteList.filter(function(e){ if(seen[e.site.pn]) return false; seen[e.site.pn]=true; return true; });
 
       html += '<div class="ig-ctor-section">';
       html += '<div class="ig-ctor-hd">'
-            + '<span class="ig-ctor-nm">' + esc(ctorName) + '</span>'
+            + '<span class="ig-ctor-nm">● ' + esc(ctorName) + '</span>'
             + '<span class="ig-ctor-badge">' + siteList.length + '개 현장</span>'
             + '</div>';
-      html += makeCalHtml(siteList);
-
-      /* 범례 */
       html += '<div class="ig-legend">';
       siteList.forEach(function(entry) {
         var task = entry.task;
         var color = siteColors[entry.site.pn] || '#888';
         var pnKey = esc(entry.site.pn);
         var sd = task.sd||'', ed = task.ed||'';
-        var dtText = (sd&&ed) ? sd.slice(5).replace('-','.')+' ~ '+ed.slice(5).replace('-','.')+'  ('+( dif(sd,ed)+1)+'일)' : '기간 미설정';
+        var dtText = (sd&&ed) ? sd.slice(5).replace('-','.')+' ~ '+ed.slice(5).replace('-','.')+'  ('+(dif(sd,ed)+1)+'일)' : '기간 미설정';
         var ctors = task.contractors||['','',''];
         html += '<div class="ig-legend-row">'
               + '<div class="ig-dot" style="background:'+color+'"></div>'
@@ -2012,18 +2020,17 @@ function rIntegrated() {
         }
         html += '</div></div></div>';
       });
-      html += '</div></div>'; /* legend + ctor-section */
+      html += '</div></div>';
     });
 
     /* 미지정 섹션 */
     if (unassigned.length) {
       var siteList2 = unassigned.map(function(e){ return {site:e.site, task:e.task}; });
       html += '<div class="ig-ctor-section">';
-      html += '<div class="ig-ctor-hd unassigned">'
-            + '<span class="ig-ctor-nm unassigned">미지정</span>'
+      html += '<div class="ig-ctor-hd">'
+            + '<span class="ig-ctor-nm unassigned">○ 미지정</span>'
             + '<span class="ig-ctor-badge unassigned">' + siteList2.length + '개 현장</span>'
             + '</div>';
-      html += makeCalHtml(siteList2);
       html += '<div class="ig-legend">';
       siteList2.forEach(function(entry) {
         var task = entry.task;
@@ -2042,7 +2049,7 @@ function rIntegrated() {
           var val=ctors[i]||'';
           html += '<div class="ig-ct-wrap">'
                 + '<span class="ig-ct-label">업체'+(i+1)+'</span>'
-                + '<input class="ig-ct-input'+(val?' filled':'')+'" type="text" placeholder="업체명" '
+                + '<input class="ig-ct-input'+(val?' filled':'') +'" type="text" placeholder="업체명" '
                 + 'value="'+esc(val)+'" '
                 + 'data-pn="'+pnKey+'" data-tid="'+tid+'" data-idx="'+i+'" '
                 + 'oninput="igUpdContractor(this)" onblur="igUpdContractor(this,true)">'
@@ -2052,6 +2059,9 @@ function rIntegrated() {
       });
       html += '</div></div>';
     }
+
+    /* 이미지 저장 버튼 (카드 하단 크게) */
+    html += '<button class="ig-save-btn no-print" onclick="doIGImg(this,\'' + tname + '\')">📷  ' + tname + ' 이미지 저장</button>';
 
     html += '</div>'; /* ig-trade */
   });
