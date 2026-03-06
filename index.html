@@ -2554,14 +2554,49 @@ function igSaveDateModal() {
   if (hasSplit && (!sd2 || !ed2)) { toast('분리 일정의 날짜를 모두 입력하세요.'); return; }
   if (hasSplit && sd2 > ed2) { toast('분리 일정: 시작일이 종료일보다 늦습니다.'); return; }
 
-  task.sd = sd;
-  task.ed = ed;
+  /* 1. _cloudSites 메모리 업데이트 */
+  task.sd = sd; task.ed = ed;
   task.split = hasSplit;
   if (hasSplit) { task.sd2 = sd2; task.ed2 = ed2; }
   else { delete task.sd2; delete task.ed2; }
 
+  /* 2. Firebase 저장 */
   saveToCloud(site);
-  toast('일정 수정 완료 ✓');
+
+  /* 3. 로컬스토리지 snap 업데이트 → 차트탭 반영 */
+  var arr = getRecent();
+  var ci = arr.findIndex(function(x){ return x.pn === pn; });
+  if (ci >= 0) {
+    try {
+      var snapObj = arr[ci].snap ? JSON.parse(arr[ci].snap) : null;
+      if (snapObj && snapObj.tasks) {
+        var st = snapObj.tasks.find(function(t){ return t.id === tid; });
+        if (st) {
+          st.sd = sd; st.ed = ed;
+          st.split = hasSplit;
+          if (hasSplit) { st.sd2 = sd2; st.ed2 = ed2; }
+          else { delete st.sd2; delete st.ed2; }
+        }
+        arr[ci].snap = JSON.stringify(snapObj);
+        setRecent(arr);
+      }
+    } catch(e) { console.warn('snap update failed', e); }
+  }
+
+  /* 4. 현재 차트에 열려있는 현장이면 S도 즉시 갱신 → 차트 즉시 반영 */
+  if (typeof S !== 'undefined' && S && S.pn === pn && S.tasks) {
+    var st2 = S.tasks.find(function(t){ return t.id === tid; });
+    if (st2) {
+      st2.sd = sd; st2.ed = ed;
+      st2.split = hasSplit;
+      if (hasSplit) { st2.sd2 = sd2; st2.ed2 = ed2; }
+      else { delete st2.sd2; delete st2.ed2; }
+    }
+    if (typeof syncPeriod === 'function') syncPeriod();
+    if (typeof rChart === 'function') rChart();
+  }
+
+  toast('일정 수정 완료 ✓  (차트탭 반영됨)');
   igCloseDateModal();
   rIntegrated();
 }
