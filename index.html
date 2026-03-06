@@ -102,6 +102,20 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .pnchip-confirm{border:1.5px solid #94a3b8;background:transparent;color:#64748b;border-radius:7px;font-size:11px;font-weight:700;padding:4px 10px;cursor:pointer;transition:all .15s;letter-spacing:.3px;}
 /* 보관함 */
 .archive-wrap{margin-top:12px;}
+/* 마스터 모드 */
+.master-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center;}
+.master-modal{background:#1e293b;border-radius:16px;padding:28px 24px;width:min(320px,90vw);display:flex;flex-direction:column;gap:14px;}
+.master-modal-title{color:#f1f5f9;font-size:15px;font-weight:900;text-align:center;letter-spacing:-.3px;}
+.master-modal-sub{color:#94a3b8;font-size:11px;text-align:center;margin-top:-8px;}
+.master-modal input{background:#0f172a;border:1.5px solid #334155;border-radius:10px;color:#f1f5f9;font-size:15px;padding:11px 14px;width:100%;outline:none;font-family:'DM Mono',monospace;letter-spacing:1px;box-sizing:border-box;}
+.master-modal input:focus{border-color:#3b82f6;}
+.master-modal-err{color:#f87171;font-size:11px;font-weight:700;text-align:center;min-height:16px;}
+.master-modal-btns{display:flex;gap:8px;}
+.master-modal-cancel{flex:1;padding:11px;border:1.5px solid #334155;border-radius:10px;background:none;color:#94a3b8;font-size:14px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;}
+.master-modal-ok{flex:2;padding:11px;border:none;border-radius:10px;background:#3b82f6;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;}
+.cloud-del-btn{border:none;background:rgba(239,68,68,.15);color:#ef4444;border-radius:6px;font-size:11px;font-weight:700;padding:3px 8px;cursor:pointer;transition:background .14s;}
+.cloud-del-btn:hover{background:rgba(239,68,68,.3);}
+.master-active-badge{font-size:10px;font-weight:700;color:#f87171;background:rgba(239,68,68,.15);border-radius:20px;padding:2px 8px;margin-left:4px;}
 .archive-header{display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f0ede6;border:1.5px solid #d4cfc7;border-radius:10px;cursor:pointer;transition:background .14s;user-select:none;}
 .archive-header:hover{background:#e8e4db;}
 .archive-header-icon{font-size:13px;}
@@ -556,8 +570,11 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
       </div>
       <!-- 다른 기기 / 공유 현장 -->
       <div id="cloudChipsWrap" style="display:none;margin-top:14px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
-          <div style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.5px;">☁️ 공유된 확정 현장</div>
+        <div id="cloudChipsHeader" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;user-select:none;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.5px;">☁️ 공유된 확정 현장</div>
+            <span id="masterBadge" class="master-active-badge" style="display:none;">🔑 마스터</span>
+          </div>
           <button onclick="loadCloudSites().then(rCloudChips)" style="border:none;background:none;font-size:12px;color:#3b82f6;font-weight:700;cursor:pointer;padding:2px 6px;">↻ 새로고침</button>
         </div>
         <div class="pnchips" id="cloudChips"></div>
@@ -967,6 +984,120 @@ function toggleArchive(){
   chips.classList.toggle('open',!isOpen);
   if(arrow)arrow.classList.toggle('open',!isOpen);
 }
+/* ═══════════════════════════════════════
+   마스터 모드 — 클라우드 현장 삭제 권한
+   비밀번호: SHA-256 해시로만 저장
+═══════════════════════════════════════ */
+var _MASTER_HASH='48f225b82a33834d1850cff0faa53e44023775822fe9fcd200ece404d82ebc01';
+var _masterMode=false;
+var _masterFailCount=0;
+var _masterLockUntil=0;
+var _masterLongPressTimer=null;
+
+async function _sha256(str){
+  var buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+}
+
+function _initMasterLongPress(){
+  var hdr=document.getElementById('cloudChipsHeader');
+  if(!hdr||hdr._masterBound)return;
+  hdr._masterBound=true;
+  function start(e){
+    /* 버튼 클릭은 제외 */
+    if(e.target.tagName==='BUTTON')return;
+    _masterLongPressTimer=setTimeout(function(){ _showMasterModal(); },3000);
+  }
+  function cancel(){ clearTimeout(_masterLongPressTimer); }
+  hdr.addEventListener('mousedown',start);
+  hdr.addEventListener('touchstart',start,{passive:true});
+  hdr.addEventListener('mouseup',cancel);
+  hdr.addEventListener('mouseleave',cancel);
+  hdr.addEventListener('touchend',cancel);
+}
+
+function _showMasterModal(){
+  /* 잠금 체크 */
+  if(Date.now()<_masterLockUntil){
+    var remain=Math.ceil((_masterLockUntil-Date.now())/60000);
+    toast('⛔ '+remain+'분 후에 다시 시도하세요');
+    return;
+  }
+  /* 이미 마스터 모드면 해제 */
+  if(_masterMode){ _exitMasterMode(); return; }
+
+  var bg=document.createElement('div');
+  bg.className='master-modal-bg';
+  bg.id='masterModalBg';
+  bg.innerHTML=''
+    +'<div class="master-modal">'
+    +'<div class="master-modal-title">🔑 마스터 인증</div>'
+    +'<div class="master-modal-sub">클라우드 현장 삭제 권한</div>'
+    +'<input type="password" id="masterPwInput" placeholder="비밀번호" autocomplete="off">'
+    +'<div class="master-modal-err" id="masterErr"></div>'
+    +'<div class="master-modal-btns">'
+    +'<button class="master-modal-cancel" onclick="_closeMasterModal()">취소</button>'
+    +'<button class="master-modal-ok" onclick="_submitMaster()">확인</button>'
+    +'</div></div>';
+  document.body.appendChild(bg);
+  setTimeout(function(){ var i=document.getElementById('masterPwInput');if(i)i.focus(); },100);
+  document.getElementById('masterPwInput').addEventListener('keydown',function(e){
+    if(e.key==='Enter')_submitMaster();
+  });
+}
+
+function _closeMasterModal(){
+  var bg=document.getElementById('masterModalBg');
+  if(bg)bg.remove();
+}
+
+async function _submitMaster(){
+  var inp=document.getElementById('masterPwInput');
+  if(!inp)return;
+  var hash=await _sha256(inp.value);
+  if(hash===_MASTER_HASH){
+    _masterFailCount=0;
+    _masterMode=true;
+    _closeMasterModal();
+    var badge=document.getElementById('masterBadge');
+    if(badge)badge.style.display='';
+    toast('🔑 마스터 모드 활성화 — 클라우드 삭제 가능');
+    loadCloudSites().then(rCloudChips);
+    /* 5분 후 자동 해제 */
+    setTimeout(_exitMasterMode, 5*60*1000);
+  } else {
+    _masterFailCount++;
+    var errEl=document.getElementById('masterErr');
+    if(_masterFailCount>=5){
+      _masterLockUntil=Date.now()+10*60*1000;
+      _masterMode=false;
+      _closeMasterModal();
+      toast('⛔ 5회 실패 — 10분 잠금');
+    } else {
+      if(errEl)errEl.textContent='비밀번호가 틀렸습니다 ('+_masterFailCount+'/5)';
+      if(inp){inp.value='';inp.focus();}
+    }
+  }
+}
+
+function _exitMasterMode(){
+  _masterMode=false;
+  var badge=document.getElementById('masterBadge');
+  if(badge)badge.style.display='none';
+  toast('🔒 마스터 모드 해제');
+  loadCloudSites().then(rCloudChips);
+}
+
+async function deleteCloudSite(pn){
+  if(!_masterMode){toast('⛔ 마스터 모드가 아닙니다');return;}
+  if(!confirm('☁️ "'+pn+'" 현장을 Firebase에서 완전 삭제할까요?\n모든 기기에서 사라집니다.'))return;
+  await deleteFromCloud(pn);
+  /* _cloudSites 로컬 캐시에서도 제거 */
+  _cloudSites=(_cloudSites||[]).filter(function(s){return s.pn!==pn;});
+  loadCloudSites().then(rCloudChips);
+  toast('🗑️ "'+pn+'" 삭제됐어요');
+}
+
 function toggleCloudArchive(){
   var chips=document.getElementById('cloudArchiveChips');
   var arrow=document.getElementById('cloudArchiveArrow');
@@ -1013,7 +1144,22 @@ function rChips(){
     el.innerHTML=h;
   }
 
-  /* ── 보관함 칩 렌더 ── */
+  /* ── 이벤트 바인딩 (활성) — 보관함 렌더 전에 먼저 처리 ── */
+  el.querySelectorAll('.pnchip').forEach(function(chip){
+    chip.onclick=function(e){
+      if(e.target.classList.contains('pnchip-del'))return;
+      if(e.target.classList.contains('pnchip-confirm'))return;
+      loadProject(chip.dataset.pn);
+    };
+  });
+  el.querySelectorAll('.pnchip-del').forEach(function(b){
+    b.onclick=function(e){e.stopPropagation();deleteRecent(b.dataset.pn,e);};
+  });
+  el.querySelectorAll('.pnchip-confirm').forEach(function(b){
+    b.onclick=function(e){e.stopPropagation();toggleConfirmed(b.dataset.pn,e);};
+  });
+
+  /* ── 지난 확정현장 렌더 ── */
   if(!archWrap||!archEl)return;
   if(!archived.length){archWrap.style.display='none';return;}
   archWrap.style.display='';
@@ -1041,23 +1187,7 @@ function rChips(){
   });
   archEl.innerHTML=ah;
 
-  /* ── 이벤트 바인딩 (활성) ── */
-  var arr2=getRecent();
-  el.querySelectorAll('.pnchip').forEach(function(chip){
-    chip.onclick=function(e){
-      if(e.target.classList.contains('pnchip-del'))return;
-      if(e.target.classList.contains('pnchip-confirm'))return;
-      loadProject(chip.dataset.pn);
-    };
-  });
-  el.querySelectorAll('.pnchip-del').forEach(function(b){
-    b.onclick=function(e){e.stopPropagation();deleteRecent(b.dataset.pn,e);};
-  });
-  el.querySelectorAll('.pnchip-confirm').forEach(function(b){
-    b.onclick=function(e){e.stopPropagation();toggleConfirmed(b.dataset.pn,e);};
-  });
-
-  /* ── 이벤트 바인딩 (보관함) ── */
+  /* ── 이벤트 바인딩 (지난 확정현장) ── */
   archEl.querySelectorAll('.pnchip').forEach(function(chip){
     chip.onclick=function(e){
       if(e.target.classList.contains('pnchip-del'))return;
@@ -1113,8 +1243,13 @@ function rCloudChips() {
     var isActive = (_cloudView && _cloudView.pn === rawPn);
     var period = (site.sd && site.ed) ? site.sd.slice(5).replace('-','.') + ' ~ ' + site.ed.slice(5).replace('-','.') : '기간 미설정';
     var cls = 'pnchip cloud confirmed' + (isActive ? ' active' : '');
+    var masterBtn = _masterMode
+      ? '<button class="cloud-del-btn" data-delpn="'+nm+'" onclick="event.stopPropagation();deleteCloudSite(this.dataset.delpn)">🗑️ 삭제</button>'
+      : '';
     return '<div class="'+cls+' cloud-chip-btn" data-cloudpn="'+nm+'">'
-      + '<div class="pnchip-body"><span class="pnchip-nm">☁️ '+nm+'</span><span class="pnchip-lock">🔒</span></div>'
+      + '<div class="pnchip-body"><span class="pnchip-nm">☁️ '+nm+'</span>'
+      + (_masterMode?'':' <span class="pnchip-lock">🔒</span>')
+      + masterBtn+'</div>'
       + '<div class="pnchip-meta"><div class="pnchip-row"><b>확정 현장</b>&nbsp;· 다른 기기</div></div>'
       + '<div class="pnchip-period">'+period+'</div>'
       + '<div class="pnchip-footer" style="justify-content:center">'
@@ -1149,6 +1284,9 @@ function rCloudChips() {
   el.querySelectorAll('.cloud-chip-btn').forEach(function(chip){
     chip.onclick = function(){ loadCloudProject(chip.dataset.cloudpn); };
   });
+
+  /* 마스터 모드 longpress 초기화 */
+  _initMasterLongPress();
 }
 
 async function loadCloudProject(pn) {
