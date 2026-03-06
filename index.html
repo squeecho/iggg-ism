@@ -579,7 +579,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
       <div class="pn-row">
         <input class="fi" type="text" id="fn" placeholder="현장명을 입력하세요" autocomplete="off"
           oninput="S.pn=this.value;sync()"
-          onkeydown="if(event.key==='Enter')saveProject()">
+          onkeydown="if(event.key==='Enter'){pnBtnClick();this.blur();}">
         <button class="pnsb" id="pnCancelBtn" onclick="pnCancelRename()" style="display:none;background:#64748b;border-color:#64748b;border-left:1px solid rgba(255,255,255,.2);border-right:none;border-radius:0;padding:0 12px;" title="이름 변경 취소">✕</button>
         <button class="pnsb" id="pnSaveBtn" onclick="pnBtnClick()">추가</button>
       </div>
@@ -958,6 +958,7 @@ function saveProject(){
       if(activeChip)activeChip.scrollIntoView({behavior:'smooth',block:'nearest'});
     },50);
     toast(nm+' 등록됐어요!');
+    var fnEl=document.getElementById('fn');if(fnEl)fnEl.blur();
   }else{
     var upd=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});
     arr[ci]=upd;setRecent(arr);try{localStorage.setItem('cs_last',nm);}catch(e){}
@@ -3482,16 +3483,27 @@ function igBarpickRender() {
     ['① 시작일을 선택하세요','② 종료일을 선택하세요'][_igBar.step];
   document.getElementById('igBarpickNavLabel').textContent = y + '년 ' + MN[m];
 
-  /* ── 같은 공종(tid), 다른 현장 일정 수집 ── */
+  /* ── 같은 공종(tid) + 같은 업체, 다른 현장 일정 수집 ── */
   var entries = [];
   var monthFirstDs = y+'-'+zz(m+1)+'-01';
   var dim = new Date(y, m+1, 0).getDate();
   var monthLastDs  = y+'-'+zz(m+1)+'-'+zz(dim);
 
+  /* 현재 수정 중인 현장·공종의 업체 목록 */
+  var mySite = _cloudSites.find(function(s){ return s.pn === _igBar.pn; });
+  var myTask = mySite && (mySite.tasks||[]).find(function(t){ return t.id === _igBar.tid; });
+  var myCtors = myTask ? (myTask.contractors||[]).filter(function(c){ return c && c.trim(); }) : [];
+
   _cloudSites.forEach(function(site) {
     if (site.pn === _igBar.pn) return;
     (site.tasks||[]).forEach(function(t) {
       if (!t.on || t.id !== _igBar.tid) return;
+      /* 업체 겹침 없으면 표시 안 함 (내 현장에 업체 미배정이면 모두 표시) */
+      if (myCtors.length > 0) {
+        var siteCtors = (t.contractors||[]).filter(function(c){ return c && c.trim(); });
+        var hasMatch = siteCtors.some(function(c){ return myCtors.indexOf(c) >= 0; });
+        if (!hasMatch) return;
+      }
       var color = (window._igSiteColors && window._igSiteColors[site.pn]) || '#888';
       if (t.sd && t.ed) entries.push({pn:site.pn, color:color, sd:t.sd, ed:t.ed});
       if (t.split && t.sd2 && t.ed2) entries.push({pn:site.pn, color:color, sd:t.sd2, ed:t.ed2});
