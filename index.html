@@ -1979,19 +1979,28 @@ function toggleConfirmedCloud(pn, e) {
 document.addEventListener('DOMContentLoaded', function(){
   initFirebase();
   document.addEventListener('click', function(e){
+    /* 바 탭 → 날짜 선택 모달 */
+    var bar = e.target.closest ? e.target.closest('.ig-bar-tap') : null;
+    if (bar) {
+      e.stopPropagation();
+      var pn = bar.dataset.pn;
+      var tid = parseInt(bar.dataset.tid);
+      var rIdx = parseInt(bar.dataset.ridx);
+      if (pn) igOpenBarModal(pn, tid, rIdx);
+      return;
+    }
     if (e.target.classList.contains('pnchip-confirm')) {
-      var pn = e.target.dataset.pn;
-      if (pn) {
-        /* 0.3초 후 클라우드 동기화 (toggleConfirmed가 먼저 실행되도록) */
+      var pn2 = e.target.dataset.pn;
+      if (pn2) {
         setTimeout(function(){
           var arr = getRecent();
-          var item = arr.find(function(x){ return x.pn === pn; });
+          var item = arr.find(function(x){ return x.pn === pn2; });
           if (!item) return;
           if (item.confirmed) {
             var snap = item.snap ? JSON.parse(item.snap) : null;
-            if (snap) { snap.pn = pn; snap.confirmed = true; saveToCloud(snap); }
+            if (snap) { snap.pn = pn2; snap.confirmed = true; saveToCloud(snap); }
           } else {
-            deleteFromCloud(pn);
+            deleteFromCloud(pn2);
           }
         }, 300);
       }
@@ -2121,9 +2130,9 @@ function rIntegrated() {
           else if (isS)   bc += 'rng-s';
           else if (isE)   bc += 'rng-e';
           else             bc += 'rng-m';
-          var safePn = entry.site.pn.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
           var rIdx = (task.split && rng.sd === task.sd2) ? 1 : 0;
-          bars += '<div class="'+bc+' no-print" style="background:'+color+';cursor:pointer" onclick="event.stopPropagation();igOpenBarModal(\''+safePn+'\','+tid+','+rIdx+')">'
+          bars += '<div class="'+bc+' ig-bar-tap no-print" style="background:'+color+';cursor:pointer"'
+            + ' data-pn="'+esc(entry.site.pn)+'" data-tid="'+tid+'" data-ridx="'+rIdx+'">'
             + (showLabel ? '<span class="ig-cal-bar-label">'+esc(entry.site.pn)+'</span>' : '')
             + '</div>';
         });
