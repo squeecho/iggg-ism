@@ -135,27 +135,32 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-cal-dow-cell{text-align:center;font-size:10px;font-weight:700;color:var(--mu);padding:4px 0;}
 .ig-cal-dow-cell.sun{color:#c53030;}.ig-cal-dow-cell.sat{color:#2045a8;}
 .ig-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);row-gap:2px;}
-.ig-cal-day{position:relative;min-height:36px;display:flex;flex-direction:column;align-items:center;padding:2px 0 4px;}
+.ig-cal-day{position:relative;min-height:54px;display:flex;flex-direction:column;align-items:center;padding:2px 0 4px;}
 .ig-cal-dn{font-size:11px;font-family:'DM Mono',monospace;color:var(--tx);line-height:1.7;z-index:1;position:relative;}
 .ig-cal-day.sun .ig-cal-dn{color:#c53030;}
 .ig-cal-day.sat .ig-cal-dn{color:#2045a8;}
 .ig-cal-day.hol .ig-cal-dn{color:#b45309;}
 .ig-cal-day.today .ig-cal-dn{font-weight:900;text-decoration:underline;}
-.ig-cal-bars{display:flex;flex-direction:column;gap:1px;width:100%;padding:0 1px;}
-.ig-cal-bar{height:6px;border-radius:3px;width:100%;}
+.ig-cal-bars{display:flex;flex-direction:column;gap:2px;width:100%;padding:0 1px;}
+.ig-cal-bar{height:16px;border-radius:3px;width:100%;display:flex;align-items:center;overflow:hidden;}
+.ig-cal-bar-label{font-size:8.5px;color:rgba(255,255,255,.97);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;flex:1;min-width:0;pointer-events:none;letter-spacing:-.3px;}
 .ig-cal-bar.rng-s{border-radius:3px 0 0 3px;margin-left:3px;}
 .ig-cal-bar.rng-e{border-radius:0 3px 3px 0;margin-right:3px;}
 .ig-cal-bar.rng-m{border-radius:0;}
 .ig-cal-bar.rng-se{border-radius:3px;margin:0 3px;}
 
 /* 업체별 섹션 */
-.ig-ctor-section{border-top:1px solid var(--bd);padding:10px 14px 0;}
-.ig-ctor-section:last-of-type{padding-bottom:12px;}
-.ig-ctor-hd{display:flex;align-items:center;gap:7px;margin-bottom:8px;}
+.ig-ctor-wrap{border-top:2px solid var(--bd);overflow:hidden;}
+.ig-ctor-wrap:first-of-type{border-top:none;}
+.ig-ctor-section{padding:10px 14px 6px;}
+.ig-ctor-hd{display:flex;align-items:center;gap:7px;margin-bottom:8px;flex-wrap:wrap;}
+.ig-ctor-trade-tag{font-size:10px;font-weight:700;color:var(--mu);background:var(--bg);border-radius:4px;padding:2px 7px;border:1px solid var(--bd);flex-shrink:0;}
 .ig-ctor-nm{font-size:12px;font-weight:900;color:#15803d;}
 .ig-ctor-nm.unassigned{color:var(--mu);}
 .ig-ctor-badge{background:#dcfce7;color:#15803d;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;font-family:'DM Mono',monospace;}
 .ig-ctor-badge.unassigned{background:var(--al);color:var(--mu);}
+.ig-ctor-img-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:11px 14px;background:#f8fafc;color:#334155;border:none;border-top:1.5px solid var(--bd);font-size:13px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;transition:background .14s;letter-spacing:-.2px;}
+.ig-ctor-img-btn:hover{background:#e2e8f0;color:#0f172a;}
 
 /* 범례 */
 .ig-legend{display:flex;flex-direction:column;gap:8px;}
@@ -177,7 +182,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-suggest-item{padding:7px 14px;font-size:12px;cursor:pointer;color:var(--tx);}
 .ig-suggest-item:hover{background:var(--al);}
 
-/* 이미지 저장 버튼 (카드 하단) */
+/* 이미지 저장 버튼 (공종 전체 - 더 이상 미사용, 업체별 버튼으로 대체) */
 .ig-save-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:#1e293b;color:#fff;border:none;font-size:14px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;transition:background .14s;margin-top:12px;border-radius:0 0 14px 14px;}
 .ig-save-btn:hover{background:#0f172a;}
 /* tasks */
@@ -1921,7 +1926,10 @@ function rIntegrated() {
         else if (ds===useSd) bc+=' rng-s';
         else if (ds===useEd) bc+=' rng-e';
         else bc+=' rng-m';
-        bars += '<div class="'+bc+'" style="background:'+color+'"></div>';
+        var isStart = (ds === useSd);
+        bars += '<div class="'+bc+'" style="background:'+color+'">'
+          + (isStart ? '<span class="ig-cal-bar-label">'+esc(entry.site.pn)+'</span>' : '')
+          + '</div>';
       });
       h += '<div class="'+cls+'"><span class="ig-cal-dn">'+d2+'</span>'+(bars?'<div class="ig-cal-bars">'+bars+'</div>':'')+'</div>';
     }
@@ -1986,9 +1994,12 @@ function rIntegrated() {
     /* 업체별 섹션 (각 업체별 독립 달력 포함) */
     groupNames.forEach(function(ctorName) {
       var siteList = groups[ctorName];
+      var safeCtorName = ctorName.replace(/'/g,'\\\'');
 
+      html += '<div class="ig-ctor-wrap">';
       html += '<div class="ig-ctor-section">';
       html += '<div class="ig-ctor-hd">'
+            + '<span class="ig-ctor-trade-tag">' + tname + '</span>'
             + '<span class="ig-ctor-nm">● ' + esc(ctorName) + '</span>'
             + '<span class="ig-ctor-badge">' + siteList.length + '개 현장</span>'
             + '</div>';
@@ -2001,13 +2012,17 @@ function rIntegrated() {
       siteList.forEach(function(entry) {
         html += makeEntryHtml(entry, tid);
       });
-      html += '</div></div>';
+      html += '</div></div>'; /* ig-ctor-section */
+      html += '<button class="ig-ctor-img-btn no-print" onclick="doIGCtorImg(this,\'' + tname + '\',\'' + safeCtorName + '\')">📷  ' + esc(ctorName) + ' · ' + tname + ' 이미지 저장</button>';
+      html += '</div>'; /* ig-ctor-wrap */
     });
 
     /* 미지정 섹션 */
     if (unassigned.length) {
+      html += '<div class="ig-ctor-wrap">';
       html += '<div class="ig-ctor-section">';
       html += '<div class="ig-ctor-hd">'
+            + '<span class="ig-ctor-trade-tag">' + tname + '</span>'
             + '<span class="ig-ctor-nm unassigned">○ 미지정</span>'
             + '<span class="ig-ctor-badge unassigned">' + unassigned.length + '개 현장</span>'
             + '</div>';
@@ -2019,11 +2034,12 @@ function rIntegrated() {
       unassigned.forEach(function(entry) {
         html += makeEntryHtml(entry, tid);
       });
-      html += '</div></div>';
+      html += '</div></div>'; /* ig-ctor-section */
+      html += '<button class="ig-ctor-img-btn no-print" onclick="doIGCtorImg(this,\'' + tname + '\',\'미지정\')">📷  미지정 · ' + tname + ' 이미지 저장</button>';
+      html += '</div>'; /* ig-ctor-wrap */
     }
 
-    /* 이미지 저장 버튼 (카드 하단 크게) */
-    html += '<button class="ig-save-btn no-print" onclick="doIGImg(this,\'' + tname + '\')">📷  ' + tname + ' 이미지 저장</button>';
+    /* 공종 카드 닫기 (하단 공종 전체 저장 버튼 제거 - 업체별 버튼으로 대체) */
     html += '</div>'; /* ig-trade */
   });
   el.innerHTML = html;
@@ -2162,7 +2178,58 @@ function igRemoveCtor(event, idx) {
   rIntegrated();
 }
 
-/* 통합 탭 이미지 저장 (공종별) */
+/* 통합 탭 이미지 저장 (업체별) */
+async function doIGCtorImg(btn, tradeName, ctorName) {
+  if (typeof html2canvas === 'undefined') { toast('라이브러리 로딩 중...'); return; }
+  var wrap = btn.closest('.ig-ctor-wrap');
+  if (!wrap) return;
+  /* 저장 전 공종 헤더(ig-trade-hd)도 포함하기 위해 임시 래퍼 생성 */
+  var trade = btn.closest('.ig-trade');
+  var tradeHd = trade ? trade.querySelector('.ig-trade-hd') : null;
+  var tempWrap = document.createElement('div');
+  tempWrap.style.cssText = 'position:fixed;left:-9999px;top:0;background:#fff;width:'+Math.floor(wrap.getBoundingClientRect().width)+'px;';
+  if (tradeHd) {
+    var hdClone = tradeHd.cloneNode(true);
+    /* 저장용 버튼류 제거 */
+    hdClone.querySelectorAll('.no-print').forEach(function(el){ el.remove(); });
+    tempWrap.appendChild(hdClone);
+  }
+  var sectionClone = wrap.cloneNode(true);
+  sectionClone.querySelectorAll('.no-print').forEach(function(el){ el.remove(); });
+  tempWrap.appendChild(sectionClone);
+  document.body.appendChild(tempWrap);
+  toast('이미지 생성 중...');
+  await new Promise(function(r){ setTimeout(r, 120); });
+  try {
+    var canvas = await html2canvas(tempWrap, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      scrollX: 0,
+      scrollY: 0,
+      width: tempWrap.offsetWidth,
+      height: tempWrap.scrollHeight,
+      windowWidth: document.documentElement.clientWidth,
+      windowHeight: document.documentElement.clientHeight
+    });
+    var a = document.createElement('a');
+    var d = today().replace(/-/g,'').substring(2);
+    a.download = d + ' 이견공간일정(' + tradeName + '-' + ctorName + ').png';
+    a.href = canvas.toDataURL('image/png');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast('이미지 저장 완료!');
+  } catch(e) {
+    console.error(e);
+    toast('이미지 저장 실패: ' + e.message);
+  } finally {
+    document.body.removeChild(tempWrap);
+  }
+}
+
+/* 통합 탭 이미지 저장 (공종별 - 레거시) */
 async function doIGImg(btn, tradeName) {
   if (typeof html2canvas === 'undefined') { toast('라이브러리 로딩 중...'); return; }
   var card = btn.closest('.ig-trade');
