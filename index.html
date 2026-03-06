@@ -289,6 +289,25 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-date-modal-save:hover{background:#0f172a;}
 .ig-legend-chip-period{font-size:9px;color:var(--mu);font-family:'DM Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;cursor:default;}
 
+/* 바 겹침 선택 시트 */
+.ig-barpick-sheet-ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:910;display:flex;align-items:flex-end;justify-content:center;}
+.ig-barpick-sheet{background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:0 0 env(safe-area-inset-bottom,12px);max-height:70vh;display:flex;flex-direction:column;}
+.ig-barpick-sheet-hd{padding:16px 18px 10px;display:flex;flex-direction:column;border-bottom:1px solid var(--bd);flex-shrink:0;}
+.ig-barpick-sheet-hd-row{display:flex;align-items:center;justify-content:space-between;}
+.ig-barpick-sheet-title{font-size:13px;font-weight:900;color:var(--tx);}
+.ig-barpick-sheet-sub{font-size:11px;color:var(--mu);margin-top:3px;}
+.ig-barpick-sheet-close{border:none;background:none;font-size:20px;color:var(--mu);cursor:pointer;line-height:1;padding:0 4px;}
+.ig-barpick-sheet-list{overflow-y:auto;flex:1;}
+.ig-barpick-sheet-item{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--bd);cursor:pointer;transition:background .12s;-webkit-tap-highlight-color:transparent;user-select:none;}
+.ig-barpick-sheet-item:last-child{border-bottom:none;}
+.ig-barpick-sheet-item:active{background:#f1f5f9;}
+.ig-barpick-sheet-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
+.ig-barpick-sheet-info{flex:1;min-width:0;}
+.ig-barpick-sheet-nm{font-size:14px;font-weight:800;color:var(--tx);}
+.ig-barpick-sheet-trade{font-size:11px;font-weight:700;color:var(--mu);margin-top:2px;}
+.ig-barpick-sheet-period{font-size:11px;font-family:'DM Mono',monospace;color:var(--bar);margin-top:1px;}
+.ig-barpick-sheet-arrow{font-size:16px;color:var(--mu2);flex-shrink:0;}
+
 /* 바 탭 날짜 선택 모달 */
 .ig-barpick-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:920;display:flex;align-items:flex-end;justify-content:center;}
 .ig-barpick-box{background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:480px;display:flex;flex-direction:column;max-height:92vh;overflow:hidden;}
@@ -556,6 +575,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
         <input class="fi" type="text" id="fn" placeholder="현장명을 입력하세요" autocomplete="off"
           oninput="S.pn=this.value;sync()"
           onkeydown="if(event.key==='Enter')saveProject()">
+        <button class="pnsb" id="pnCancelBtn" onclick="pnCancelRename()" style="display:none;background:#64748b;border-color:#64748b;border-left:1px solid rgba(255,255,255,.2);border-right:none;border-radius:0;padding:0 12px;" title="이름 변경 취소">✕</button>
         <button class="pnsb" id="pnSaveBtn" onclick="pnBtnClick()">추가</button>
       </div>
       <div class="pnchips" id="pnchips"></div>
@@ -887,6 +907,14 @@ function renameProject(oldNm,newNm){
   }
   sync();rChips();rChart();
   toast('"'+oldNm+'" → "'+newNm+'" 이름이 변경됐어요!');
+}
+function pnCancelRename(){
+  if(!_origPn)return;
+  S.pn=_origPn;
+  var fn=document.getElementById('fn');
+  if(fn)fn.value=_origPn;
+  sync();
+  toast('이름 변경이 취소됐어요');
 }
 function saveProject(){
   if(!S.pn.trim()){toast('현장명을 먼저 입력해주세요');return;}
@@ -1443,12 +1471,15 @@ function sync(){
   var fs=document.getElementById('fs');if(fs&&document.activeElement!==fs)fs.value=S.sd;
   var fe=document.getElementById('fend');if(fe)fe.value=S.ed||'';
   var btn=document.getElementById('pnSaveBtn');
+  var cancelBtn=document.getElementById('pnCancelBtn');
   if(btn){
     var isExisting=_origPn&&getRecent().some(function(x){return x.pn===_origPn;});
     var isRename=isExisting&&S.pn.trim()&&S.pn.trim()!==_origPn;
     btn.textContent=isRename?'이름 변경':isExisting?'새 현장 +':'추가';
     btn.style.background=isRename?'#7c3aed':'';
     btn.style.borderColor=isRename?'#7c3aed':'';
+    btn.style.borderRadius=isRename?'0 8px 8px 0':'';
+    if(cancelBtn){cancelBtn.style.display=isRename?'':'none';}
   }
   upBadge();
   if(typeof calRender==='function')calRender();
@@ -2508,6 +2539,13 @@ document.addEventListener('DOMContentLoaded', function(){
     var bar = e.target.closest ? e.target.closest('.ig-bar-tap') : null;
     if (bar) {
       e.stopPropagation();
+      /* 같은 날 셀에 바가 여러 개면 선택 시트 표시 */
+      var barsContainer = bar.closest('.ig-cal-bars');
+      var allBars = barsContainer ? barsContainer.querySelectorAll('.ig-bar-tap') : [];
+      if (allBars.length > 1) {
+        igShowBarSheet(allBars);
+        return;
+      }
       var pn = bar.dataset.pn;
       var tid = parseInt(bar.dataset.tid);
       var rIdx = parseInt(bar.dataset.ridx);
@@ -3269,6 +3307,49 @@ var _igBar = {pn:'', tid:0, rIdx:0, sd:'', ed:'', step:0 /* 0=시작선택, 1=�
 var _DW_BP = ['일','월','화','수','목','금','토'];
 var _DC_BP = ['sun','','','','','','sat'];
 
+function igShowBarSheet(barEls) {
+  var items = [];
+  barEls.forEach(function(bar) {
+    var pn = bar.dataset.pn;
+    var tid = parseInt(bar.dataset.tid);
+    var rIdx = parseInt(bar.dataset.ridx);
+    var site = _cloudSites.find(function(s){ return s.pn === pn; });
+    var task = site ? (site.tasks||[]).find(function(t){ return t.id===tid; }) : null;
+    if (!pn || !task) return;
+    var color = (window._igSiteColors && window._igSiteColors[pn]) || bar.style.background || '#888';
+    var tname = IG_TASK_NAMES[tid] || '공종'+tid;
+    var sd = rIdx === 1 ? task.sd2 : task.sd;
+    var ed = rIdx === 1 ? task.ed2 : task.ed;
+    var rLabel = (task.split && rIdx === 1) ? ' (기간 2)' : (task.split && rIdx === 0) ? ' (기간 1)' : '';
+    items.push({pn:pn, tid:tid, rIdx:rIdx, color:color, tname:tname+rLabel, sd:sd||'', ed:ed||''});
+  });
+  if (!items.length) return;
+
+  var listHtml = items.map(function(it) {
+    var period = it.sd ? (it.sd.slice(5).replace('-','/') + ' ~ ' + (it.ed?it.ed.slice(5).replace('-','/'):'?')) : '기간 미설정';
+    return '<div class="ig-barpick-sheet-item" onclick="igSheetSelect(\'' + esc(it.pn) + '\',' + it.tid + ',' + it.rIdx + ')">'
+      + '<div class="ig-barpick-sheet-dot" style="background:' + it.color + '"></div>'
+      + '<div class="ig-barpick-sheet-info">'
+      + '<div class="ig-barpick-sheet-nm">' + esc(it.pn) + '</div>'
+      + '<div class="ig-barpick-sheet-trade">' + esc(it.tname) + '</div>'
+      + '<div class="ig-barpick-sheet-period">' + period + '</div>'
+      + '</div>'
+      + '<span class="ig-barpick-sheet-arrow">›</span>'
+      + '</div>';
+  }).join('');
+
+  document.getElementById('igBarSheetList').innerHTML = listHtml;
+  document.getElementById('igBarSheetCount').textContent = items.length + '개의 일정이 겹쳐 있어요. 수정할 항목을 선택하세요.';
+  document.getElementById('igBarSheetOv').style.display = 'flex';
+}
+function igSheetSelect(pn, tid, rIdx) {
+  igCloseBarSheet();
+  setTimeout(function(){ igOpenBarModal(pn, tid, rIdx); }, 200);
+}
+function igCloseBarSheet() {
+  document.getElementById('igBarSheetOv').style.display = 'none';
+}
+
 function igOpenBarModal(pn, tid, rIdx) {
   var site = _cloudSites.find(function(s){ return s.pn === pn; });
   var task = site ? (site.tasks||[]).find(function(t){ return t.id===tid; }) : null;
@@ -3511,6 +3592,19 @@ function igCloseDateModal() {
       <button class="ig-date-modal-cancel" onclick="igCloseDateModal()">취소</button>
       <button class="ig-date-modal-save" onclick="igSaveDateModal()">✓ 저장 · 공정표 반영</button>
     </div>
+  </div>
+</div>
+<!-- 바 겹침 선택 시트 -->
+<div id="igBarSheetOv" class="ig-barpick-sheet-ov" style="display:none" onclick="if(event.target===this)igCloseBarSheet()">
+  <div class="ig-barpick-sheet">
+    <div class="ig-barpick-sheet-hd">
+      <div class="ig-barpick-sheet-hd-row">
+        <span class="ig-barpick-sheet-title">📌 일정 선택</span>
+        <button class="ig-barpick-sheet-close" onclick="igCloseBarSheet()">&#215;</button>
+      </div>
+      <div class="ig-barpick-sheet-sub" id="igBarSheetCount"></div>
+    </div>
+    <div class="ig-barpick-sheet-list" id="igBarSheetList"></div>
   </div>
 </div>
 <!-- 바 탭 날짜 선택 모달 -->
