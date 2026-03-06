@@ -693,7 +693,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 
 <script>
 var WK=['일','월','화','수','목','금','토'];
-var _open=null,IS_RO=false,_origPn=null;
+var _open=null,IS_RO=false,_origPn=null,_cancelPn=null;
 var RK='cs_recent';
 var _undoStack=[],_redoStack=[];
 function pushUndo(){_undoStack.push(JSON.stringify(S));if(_undoStack.length>30)_undoStack.shift();_redoStack=[];_updUR();}
@@ -887,12 +887,17 @@ function pnBtnClick(){
       var ci=arr.findIndex(function(x){return x.pn===orig;});
       var now=nowTS();
       if(ci>=0){arr[ci]=Object.assign({},arr[ci],{pn:orig,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});setRecent(arr);try{localStorage.setItem('cs_last',orig);}catch(e){}}
+      _cancelPn=orig; /* 취소 시 돌아올 현장 */
       S=defaultState();autoTaskDates();_open=null;_origPn=null;calInit();sync();rEdit();rChips();rChart();
     } else {
       /* 이름이 바뀜 → rename */
       renameProject(orig,newNm);
     }
   } else {
+    /* 새 현장 추가 — 중복 이름 차단 */
+    if(arr.some(function(x){return x.pn===newNm;})){
+      toast('"'+newNm+'" 이름의 현장이 이미 있어요');return;
+    }
     saveProject();
   }
 }
@@ -921,6 +926,15 @@ function renameProject(oldNm,newNm){
   toast('"'+oldNm+'" → "'+newNm+'" 이름이 변경됐어요!');
 }
 function pnCancelRename(){
+  /* 새 현장 입력 중 취소 → 이전 현장으로 복원 */
+  if(!_origPn && _cancelPn){
+    var prev=_cancelPn;
+    _cancelPn=null;
+    loadProject(prev);
+    toast('새 현장 만들기가 취소됐어요');
+    return;
+  }
+  /* 이름 변경 취소 */
   if(!_origPn)return;
   S.pn=_origPn;
   var fn=document.getElementById('fn');
@@ -953,6 +967,8 @@ function saveProject(){
   }
 }
 function loadProject(pn){
+  clearTimeout(_asTimer); /* autoSave 타이머 즉시 취소 — 이전 입력창 값으로 신규생성 방지 */
+  var fn=document.getElementById('fn');if(fn)fn.value='';
   var arr=getRecent();
   var item=arr.find(function(x){return x.pn===pn;});
   if(!item)return;
@@ -991,14 +1007,29 @@ function deleteRecent(pn,ev){
   var item=arr.find(function(x){return x.pn===pn;});
   /* 확정 현장이었으면 Firebase에서도 삭제 */
   if(item&&item.confirmed) deleteFromCloud(pn);
+  var idx=arr.findIndex(function(x){return x.pn===pn;});
+  var next=arr[idx+1]||arr[idx-1]||null; /* 다음 항목 또는 이전 항목 */
   setRecent(arr.filter(function(x){return x.pn!==pn;}));
+  /* 삭제된 현장이 현재 편집 중이면 다음 항목으로 이동 */
+  if(S.pn===pn){
+    clearTimeout(_asTimer);
+    S.pn=''; _origPn=null; _cancelPn=null; /* loadProject 내 재저장 방지 */
+    var fn=document.getElementById('fn');if(fn)fn.value='';
+    if(next){
+      loadProject(next.pn);
+    } else {
+      S=defaultState();autoTaskDates();_open=null;
+      calInit();sync();rEdit();
+    }
+  }
   rChips();
   rCloudChips();
 }
 function delChip(pn,ev){if(ev){ev.stopPropagation();ev.preventDefault();}deleteRecent(pn,null);}
 function newProject(){
-  if(S.pn&&confirm('현재 현장을 저장하고 새 현장을 시작할까요?')){saveProject();}
-  S=defaultState();autoTaskDates();_open=null;sync();rEdit();
+  if(S.pn&&S.pn.trim()){saveProject();}
+  _cancelPn=_origPn||null; /* 취소 시 돌아올 현장 */
+  S=defaultState();autoTaskDates();_open=null;_origPn=null;sync();rEdit();
   document.getElementById('fn').focus();
 }
 var _dropHide=null;
@@ -1504,7 +1535,7 @@ function sync(){
     btn.style.background=isRename?'#7c3aed':'';
     btn.style.borderColor=isRename?'#7c3aed':'';
     btn.style.borderRadius=isRename?'0 8px 8px 0':'';
-    if(cancelBtn){cancelBtn.style.display=isRename?'':'none';}
+    if(cancelBtn){cancelBtn.style.display=(isRename||(!isExisting&&_cancelPn))?'':'none';}
   }
   upBadge();
   if(typeof calRender==='function')calRender();
@@ -2550,6 +2581,8 @@ async function loadCloudSites() {
 /* ── 로컬 확정현장 vs Firebase 동기화 ──
    마스터가 Firebase에서 삭제한 현장이 로컬에 confirmed:true로 남아있으면 자동 해제 */
 function _syncConfirmedWithCloud() {
+  /* Firebase에서 실제로 데이터를 받아온 경우에만 동기화 (빈 응답으로 전체 해제 방지) */
+  if (!_cloudSites || _cloudSites.length === 0) return;
   var arr = getRecent();
   var changed = false;
   arr.forEach(function(item) {
@@ -3528,46 +3561,6 @@ function igBarpickRender() {
       schedEl.innerHTML = sh;
     }
   }
-
-  /* 선택 표시 */
-  igBarpickUpdateSel();
-}
-
-  /* 달력 그리드 */
-  var startDow = new Date(y, m, 1).getDay();
-  var dim = new Date(y, m + 1, 0).getDate();
-  var td = today();
-
-  var h = '<div class="ig-barpick-dow">';
-  _DW_BP.forEach(function(d,i){ h += '<div class="ig-barpick-dow-cell '+_DC_BP[i]+'">'+d+'</div>'; });
-  h += '</div><div class="ig-barpick-grid">';
-
-  for (var i = 0; i < startDow; i++) h += '<div class="ig-barpick-cell empty"></div>';
-  for (var d2 = 1; d2 <= dim; d2++) {
-    var ds = y + '-' + zz(m+1) + '-' + zz(d2);
-    var dw = new Date(y, m, d2).getDay();
-    var cls = 'ig-barpick-cell';
-    if (dw===0) cls += ' sun'; else if (dw===6) cls += ' sat';
-    if (isH(ds)) cls += ' hol';
-
-    var sd = _igBar.sd, ed = _igBar.ed;
-    if (sd && ed && ds > sd && ds < ed) cls += ' in-range';
-    if (sd && ds === sd) cls += ' range-start';
-    if (ed && ds === ed) cls += ' range-end';
-
-    /* 이 날에 해당하는 다른 공종 도트 */
-    var dots = '';
-    otherTasks.forEach(function(ot) {
-      if (ds >= ot.sd && ds <= ot.ed) {
-        dots += '<div class="ig-barpick-task-dot" style="background:'+ot.color+'" title="'+ot.name+'"></div>';
-      }
-    });
-    var dotsHtml = dots ? '<div class="ig-barpick-task-bars">'+dots+'</div>' : '';
-
-    h += '<div class="'+cls+'" onclick="igBarpickTap(\''+ ds +'\')">'+d2+dotsHtml+'</div>';
-  }
-  h += '</div>';
-  document.getElementById('igBarpickCal').innerHTML = h;
 
   /* 선택 표시 */
   igBarpickUpdateSel();
