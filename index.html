@@ -124,8 +124,9 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .archive-header-arrow{font-size:11px;color:#a8a29e;transition:transform .2s;}
 .archive-header-arrow.open{transform:rotate(90deg);}
 .archive-chips{display:none;margin-top:8px;}
-.archive-chips.open{display:flex;flex-wrap:wrap;gap:10px;}
-.pnchip.archived{opacity:.75;border-style:dashed;border-color:#d4cfc7;}
+.archive-chips.open{display:flex;flex-wrap:nowrap;gap:10px;overflow-x:auto;padding-bottom:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.archive-chips.open::-webkit-scrollbar{display:none;}
+.pnchip.archived{opacity:.75;border-style:dashed;border-color:#d4cfc7;flex-shrink:0;min-width:160px;max-width:200px;}
 .pnchip.archived:hover{opacity:1;border-color:var(--barh);}
 .pnchip.archived .pnchip-nm{color:#78716c;}
 .pnchip.archived.active{opacity:1;}
@@ -2541,8 +2542,52 @@ function igToggleTrade(tid) {
   if (chip) chip.classList.toggle('on', !c[tid]);
 }
 
+var _igUndoStack = [], _igRedoStack = [];
 var _igY = new Date().getFullYear();
 var _igM = new Date().getMonth();
+
+/* ── 통합탭 Undo / Redo ── */
+function pushIgUndo(){
+  _igUndoStack.push(JSON.stringify(_cloudSites));
+  if(_igUndoStack.length>20)_igUndoStack.shift();
+  _igRedoStack=[];
+  _igUpdUR();
+}
+function _igRestoreAndSave(prevJson){
+  var prev=JSON.parse(prevJson);
+  /* 바뀐 현장만 Firebase 재저장 */
+  prev.forEach(function(site){
+    var cur=_cloudSites.find(function(s){return s.pn===site.pn;});
+    if(!cur||JSON.stringify(site)!==JSON.stringify(cur)){
+      saveToCloud(site);
+    }
+  });
+  _cloudSites=prev;
+  _igUpdUR();
+  rIntegrated();
+}
+function igDoUndo(){
+  if(!_igUndoStack.length)return;
+  if(navigator.vibrate)navigator.vibrate(15);
+  var prev=_igUndoStack.pop();
+  _igRedoStack.push(JSON.stringify(_cloudSites));
+  _igRestoreAndSave(prev);
+  toast('↩ 되돌렸어요');
+}
+function igDoRedo(){
+  if(!_igRedoStack.length)return;
+  if(navigator.vibrate)navigator.vibrate(15);
+  var next=_igRedoStack.pop();
+  _igUndoStack.push(JSON.stringify(_cloudSites));
+  _igRestoreAndSave(next);
+  toast('↪ 다시 실행됐어요');
+}
+function _igUpdUR(){
+  var u=document.getElementById('igBtnUndo');
+  var r=document.getElementById('igBtnRedo');
+  if(u)u.classList.toggle('on',_igUndoStack.length>0);
+  if(r)r.classList.toggle('on',_igRedoStack.length>0);
+}
 
 function igMove(n) {
   _igM += n;
@@ -2686,20 +2731,31 @@ function rIntegrated() {
 
   var html = setupBanner;
 
+  /* 현장 칩 스트립 (해당 월에 일정 있는 현장) */
+  var monthSites = _cloudSites.filter(siteHasTaskInMonth);
+
   /* 월 네비게이션 */
   html += '<div class="ig-nav no-print">'
     + '<button class="ig-nav-btn" onclick="igMove(-1)">&#8592;</button>'
     + '<div class="ig-nav-center">'
     + '<div class="ig-nav-title">' + _igY + '년 ' + MN[_igM] + '</div>'
-    + '<div class="ig-nav-sub">' + _cloudSites.length + '개 현장 확정됨</div>'
+    + '<div class="ig-nav-sub">' + monthSites.length + '개 현장 / 이번 달 일정</div>'
     + '</div>'
     + '<button class="ig-nav-btn" onclick="igMove(1)">&#8594;</button>'
     + '</div>';
 
-  /* 현장 칩 스트립 (해당 월에 일정 있는 현장 + 새로고침) */
+  /* 새로고침 + Undo/Redo 버튼 */
+  html += '<div class="no-print" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+    + '<div style="display:flex;gap:6px;">'
+    + '<button class="btn bur" id="igBtnUndo" onclick="igDoUndo()" title="실행 취소" style="font-size:12px;padding:6px 12px;">↩ Undo</button>'
+    + '<button class="btn bur" id="igBtnRedo" onclick="igDoRedo()" title="다시 실행" style="font-size:12px;padding:6px 12px;">↪ Redo</button>'
+    + '</div>'
+    + '<button class="ig-refresh" onclick="loadCloudSites().then(rIntegrated)">↻ 새로고침</button>'
+    + '</div>';
+  /* 버튼 활성 상태 반영 (렌더 직후) */
+  setTimeout(_igUpdUR, 0);
+
   html += '<div class="ig-site-strip no-print">';
-  html += '<button class="ig-refresh" onclick="loadCloudSites().then(rIntegrated)">↻ 새로고침</button>';
-  var monthSites = _cloudSites.filter(siteHasTaskInMonth);
   if (monthSites.length) {
     monthSites.forEach(function(site) {
       var color = siteColors[site.pn] || '#888';
@@ -3344,6 +3400,9 @@ function igBarpickSave() {
   } else {
     task.sd = sd; task.ed = ed;
   }
+
+  /* Undo 스냅샷 저장 */
+  pushIgUndo();
 
   /* Firebase 저장 */
   saveToCloud(site);
