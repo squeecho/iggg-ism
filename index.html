@@ -2165,8 +2165,8 @@ function rIntegrated() {
     html += '<div class="ig-trade'+(isCollapsed?' collapsed':'')+'" id="ig-trade-'+tid+'">';
     html += '<div class="ig-trade-hd" onclick="igToggleTrade('+tid+')">'
           + '<span class="ig-trade-nm">' + tname + '</span>'
-          + '<span class="ig-badge">' + monthSiteList.length + '개 현장</span>'
-          + (totalCtors > 1 ? '<span class="ig-badge">' + totalCtors + '개 업체</span>' : '')
+          + '<span class="ig-badge no-print">' + monthSiteList.length + '개 현장</span>'
+          + (totalCtors > 1 ? '<span class="ig-badge no-print">' + totalCtors + '개 업체</span>' : '')
           + '<span class="ig-trade-chevron">▾</span>'
           + '</div>';
     html += '<div class="ig-trade-body">';
@@ -2180,7 +2180,7 @@ function rIntegrated() {
       var s = '<div class="ig-ctor-section">';
       s += '<div class="ig-ctor-hd">'
         + '<span class="'+nmClass+'">'+icon+' '+esc(ctorName||'미지정')+'</span>'
-        + '<span class="'+bdgClass+'">'+siteList.length+'개 현장</span>'
+        + '<span class="'+bdgClass+' no-print">'+siteList.length+'개 현장</span>'
         + '</div>';
       s += makeCalHtml(siteList);
       s += '<div class="ig-legend"><div class="ig-legend-chips">';
