@@ -162,7 +162,8 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-legend-row{display:flex;align-items:flex-start;gap:8px;background:var(--bg);border-radius:10px;padding:9px 10px;}
 .ig-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:3px;}
 .ig-legend-info{flex:1;min-width:0;}
-.ig-legend-nm{font-size:12px;font-weight:800;color:var(--tx);}
+.ig-legend-nm{font-size:12px;font-weight:800;color:var(--tx);display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.ig-site-tip{font-size:10px;font-weight:600;color:#64748b;background:#f1f5f9;border-radius:6px;padding:1px 6px;font-family:'DM Mono',monospace;white-space:nowrap;}
 .ig-legend-dt{font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;margin-bottom:6px;}
 .ig-contractors{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:5px;}
 .ig-chip{display:inline-flex;align-items:center;background:#f0fdf4;border:1px solid #86efac;border-radius:20px;padding:3px 6px 3px 10px;font-size:11px;font-weight:700;color:#15803d;gap:3px;}
@@ -1883,9 +1884,12 @@ function rIntegrated() {
     return;
   }
 
-  /* 현장별 색상 */
+  /* 현장별 색상 (전역 저장으로 makeEntryHtml에서 접근 가능) */
   var siteColors = {};
-  _cloudSites.forEach(function(site, i) { siteColors[site.pn] = IG_COLORS[i % IG_COLORS.length]; });
+  _cloudSites.forEach(function(site, i) {
+    siteColors[site.pn] = IG_COLORS[i % IG_COLORS.length];
+  });
+  window._igSiteColors = siteColors;
 
   /* 달력 렌더 (siteList: [{site, task}] 필터링된 리스트) */
   function makeCalHtml(siteList) {
@@ -1929,7 +1933,7 @@ function rIntegrated() {
   html += '<div class="ig-nav no-print">'
     + '<button class="ig-nav-btn" onclick="igMove(-1)">&#8592;</button>'
     + '<div class="ig-nav-center">'
-    + '<div class="ig-nav-title">' + _igY + '년 ' + MN[_igM] + '월</div>'
+    + '<div class="ig-nav-title">' + _igY + '년 ' + MN[_igM] + '</div>'
     + '<div class="ig-nav-sub">' + _cloudSites.length + '개 현장 확정됨</div>'
     + '</div>'
     + '<button class="ig-nav-btn" onclick="igMove(1)">&#8594;</button>'
@@ -1940,39 +1944,35 @@ function rIntegrated() {
 
   /* 공종별 카드 */
   IG_TASK_ORDER.forEach(function(tid) {
+    /* 만료 현장 제외: site.ed가 오늘보다 이전이면 스킵 */
     var activeSites = _cloudSites.filter(function(site) {
+      if (site.ed && site.ed < td) return false; /* 프로젝트 종료된 현장 제외 */
       return site.tasks && site.tasks.some(function(t){ return t.id===tid && t.on; });
     });
     if (!activeSites.length) return;
 
     /* 업체별 그룹 만들기 */
-    var groups = {}; /* { ctorName: [{site,task,slotIdx}] } */
+    var groups = {}; /* { ctorName: [{site,task}] } */
     var unassigned = [];
     activeSites.forEach(function(site) {
       var task = site.tasks.find(function(t){ return t.id===tid; });
       if (!task) return;
-      var ctors = task.contractors || ['','',''];
-      var hasAny = false;
-      ctors.forEach(function(ct, idx) {
-        if (ct && ct.trim()) {
-          hasAny = true;
+      var ctors = (task.contractors||[]).filter(function(c){ return c && c.trim(); });
+      if (ctors.length) {
+        ctors.forEach(function(ct) {
           if (!groups[ct]) groups[ct] = [];
-          groups[ct].push({site:site, task:task, slotIdx:idx});
-        }
-      });
-      if (!hasAny) unassigned.push({site:site, task:task, slotIdx:-1});
+          /* 중복 방지 */
+          if (!groups[ct].find(function(e){ return e.site.pn === site.pn; }))
+            groups[ct].push({site:site, task:task});
+        });
+      } else {
+        unassigned.push({site:site, task:task});
+      }
     });
 
     var groupNames = Object.keys(groups);
     var totalCtors = groupNames.length + (unassigned.length ? 1 : 0);
     var tname = IG_TASK_NAMES[tid] || ('공종 '+tid);
-
-    /* 전체 현장 리스트 (통합 달력용) */
-    var allEntries = [];
-    activeSites.forEach(function(site) {
-      var task = site.tasks.find(function(t){ return t.id===tid; });
-      if (task) allEntries.push({site:site, task:task});
-    });
 
     html += '<div class="ig-trade">';
 
@@ -1983,78 +1983,73 @@ function rIntegrated() {
           + (totalCtors > 1 ? '<span class="ig-badge">' + totalCtors + '개 업체</span>' : '')
           + '</div>';
 
-    /* 월 라벨 + 통합 달력 1개 */
-    html += '<div class="ig-month-label">' + _igY + '년 ' + MN[_igM] + '월</div>';
-    html += makeCalHtml(allEntries);
-
-    /* 업체별 섹션 (범례만, 달력 없음) */
+    /* 업체별 섹션 (각 업체별 독립 달력 포함) */
     groupNames.forEach(function(ctorName) {
-      var entries = groups[ctorName];
-      var siteList = entries.map(function(e){ return {site:e.site, task:e.task}; });
-      var seen = {};
-      siteList = siteList.filter(function(e){ if(seen[e.site.pn]) return false; seen[e.site.pn]=true; return true; });
+      var siteList = groups[ctorName];
 
       html += '<div class="ig-ctor-section">';
       html += '<div class="ig-ctor-hd">'
             + '<span class="ig-ctor-nm">● ' + esc(ctorName) + '</span>'
             + '<span class="ig-ctor-badge">' + siteList.length + '개 현장</span>'
             + '</div>';
+
+      /* 해당 업체의 현장만 달력에 표시 */
+      html += '<div class="ig-month-label">' + _igY + '년 ' + MN[_igM] + '</div>';
+      html += makeCalHtml(siteList);
+
       html += '<div class="ig-legend">';
       siteList.forEach(function(entry) {
-        var task = entry.task;
-        var color = siteColors[entry.site.pn] || '#888';
-        var pnKey = esc(entry.site.pn);
-        var sd = task.sd||'', ed = task.ed||'';
-        var dtText = (sd&&ed) ? sd.slice(5).replace('-','.')+' ~ '+ed.slice(5).replace('-','.')+'  ('+(dif(sd,ed)+1)+'일)' : '기간 미설정';
-        var ctors = task.contractors||['','',''];
-        html += '<div class="ig-legend-row">'
-              + '<div class="ig-dot" style="background:'+color+'"></div>'
-              + '<div class="ig-legend-info">'
-              + '<div class="ig-legend-nm">'+pnKey+'</div>'
-              + '<div class="ig-legend-dt">'+dtText+'</div>'
-              + makeCtorHtml(ctors, pnKey, tid)
-              + '</div></div>';
+        html += makeEntryHtml(entry, tid);
       });
       html += '</div></div>';
     });
 
     /* 미지정 섹션 */
     if (unassigned.length) {
-      var siteList2 = unassigned.map(function(e){ return {site:e.site, task:e.task}; });
       html += '<div class="ig-ctor-section">';
       html += '<div class="ig-ctor-hd">'
             + '<span class="ig-ctor-nm unassigned">○ 미지정</span>'
-            + '<span class="ig-ctor-badge unassigned">' + siteList2.length + '개 현장</span>'
+            + '<span class="ig-ctor-badge unassigned">' + unassigned.length + '개 현장</span>'
             + '</div>';
+
+      html += '<div class="ig-month-label">' + _igY + '년 ' + MN[_igM] + '</div>';
+      html += makeCalHtml(unassigned);
+
       html += '<div class="ig-legend">';
-      siteList2.forEach(function(entry) {
-        var task = entry.task;
-        var color = siteColors[entry.site.pn]||'#888';
-        var pnKey = esc(entry.site.pn);
-        var sd=task.sd||'',ed=task.ed||'';
-        var dtText=(sd&&ed)?sd.slice(5).replace('-','.')+' ~ '+ed.slice(5).replace('-','.')+'  ('+(dif(sd,ed)+1)+'일)':'기간 미설정';
-        var ctors=task.contractors||['','',''];
-        html += '<div class="ig-legend-row">'
-              + '<div class="ig-dot" style="background:'+color+'"></div>'
-              + '<div class="ig-legend-info">'
-              + '<div class="ig-legend-nm">'+pnKey+'</div>'
-              + '<div class="ig-legend-dt">'+dtText+'</div>'
-              + makeCtorHtml(ctors, pnKey, tid)
-              + '</div></div>';
+      unassigned.forEach(function(entry) {
+        html += makeEntryHtml(entry, tid);
       });
       html += '</div></div>';
     }
 
     /* 이미지 저장 버튼 (카드 하단 크게) */
     html += '<button class="ig-save-btn no-print" onclick="doIGImg(this,\'' + tname + '\')">📷  ' + tname + ' 이미지 저장</button>';
-
     html += '</div>'; /* ig-trade */
   });
-
   el.innerHTML = html;
 }
 
 var _igSaveTimers = {};
+
+/* 현장 범례 한 행 HTML (현장명 팁 포함) */
+function makeEntryHtml(entry, tid) {
+  var task = entry.task;
+  var site = entry.site;
+  /* siteColors는 rIntegrated 클로저 밖이므로 도트색은 data-attribute에서 가져옴 */
+  var color = (window._igSiteColors && window._igSiteColors[site.pn]) || '#888';
+  var pnKey = esc(site.pn);
+  var sd = task.sd||'', ed = task.ed||'';
+  var dtText = (sd&&ed) ? sd.slice(5).replace('-','.')+' ~ '+ed.slice(5).replace('-','.')+'  ('+(dif(sd,ed)+1)+'일)' : '기간 미설정';
+  var tipText = (site.sd&&site.ed) ? site.sd.slice(5).replace('-','.')+' ~ '+site.ed.slice(5).replace('-','.') : '';
+  var ctors = (task.contractors||[]).filter(function(c){ return c && c.trim(); });
+  return '<div class="ig-legend-row">'
+       + '<div class="ig-dot" style="background:'+color+'"></div>'
+       + '<div class="ig-legend-info">'
+       + '<div class="ig-legend-nm">'+pnKey+(tipText?'<span class="ig-site-tip">'+tipText+'</span>':'')+'</div>'
+       + '<div class="ig-legend-dt">'+dtText+'</div>'
+       + makeCtorHtml(ctors, pnKey, tid)
+       + '</div></div>';
+}
 /* 업체 칩 HTML 생성 */
 function makeCtorHtml(ctors, pnKey, tid) {
   var filtered = (ctors||[]).filter(function(c){ return c && c.trim(); });
