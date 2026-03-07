@@ -1192,7 +1192,17 @@ function loadProject(pn){
   var arr=getRecent();
   var item=arr.find(function(x){return x.pn===pn;});
   if(!item)return;
-  if(S.pn&&S.pn!==pn&&!_cloudView){var cur=getRecent();var ci=cur.findIndex(function(x){return x.pn===S.pn;});if(ci>=0){var now2=nowTS();cur[ci]=Object.assign({},cur[ci],{pn:S.pn,sd:S.sd,ed:S.ed,savedAt:now2,snap:JSON.stringify(S)});setRecent(cur);}}
+  if(S.pn&&S.pn!==pn&&!_cloudView){
+    var cur=getRecent();var ci=cur.findIndex(function(x){return x.pn===S.pn;});
+    if(ci>=0){
+      var newSnap=JSON.stringify(S);
+      /* 실제 변경이 있을 때만 savedAt 갱신 */
+      if(cur[ci].snap!==newSnap){
+        cur[ci]=Object.assign({},cur[ci],{pn:S.pn,sd:S.sd,ed:S.ed,savedAt:nowTS(),snap:newSnap});
+        setRecent(cur);
+      }
+    }
+  }
   try{
     var loaded=JSON.parse(item.snap);
     S=loaded;_open=null;_origPn=pn;
@@ -1898,8 +1908,10 @@ function autoSave(){
     var ci=arr.findIndex(function(x){return x.pn===nm;});
     if(ci<0)return;
     if(arr[ci].confirmed)return; /* 확정된 프로젝트는 자동저장 차단 */
-    var now=nowTS();
-    arr[ci]=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S),author:getDeviceName()});
+    var newSnap=JSON.stringify(S);
+    /* 변경 없으면 저장 스킵 — savedAt 갱신 없음 */
+    if(arr[ci].snap===newSnap)return;
+    arr[ci]=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:nowTS(),snap:newSnap,author:getDeviceName()});
     setRecent(arr);try{localStorage.setItem('cs_last',nm);}catch(e){}
     rChips();
   },800);
@@ -3036,13 +3048,38 @@ function _gcalDoUploadAll(){
   }
   var sites=base;
   if(!sites.length){ toast('업로드할 현장이 없어요'); return; }
+
+  /* 변경된 현장만 업로드 (수정 없으면 스킵) */
+  var changed = sites.filter(function(s){ return _gcalNeedsUpload(s); });
+  var skipped = sites.length - changed.length;
+
+  if(!changed.length){
+    toast('📅 모든 현장이 최신 상태예요 ✅');
+    return;
+  }
+
   _gcalShowLoading();
   _gcalRefreshToken(function(){
-    _gcalUpdateLoading('기존 일정 삭제 중...', 10);
-    _gcalDeleteIgEvents(function(){
-      var queue = sites.slice();
+    if(skipped > 0){
+      _gcalUpdateLoading(skipped+'개 현장은 변경 없어 스킵', 10);
+    } else {
+      _gcalUpdateLoading('기존 일정 삭제 중...', 10);
+    }
+    /* 변경된 현장의 기존 이벤트만 삭제 후 재업로드 */
+    _gcalDeleteSiteEvents(changed.map(function(s){return s.pn;}), function(){
+      var queue = changed.slice();
       var total = queue.length;
       var done = 0;
+      /* 이벤트 총 수 기반 타임아웃 재설정: 이벤트당 1초 + 삭제시간 30초 + 여유 30초 */
+      var totalEvts = changed.reduce(function(acc, s){
+        return acc + (s.tasks||[]).filter(function(t){ return t.on&&t.sd&&t.ed; }).length;
+      }, 0);
+      var dynTimeout = Math.max(120000, (totalEvts * 1000) + 60000);
+      clearTimeout(window._gcalLoadTimer);
+      window._gcalLoadTimer = setTimeout(function(){
+        _gcalHideLoading();
+        toast('⚠️ 업로드 시간 초과 — 다시 시도해주세요');
+      }, dynTimeout);
       _gcalUpdateLoading('업로드 준비 중...', 20);
       function uploadNext(){
         if(!queue.length){ _gcalHideLoading(); return; }
@@ -3050,7 +3087,10 @@ function _gcalDoUploadAll(){
         done++;
         var pct = Math.round(20 + (done/total)*75);
         _gcalUpdateLoading((snap.pn||'현장') + ' 업로드 중... ('+done+'/'+total+')', pct);
-        _gcalDoUpload(snap, function(){ uploadNext(); });
+        _gcalDoUpload(snap, function(){
+          _gcalSaveUploadTs(snap.pn); /* 업로드 완료 시간 기록 */
+          uploadNext();
+        });
       }
       uploadNext();
     });
@@ -3059,6 +3099,7 @@ function _gcalDoUploadAll(){
 /* 업로드된 이벤트 ID 저장/로드 */
 /* 업로드 로딩 오버레이 */
 function _gcalShowLoading(){
+  var old=document.getElementById('gcalLoadingBg');if(old)old.remove();
   var bg=document.createElement('div');
   bg.id='gcalLoadingBg';bg.className='gcal-loading-bg';
   bg.innerHTML='<div class="gcal-loading-box">'
@@ -3066,8 +3107,15 @@ function _gcalShowLoading(){
     +'<div class="gcal-loading-title">📅 구글 캘린더 업로드 중</div>'
     +'<div class="gcal-loading-status" id="gcalLoadStat">기존 일정 삭제 중...</div>'
     +'<div class="gcal-loading-bar-wrap"><div class="gcal-loading-bar" id="gcalLoadBar"></div></div>'
+    +'<button onclick="_gcalHideLoading()" style="margin-top:8px;background:none;border:none;color:#475569;font-size:11px;cursor:pointer;">✕ 닫기</button>'
     +'</div>';
   document.body.appendChild(bg);
+  /* 타임아웃: 기본 120초 (업로드 시작 후 동적 재설정 가능) */
+  clearTimeout(window._gcalLoadTimer);
+  window._gcalLoadTimer = setTimeout(function(){
+    _gcalHideLoading();
+    toast('⚠️ 업로드 시간 초과 — 다시 시도해주세요');
+  }, 120000);
 }
 function _gcalUpdateLoading(msg,pct){
   var s=document.getElementById('gcalLoadStat');
@@ -3076,12 +3124,99 @@ function _gcalUpdateLoading(msg,pct){
   if(b)b.style.width=(pct||0)+'%';
 }
 function _gcalHideLoading(){
+  clearTimeout(window._gcalLoadTimer);
   var bg=document.getElementById('gcalLoadingBg');
   if(bg)bg.remove();
+}
+
+/* 현장별 마지막 업로드 시간 저장/로드 */
+function _gcalSaveUploadTs(pn){
+  try{
+    var map = JSON.parse(localStorage.getItem('_gcalUploadTs')||'{}');
+    map[pn] = Date.now();
+    localStorage.setItem('_gcalUploadTs', JSON.stringify(map));
+  }catch(e){}
+}
+function _gcalGetUploadTs(pn){
+  try{
+    var map = JSON.parse(localStorage.getItem('_gcalUploadTs')||'{}');
+    return map[pn] || 0;
+  }catch(e){ return 0; }
+}
+function _gcalClearUploadTs(){
+  try{ localStorage.removeItem('_gcalUploadTs'); }catch(e){}
+}
+function _gcalNeedsUpload(site){
+  /* savedAt이 없거나 마지막 업로드 이후 수정됐으면 업로드 필요 */
+  var lastUp = _gcalGetUploadTs(site.pn);
+  if(!lastUp) return true;
+  var savedAt = site.savedAt;
+  if(!savedAt) return true;
+  /* savedAt이 문자열 '2026-03-08 01:59' 형식이면 Date로 변환 */
+  var savedMs = typeof savedAt === 'number' ? savedAt : new Date(savedAt.replace(' ','T')).getTime();
+  if(isNaN(savedMs)) return true;
+  return savedMs > lastUp;
+}
+/* 토큰 갱신 후 콜백 — 만료됐을 가능성 있을 때 안전하게 재발급 */
+function _gcalRefreshToken(cb){
+  if(!_gcalTokenClient){ cb(); return; }
+  var done = false;
+  var timer = setTimeout(function(){ if(!done){ done=true; cb(); } }, 5000);
+  _gcalTokenClient.callback = function(resp){
+    if(resp && resp.access_token){ _gcalToken = resp.access_token; }
+    if(!done){ done=true; clearTimeout(timer); cb(); }
+  };
+  try {
+    _gcalTokenClient.requestAccessToken({prompt:''});
+  } catch(e) {
+    if(!done){ done=true; clearTimeout(timer); cb(); }
+  }
 }
 function _gcalSaveIds(ids){try{localStorage.setItem('_gcalUploadedIds',JSON.stringify(ids));}catch(e){}}
 function _gcalLoadIds(){try{var v=localStorage.getItem('_gcalUploadedIds');return v?JSON.parse(v):[];}catch(e){return[];}}
 
+
+/* 특정 현장 pn 목록의 이벤트만 삭제 (전체 삭제 대신 선택적 삭제) */
+function _gcalDeleteSiteEvents(pns, cb){
+  if(!_gcalToken||!_gcalCalendarId||!pns.length){cb();return;}
+  /* localStorage에 저장된 ID는 pn별로 관리하지 않으므로
+     태그 검색으로 해당 현장 이벤트만 찾아 삭제 */
+  var url='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)
+    +'/events?privateExtendedProperty=src%3Diggg-ism&maxResults=2500&showDeleted=false';
+  fetch(url,{headers:{'Authorization':'Bearer '+_gcalToken}})
+    .then(function(r){return r.json();})
+    .then(function(data){
+      var items = (data.items||[]).filter(function(ev){
+        /* summary에서 pn 지역부분 매칭: "강남 | 목공..." → "강남" */
+        var sum = ev.summary || '';
+        return pns.some(function(pn){
+          var region = pn.indexOf(' ')>0 ? pn.slice(0,pn.indexOf(' ')) : pn;
+          return sum.indexOf(region+' |') === 0 || sum.indexOf(region+'|') === 0;
+        });
+      });
+      /* 저장된 ID 중 변경 현장 것도 포함 */
+      var savedIds = _gcalLoadIds();
+      /* 일단 전체 저장 ID 삭제 대상에 포함 (pn별 분리 없으므로 전체 클리어) */
+      var allDelIds = items.map(function(x){return x.id;});
+      savedIds.forEach(function(id){ if(allDelIds.indexOf(id)<0) allDelIds.push(id); });
+      _gcalSaveIds([]);
+      if(!allDelIds.length){cb();return;}
+      var delQueue = allDelIds.slice();
+      function delNext(){
+        if(!delQueue.length){cb();return;}
+        var id = delQueue.shift();
+        fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events/'+id,
+          {method:'DELETE',headers:{'Authorization':'Bearer '+_gcalToken}})
+          .then(function(r){
+            if(!r.ok&&r.status!==404&&r.status!==410) console.warn('[gcal] DELETE '+r.status+' id='+id);
+          })
+          .catch(function(e){console.warn('[gcal] DELETE error',e);})
+          .finally(function(){setTimeout(delNext,80);});
+      }
+      delNext();
+    })
+    .catch(function(){cb();});
+}
 /* 저장된 ID + 태그 이벤트 전부 삭제 후 콜백 */
 function _gcalDeleteIgEvents(cb){
   if(!_gcalToken||!_gcalCalendarId){cb();return;}
