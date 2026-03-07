@@ -2998,20 +2998,8 @@ function initGoogleAuth(){
         var ps=_gcalPendingSnap; _gcalPendingSnap=null;
         _gcalPickCalendar(function(){_gcalDoUpload(ps);});
       } else {
-        /* 최초 연동: detail 캘린더 선택 → 완료 후 simple 캘린더 선택 */
-        _gcalPickMode = 'detail';
-        _gcalPickCalendar(function(){
-          /* detail 지정 완료 → simple 미지정이면 선택 요청 */
-          var simpleNotSet = !_gcalCalIdSimple
-            || _gcalCalIdSimple === 'primary'
-            || !localStorage.getItem('_gcalCalIdSimple');
-          if(simpleNotSet){
-            _gcalPickMode = 'simple';
-            _gcalPickCalendar(function(){ _gcalSyncUI(); });
-          } else {
-            _gcalSyncUI();
-          }
-        });
+        /* 최초 연동: detail → simple 순서로 미지정 캘린더만 선택 */
+        _gcalPickCalendarQueue(['detail','simple'], function(){ _gcalSyncUI(); });
       }
     }
   });
@@ -3145,6 +3133,23 @@ function _gcalDoUploadAll(onAllDone){
     }
   });
   var sites=base;
+
+  /* 업로드 기록에 있지만 현재 확정 목록에 없는 현장 → 캘린더에서 삭제 */
+  (function(){
+    try{
+      var tsRaw = localStorage.getItem(_gcalTsKey(_gcalCalendarId));
+      var tsMap = tsRaw ? JSON.parse(tsRaw) : {};
+      var uploadedPns = Object.keys(tsMap);
+      var activePns = sites.map(function(s){ return s.pn; });
+      var toRemove = uploadedPns.filter(function(pn){ return activePns.indexOf(pn)<0; });
+      if(toRemove.length){
+        _gcalDeleteSiteEvents(toRemove, function(){
+          toRemove.forEach(function(pn){ _gcalClearUploadTs_pn(pn); });
+        });
+      }
+    }catch(e){}
+  })();
+
   if(!sites.length){ toast('확정된 현장이 없어요'); return; }
 
   /* 변경된 현장만 업로드 (수정 없으면 스킵) */
@@ -3270,7 +3275,16 @@ function _gcalNeedsUpload(site){
   if(!lastUp) return true;
   var savedAt = site.savedAt;
   if(!savedAt) return true;
-  var savedMs = typeof savedAt === 'number' ? savedAt : new Date(savedAt.replace(' ','T')).getTime();
+  var savedMs;
+  if(typeof savedAt === 'number'){
+    savedMs = savedAt;
+  } else {
+    /* "2026-03-08 02:28" or "2026-03-08T02:28" 모두 처리 */
+    var s = String(savedAt).trim().replace(' ','T');
+    /* 초가 없으면 :00 추가 */
+    if(/T\d{2}:\d{2}$/.test(s)) s += ':00';
+    savedMs = new Date(s).getTime();
+  }
   if(isNaN(savedMs)) return true;
   return savedMs > lastUp;
 }
@@ -3434,6 +3448,23 @@ function gcalToggleChange(){
 }
 
 
+
+/* 캘린더 선택 단계별 큐 처리 */
+function _gcalPickCalendarQueue(modes, finalCb){
+  var queue = modes.slice();
+  function next(){
+    if(!queue.length){ if(finalCb)finalCb(); return; }
+    var mode = queue.shift();
+    _gcalPickMode = mode;
+    /* 이미 저장된 경우 스킵 */
+    var alreadySet = (mode==='simple')
+      ? !!localStorage.getItem('_gcalCalIdSimple')
+      : !!localStorage.getItem('_gcalCalIdDetail');
+    if(alreadySet){ next(); return; }
+    _gcalPickCalendar(function(){ next(); });
+  }
+  next();
+}
 function _gcalChangeCalendar(mode){
   _gcalPickMode = mode || 'detail';
   if(!_gcalToken){
