@@ -2881,14 +2881,17 @@ function _gcalColorId(pn){
   return GCAL_COLOR_IDS[Math.abs(h)%GCAL_COLOR_IDS.length];
 }
 
-function _gcalShortPn(pn){
-  return pn.length>8?pn.slice(0,6)+'…':pn;
+function _gcalRegion(pn){
+  /* '지역 브랜드' 형식에서 지역(첫 번째 공백 앞) 추출
+     공백 없으면 전체 현장명 사용 */
+  var idx = pn.indexOf(' ');
+  return idx > 0 ? pn.slice(0, idx) : pn;
 }
 
-function _gcalEventTitle(pn,taskName,vendor){
-  var s=_gcalShortPn(pn);
-  var t=TASK_SHORT[taskName]||taskName;
-  return s+' | '+t+(vendor?' | '+vendor:'');
+function _gcalEventTitle(pn, taskName, vendor){
+  var region = _gcalRegion(pn);
+  var t = TASK_SHORT[taskName] || taskName;
+  return region + ' | ' + t + (vendor ? ' | ' + vendor : '');
 }
 
 function initGoogleAuth(){
@@ -3014,10 +3017,34 @@ function _gcalDoUploadAll(){
   var sites=base;
   if(!sites.length){ toast('업로드할 현장이 없어요'); return; }
   toast('📅 기존 일정 삭제 후 업로드 중...');
-  _gcalDeleteIgEvents(function(){
-    sites.forEach(function(snap){ _gcalDoUpload(snap); });
+  /* 삭제 전 토큰 갱신 후 진행 */
+  _gcalRefreshToken(function(){
+    _gcalDeleteIgEvents(function(){
+      /* 현장별 순차 업로드 (Rate Limit 방지) */
+      var queue = sites.slice();
+      function uploadNext(){
+        if(!queue.length) return;
+        var snap = queue.shift();
+        _gcalDoUpload(snap, function(){ uploadNext(); });
+      }
+      uploadNext();
+    });
   });
 }
+/* 토큰 갱신 후 콜백 — 만료됐을 가능성 있을 때 안전하게 재발급 */
+function _gcalRefreshToken(cb){
+  if(!_gcalTokenClient){ cb(); return; }
+  var done = false;
+  var timer = setTimeout(function(){ if(!done){ done=true; cb(); } }, 5000);
+  /* 임시 onSuccess 후킹 */
+  var _origHandler = window._gcalTokenResponse;
+  _gcalTokenClient.callback = function(resp){
+    if(resp.access_token){ _gcalToken = resp.access_token; }
+    if(!done){ done=true; clearTimeout(timer); cb(); }
+  };
+  _gcalTokenClient.requestAccessToken({prompt:''});
+}
+
 /* 업로드된 이벤트 ID 저장/로드 */
 function _gcalSaveIds(ids){try{localStorage.setItem('_gcalUploadedIds',JSON.stringify(ids));}catch(e){}}
 function _gcalLoadIds(){try{var v=localStorage.getItem('_gcalUploadedIds');return v?JSON.parse(v):[];}catch(e){return[];}}
@@ -3136,49 +3163,58 @@ function gcalUploadOnConfirm(snap){
   _gcalDoUpload(snap);
 }
 
-function _gcalDoUpload(snap){
-  if(!snap||!snap.tasks)return;
+function _gcalDoUpload(snap, onDone){
+  if(!snap||!snap.tasks){ if(onDone)onDone(); return; }
   var pn=snap.pn||'';
   var colorId=_gcalColorId(pn);
   var tasks=(snap.tasks||[]).filter(function(t){return t.on&&t.sd&&t.ed;});
-  if(!tasks.length){toast('📅 업로드할 활성 일정이 없어요');return;}
+  if(!tasks.length){ if(onDone)onDone(); return; }
 
   /* 이벤트 목록 수집 후 순차 전송 (Rate Limit 방지) */
   var _evtQueue=[];
   var _evtDone=0;
   var _evtFailed=0;
+  var INTERVAL=300; /* ms — 너무 빠르면 Rate Limit */
 
   function _sendNext(){
     if(_evtQueue.length===0){
       var total=_evtDone+_evtFailed;
-      if(_evtFailed===0) toast('📅 '+total+'개 일정이 캘린더에 추가됐어요 ✅');
+      if(_evtFailed===0) toast('📅 '+total+'개 일정 추가됐어요 ✅');
       else toast('📅 '+_evtDone+'개 완료 ('+_evtFailed+'개 실패)');
+      if(onDone)onDone();
       return;
     }
     var evt=_evtQueue.shift();
-    fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events',{
-      method:'POST',
-      headers:{'Authorization':'Bearer '+_gcalToken,'Content-Type':'application/json'},
-      body:JSON.stringify(evt)
-    }).then(function(r){
-      if(r.ok){
-        r.json().then(function(j){
-          if(j&&j.id){var ids=_gcalLoadIds();ids.push(j.id);_gcalSaveIds(ids);}
-        }).catch(function(){});
-        _evtDone++;
-      }
-      else{
-        _evtFailed++;
-        r.json().then(function(j){
-          console.error('[gcal]',evt.summary,(j&&j.error&&j.error.message)||r.status);
-        }).catch(function(){});
-      }
-      setTimeout(_sendNext,150); /* 150ms 간격으로 순차 전송 */
-    }).catch(function(e){
-      _evtFailed++;
-      console.error('[gcal]',e);
-      setTimeout(_sendNext,150);
-    });
+    function doPost(retries){
+      fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+_gcalToken,'Content-Type':'application/json'},
+        body:JSON.stringify(evt)
+      }).then(function(r){
+        if(r.ok){
+          r.json().then(function(j){
+            if(j&&j.id){var ids=_gcalLoadIds();ids.push(j.id);_gcalSaveIds(ids);}
+          }).catch(function(){});
+          _evtDone++;
+          setTimeout(_sendNext, INTERVAL);
+        } else if((r.status===429||r.status===403) && retries>0){
+          /* Rate Limit 또는 일시적 403 → 지수 백오프 재시도 */
+          var delay = INTERVAL * (4 - retries) * 3;
+          console.warn('[gcal] '+r.status+' 재시도 '+retries+' ('+delay+'ms)');
+          setTimeout(function(){ doPost(retries-1); }, delay);
+        } else {
+          _evtFailed++;
+          r.json().then(function(j){
+            console.error('[gcal]',evt.summary,(j&&j.error&&j.error.message)||r.status);
+          }).catch(function(){});
+          setTimeout(_sendNext, INTERVAL);
+        }
+      }).catch(function(e){
+        if(retries>0){ setTimeout(function(){ doPost(retries-1); }, INTERVAL*2); }
+        else { _evtFailed++; console.error('[gcal]',e); setTimeout(_sendNext,INTERVAL); }
+      });
+    }
+    doPost(3); /* 최대 3회 재시도 */
   }
 
   tasks.forEach(function(t){
@@ -4039,9 +4075,15 @@ function igRemoveCtor(){}
 /* 이미지 저장 (업체별, 고해상도) */
 async function doIGCtorImg(btn, tradeName, ctorName) {
   if (typeof html2canvas === 'undefined') { toast('라이브러리 로딩 중...'); return; }
-  var section = btn.previousElementSibling; /* ig-ctor-section */
+  /* 버튼의 상위 .ig-ctor-section을 탐색 */
+  var section = btn.closest ? btn.closest('.ig-ctor-section') : null;
+  if (!section) { /* closest 미지원 fallback */
+    var el = btn;
+    while(el && !el.classList.contains('ig-ctor-section')) el = el.parentElement;
+    section = el;
+  }
   var trade = btn.closest ? btn.closest('.ig-trade') : null;
-  if (!section) return;
+  if (!section) { toast('섹션을 찾을 수 없어요'); return; }
 
   var tradeHd = trade ? trade.querySelector('.ig-trade-hd') : null;
   var containerW = section.getBoundingClientRect().width || 360;
@@ -4063,8 +4105,23 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
   toast('이미지 생성 중...');
   await new Promise(function(r){ setTimeout(r, 180); });
 
+  /* 19:9 비율 초과 시 달력 셀 높이 줄여서 맞춤 */
+  var maxH = Math.floor(clone.offsetWidth * 9 / 19);
+  var curH = clone.scrollHeight;
+  if (curH > maxH) {
+    var calCells = clone.querySelectorAll('.ig-cal-day');
+    var ratio = maxH / curH;
+    var newCellH = Math.max(20, Math.floor(72 * ratio));
+    calCells.forEach(function(cell) {
+      cell.style.height = newCellH + 'px';
+      cell.style.minHeight = '0';
+    });
+    await new Promise(function(r){ setTimeout(r, 80); });
+  }
+
   try {
     var scale = Math.max(4, window.devicePixelRatio * 2 || 4);
+    var captureH = Math.min(clone.scrollHeight, maxH);
     var canvas = await html2canvas(clone, {
       scale: scale,
       useCORS: true,
@@ -4074,9 +4131,9 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
       scrollX: 0,
       scrollY: 0,
       width: clone.offsetWidth,
-      height: clone.scrollHeight,
+      height: captureH,
       windowWidth: clone.offsetWidth,
-      windowHeight: clone.scrollHeight
+      windowHeight: captureH
     });
     var a = document.createElement('a');
     var d = today().replace(/-/g,'').substring(2);
