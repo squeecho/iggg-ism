@@ -1261,24 +1261,28 @@ function toggleConfirmed(pn,e){
 
 async function _checkCloudConflict(pn){
   /* 1차: 이미 로드된 클라우드 목록에서 대소문자 무시 비교
-     단, 같은 기기(author)가 올린 현장은 충돌 아님 */
+     단, 같은 기기(author)가 올린 현장은 충돌 아님
+     기기명이 없으면(캐시 초기화 등) author 비교 불가 → 충돌 아님으로 처리 */
   var lowerPn = pn.toLowerCase();
   var myDevice = getDeviceName();
   if (_cloudSites && _cloudSites.length > 0) {
     if (_cloudSites.some(function(s){
-      return s.pn.toLowerCase() === lowerPn && s.author !== myDevice;
+      if(s.pn.toLowerCase() !== lowerPn) return false;
+      if(!myDevice) return false; /* 기기명 없으면 충돌 아님 */
+      return s.author && s.author !== myDevice;
     })) return true;
   }
   /* 2차: Firebase 직접 확인 */
   if(!_fbReady||!_db)return false;
+  if(!myDevice) return false; /* 기기명 없으면 충돌 판단 불가 */
   try{
     var keyOrig = sanitizeKey(pn);
     var keyLow  = sanitizeKey(lowerPn);
     var docOrig = await _db.collection('sites').doc(keyOrig).get();
-    if (docOrig.exists && docOrig.data().author !== myDevice) return true;
+    if (docOrig.exists && docOrig.data().author && docOrig.data().author !== myDevice) return true;
     if (keyOrig !== keyLow) {
       var docLow = await _db.collection('sites').doc(keyLow).get();
-      if (docLow.exists && docLow.data().author !== myDevice) return true;
+      if (docLow.exists && docLow.data().author && docLow.data().author !== myDevice) return true;
     }
     return false;
   }catch(e){return false;}
