@@ -2804,6 +2804,7 @@ var _deviceName = '';
 
 var _gcalToken = null;
 var _gcalEnabled = false;
+var _gcalPendingAction = null; /* 'upload' : 재인증 후 즉시 업로드 */
 var _gcalCalendarId = 'primary';
 var _gcalTokenClient = null;
 var _gcalPendingSnap = null;
@@ -2849,15 +2850,21 @@ function initGoogleAuth(){
       _gcalEnabled=true;
       try{localStorage.setItem('_gcalEnabled','1');}catch(e){}
       _gcalSyncUI();
-      if(_gcalPendingSnap){
+      if(_gcalPendingAction==='upload'){
+        _gcalPendingAction=null;
+        _gcalUploadNow();
+      } else if(_gcalPendingSnap){
         var ps=_gcalPendingSnap; _gcalPendingSnap=null;
-        /* 캘린더 선택 후 업로드 */
         _gcalPickCalendar(function(){_gcalDoUpload(ps);});
       } else {
         _gcalPickCalendar(null);
       }
     }
   });
+  /* 이전 세션에서 연동됐으면 자동 silent 재인증 (토큰은 보안상 저장 불가) */
+  if(_gcalEnabled && _gcalTokenClient){
+    try{ _gcalTokenClient.requestAccessToken({prompt:''}); }catch(e){}
+  }
   _gcalSyncUI();
 }
 
@@ -2928,11 +2935,19 @@ function _submitDeviceName(){
 function getDeviceName(){ return _deviceName||'알 수 없음'; }
 
 function _gcalUploadNow(){
-  if(!_gcalToken){ toast('먼저 구글 캘린더를 연동해주세요'); return; }
+  if(!_gcalToken){
+    /* 토큰 없으면 자동 재인증 후 업로드 */
+    if(_gcalTokenClient && _gcalEnabled){
+      _gcalPendingAction = 'upload';
+      _gcalTokenClient.requestAccessToken({prompt:''});
+    } else {
+      toast('구글 캘린더 연동 스위치를 켜주세요');
+    }
+    return;
+  }
   if(!_gcalCalendarId){ _gcalPickCalendar(function(){ _gcalUploadNow(); }); return; }
   var snap = typeof _cloudView!=='undefined'&&_cloudView ? _cloudView : (typeof S!=='undefined'?S:null);
   if(!snap||!snap.pn){ toast('편집 중인 현장이 없어요'); return; }
-  if(!snap.confirmed){ toast('확정된 현장만 업로드할 수 있어요'); return; }
   _gcalDoUpload(snap);
 }
 function _gcalCloseCalModal(){
