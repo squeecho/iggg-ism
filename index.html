@@ -192,7 +192,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .pnchip.active .pnchip-confirm.on{background:#16a34a;border-color:#16a34a;color:#fff;}
 .pnchip-lock{font-size:12px;line-height:1;}
 /* 통합 탭 */
-.ig-wrap{padding:14px 14px 90px;}
+.ig-wrap{padding:14px 14px 90px;display:grid;grid-template-columns:1fr;gap:14px;align-items:start;}
 .ig-empty{padding:50px 16px;text-align:center;color:var(--mu);}
 .ig-empty-icon{font-size:36px;margin-bottom:12px;}
 .ig-empty-title{font-weight:700;font-size:15px;margin-bottom:6px;color:var(--tx);}
@@ -228,20 +228,16 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-filter-chip.on .ig-filter-chip-dot{background:rgba(255,255,255,.6);}
 
 /* 공종 카드 */
-.ig-trade{background:var(--sf);border:1.5px solid var(--bd);border-radius:16px;margin-bottom:14px;overflow:hidden;}
+.ig-trade{background:var(--sf);border:1.5px solid var(--bd);border-radius:16px;overflow:hidden;}
 .ig-trade.collapsed .ig-trade-body{display:none;}
-.ig-trade-body{display:grid;grid-template-columns:1fr;gap:0;}
-/* 태블릿 세로 (768px~) → 2열 */
+.ig-trade-body{display:flex;flex-direction:column;}
+/* 태블릿 세로 (768px~) → 공종 2열 */
 @media(min-width:768px){
-  .ig-trade-body{grid-template-columns:repeat(2,1fr);}
-  .ig-ctor-section{border-top:1px solid var(--bd);border-right:1px solid var(--bd);}
-  .ig-ctor-section:nth-child(2n){border-right:none;}
+  .ig-wrap{grid-template-columns:repeat(2,1fr);}
 }
-/* 태블릿 가로 / 데스크탑 (960px~) → 3열 */
+/* 태블릿 가로 / 데스크탑 (960px~) → 공종 3열 */
 @media(min-width:960px){
-  .ig-trade-body{grid-template-columns:repeat(3,1fr);}
-  .ig-ctor-section:nth-child(2n){border-right:1px solid var(--bd);}
-  .ig-ctor-section:nth-child(3n){border-right:none;}
+  .ig-wrap{grid-template-columns:repeat(3,1fr);}
 }
 .ig-trade-hd{display:flex;align-items:center;gap:8px;padding:12px 14px 10px;background:var(--tx);flex-wrap:wrap;cursor:pointer;-webkit-tap-highlight-color:transparent;}
 .ig-trade-hd:active{opacity:.85;}
@@ -654,6 +650,9 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
     <span class="tb-label">CONSTRUCTION SCHEDULE</span>
     <span class="tb-site" id="tpn">(현장명 미입력)</span>
   </div>
+  <div id="tbGcalBtn" style="display:none;margin-left:auto;padding-right:12px;">
+    <button onclick="_gcalUploadNow()" style="display:flex;align-items:center;gap:5px;background:rgba(22,163,74,.15);border:1px solid rgba(22,163,74,.5);border-radius:7px;color:#4ade80;font-size:10px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;line-height:1.5;">📅 캘린더 업로드</button>
+  </div>
   
 </div>
 <div class="tabs" id="tabs">
@@ -730,7 +729,10 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
         </div>
       </label>
     </div>
-    <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-top:4px;">확정 시 자동으로 구글 캘린더에 업로드됩니다</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;gap:8px;">
+      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);">확정 시 자동으로 구글 캘린더에 업로드됩니다</div>
+      <button id="gcalUploadNowBtn" onclick="_gcalUploadNow()" style="display:none;font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid #16a34a;background:transparent;color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;">지금 업로드</button>
+    </div>
   </div>
   <!-- 잠금 영역: 공사기간 + 공종 + 비고 -->
   <div id="edit-lockable" style="position:relative">
@@ -2871,13 +2873,22 @@ function _gcalSyncUI(){
     if(label)label.textContent='연동 중';
     if(sub){
       var calName=_gcalCalendarId==='primary'?'기본 캘린더':_gcalCalendarId;
+      try{ var cn2=localStorage.getItem('_gcalCalendarName'); if(cn2)calName=cn2; }catch(e){}
       sub.textContent='확정 시 자동 업로드 · '+calName;
     }
+    var uploadBtn=document.getElementById('gcalUploadNowBtn');
+    if(uploadBtn)uploadBtn.style.display='block';
+    var tbBtn=document.getElementById('tbGcalBtn');
+    if(tbBtn)tbBtn.style.display='block';
   } else {
     wrap.style.background='#d1d5db';
     if(thumb)thumb.style.left='2px';
     if(label)label.textContent='꺼짐';
     if(sub)sub.textContent='확정 시 자동으로 구글 캘린더에 업로드됩니다';
+    var uploadBtn=document.getElementById('gcalUploadNowBtn');
+    if(uploadBtn)uploadBtn.style.display='none';
+    var tbBtn=document.getElementById('tbGcalBtn');
+    if(tbBtn)tbBtn.style.display='none';
   }
 }
 
@@ -2916,6 +2927,14 @@ function _submitDeviceName(){
 }
 function getDeviceName(){ return _deviceName||'알 수 없음'; }
 
+function _gcalUploadNow(){
+  if(!_gcalToken){ toast('먼저 구글 캘린더를 연동해주세요'); return; }
+  if(!_gcalCalendarId){ _gcalPickCalendar(function(){ _gcalUploadNow(); }); return; }
+  var snap = typeof _cloudView!=='undefined'&&_cloudView ? _cloudView : (typeof S!=='undefined'?S:null);
+  if(!snap||!snap.pn){ toast('편집 중인 현장이 없어요'); return; }
+  if(!snap.confirmed){ toast('확정된 현장만 업로드할 수 있어요'); return; }
+  _gcalDoUpload(snap);
+}
 function _gcalCloseCalModal(){
   var m=document.getElementById('_gcalCalModalBg');
   if(m)m.remove();
@@ -2959,15 +2978,22 @@ function _gcalShowCalModal(calendars,onDone){
   bg.className='master-modal-bg';
   var opts=calendars.map(function(c){
     var color=c.backgroundColor||'#4285f4';
-    return '<button class="gcal-cal-opt" data-id="'+esc(c.id)+'" data-name="'+esc(c.summary)+'" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:9px 12px;margin:3px 0;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx);cursor:pointer;font-size:13px;">'
-      +'<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:'+color+';flex-shrink:0;"></span>'
-      +esc(c.summary)+'</button>';
+    var isEmail = c.summary && c.summary.includes('@');
+    var label = isEmail ? '기본 캘린더  <span style="font-size:10px;opacity:.6;">'+esc(c.summary)+'</span>' : esc(c.summary);
+    return '<button class="gcal-cal-opt" data-id="'+esc(c.id)+'" data-name="'+esc(c.summary)+'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 14px;border-radius:10px;border:1.5px solid #334155;background:#0f172a;color:#f1f5f9;cursor:pointer;font-size:13px;font-weight:600;font-family:Noto Sans KR,sans-serif;transition:background .12s;">'
+      +'<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:'+color+';flex-shrink:0;box-shadow:0 0 0 2px rgba(255,255,255,.15);"></span>'
+      +label+'</button>';
   }).join('');
-  bg.innerHTML='<div class="master-modal" style="gap:8px;">'
+  var calCount = calendars.length;
+  var hint = calCount <= 1
+    ? '<div style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.25);border-radius:8px;padding:9px 12px;color:#93c5fd;font-size:11px;line-height:1.6;margin-top:2px;">💡 구글 캘린더 앱에서 새 캘린더를 만들면<br>이 목록에 추가돼요</div>'
+    : '';
+  bg.innerHTML='<div class="master-modal" style="gap:10px;">'
     +'<div class="master-modal-title">📅 캘린더 선택</div>'
-    +'<div class="master-modal-sub" style="font-size:11px;">확정 일정을 추가할 캘린더를 선택하세요</div>'
-    +'<div style="max-height:240px;overflow-y:auto;margin-top:4px;">'+opts+'</div>'
-    +'<button class="master-modal-cancel" onclick="_gcalCloseCalModal()">닫기</button>'
+    +'<div class="master-modal-sub">확정 일정을 추가할 캘린더를 선택하세요</div>'
+    +'<div style="max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">'+opts+'</div>'
+    + hint
+    +'<button class="master-modal-cancel" onclick="_gcalCloseCalModal()" style="margin-top:2px;">닫기</button>'
     +'</div>';
   document.body.appendChild(bg);
   bg.querySelectorAll('.gcal-cal-opt').forEach(function(btn){
@@ -3997,6 +4023,8 @@ function igSaveDateModal() {
           else { delete st.sd2; delete st.ed2; }
         }
         arr[ci].snap = JSON.stringify(snapObj);
+        arr[ci].savedAt = nowTS();
+        arr[ci].author = getDeviceName();
         setRecent(arr);
       }
     } catch(e) { console.warn('snap update failed', e); }
