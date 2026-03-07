@@ -3282,7 +3282,7 @@ function _gcalDeleteAllEvents(){
   _gcalRefreshToken(function(){
     _gcalUpdateLoading('캘린더 이벤트 검색 중...', 30);
     _gcalDeleteIgEvents(function(){
-      _gcalSaveIds([]);
+      _gcalSaveIds([], _gcalCalendarId);
       _gcalClearUploadTs();
       _gcalUpdateLoading('삭제 완료!', 100);
       setTimeout(function(){
@@ -3292,8 +3292,9 @@ function _gcalDeleteAllEvents(){
     });
   });
 }
-function _gcalSaveIds(ids){try{localStorage.setItem('_gcalUploadedIds',JSON.stringify(ids));}catch(e){}}
-function _gcalLoadIds(){try{var v=localStorage.getItem('_gcalUploadedIds');return v?JSON.parse(v):[];}catch(e){return[];}}
+function _gcalIdsKey(calId){ return '_gcalIds_'+(calId||_gcalCalendarId||'primary'); }
+function _gcalSaveIds(ids,calId){try{localStorage.setItem(_gcalIdsKey(calId),JSON.stringify(ids));}catch(e){}}
+function _gcalLoadIds(calId){try{var v=localStorage.getItem(_gcalIdsKey(calId));return v?JSON.parse(v):[];}catch(e){return[];}}
 
 
 /* 특정 현장 pn 목록의 이벤트만 삭제 (전체 삭제 대신 선택적 삭제) */
@@ -3315,11 +3316,11 @@ function _gcalDeleteSiteEvents(pns, cb){
         });
       });
       /* 저장된 ID 중 변경 현장 것도 포함 */
-      var savedIds = _gcalLoadIds();
+      var savedIds = _gcalLoadIds(_gcalCalendarId);
       /* 일단 전체 저장 ID 삭제 대상에 포함 (pn별 분리 없으므로 전체 클리어) */
       var allDelIds = items.map(function(x){return x.id;});
       savedIds.forEach(function(id){ if(allDelIds.indexOf(id)<0) allDelIds.push(id); });
-      _gcalSaveIds([]);
+      _gcalSaveIds([], _gcalCalendarId);
       if(!allDelIds.length){cb();return;}
       var delQueue = allDelIds.slice();
       function delNext(){
@@ -3340,8 +3341,8 @@ function _gcalDeleteSiteEvents(pns, cb){
 /* 저장된 ID + 태그 이벤트 전부 삭제 후 콜백 */
 function _gcalDeleteIgEvents(cb){
   if(!_gcalToken||!_gcalCalendarId){cb();return;}
-  /* 1단계: 저장된 ID 목록으로 삭제 */
-  var savedIds=_gcalLoadIds();
+  /* 1단계: 현재 캘린더 기준 저장된 ID만 로드 */
+  var savedIds=_gcalLoadIds(_gcalCalendarId);
   /* 2단계: 태그로도 추가 검색 */
   var url='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)
     +'/events?privateExtendedProperty=src%3Diggg-ism&maxResults=2500&showDeleted=false';
@@ -3352,7 +3353,7 @@ function _gcalDeleteIgEvents(cb){
       /* 합집합 (중복 제거) */
       var allIds=savedIds.slice();
       tagIds.forEach(function(id){if(allIds.indexOf(id)<0)allIds.push(id);});
-      _gcalSaveIds([]); /* 삭제 시작 전 초기화 */
+      _gcalSaveIds([], _gcalCalendarId); /* 삭제 시작 전 초기화 */
       if(!allIds.length){cb();return;}
       /* 순차 삭제 - 병렬 요청 시 토큰 만료 겹침 문제 방지 */
       var delQueue = allIds.slice();
@@ -3515,7 +3516,7 @@ function _gcalDoUploadSimple(snap, onDone){
   }).then(function(r){
     if(r.ok){
       r.json().then(function(j){
-        if(j&&j.id){ var ids=_gcalLoadIds(); ids.push(j.id); _gcalSaveIds(ids); }
+        if(j&&j.id){ var ids=_gcalLoadIds(_gcalCalendarId); ids.push(j.id); _gcalSaveIds(ids,_gcalCalendarId); }
       }).catch(function(){});
       _gcalUpdateLoading('완료!', 100);
       toast('📌 '+pn+' 간략 일정 추가됐어요 ✅');
@@ -3560,7 +3561,7 @@ function _gcalDoUpload(snap, onDone){
       }).then(function(r){
         if(r.ok){
           r.json().then(function(j){
-            if(j&&j.id){var ids=_gcalLoadIds();ids.push(j.id);_gcalSaveIds(ids);}
+            if(j&&j.id){var ids=_gcalLoadIds(_gcalCalendarId);ids.push(j.id);_gcalSaveIds(ids,_gcalCalendarId);}
           }).catch(function(){});
           _evtDone++;
           setTimeout(_sendNext, INTERVAL);
