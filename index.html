@@ -2979,18 +2979,7 @@ function initGoogleAuth(){
         _gcalDoUploadAll();
       } else if(_gcalPendingAction==='uploadBoth'){
         _gcalPendingAction=null;
-        /* 토큰 갱신 완료 — 상세 업로드 후 간략 업로드 순차 실행 */
-        _gcalUploadMode='detail';
-        _gcalDoUploadAll(function(){
-          _gcalUploadMode='simple';
-          /* 간략 캘린더 미지정 시 먼저 선택 */
-          if(!_gcalCalIdSimple||_gcalCalIdSimple==='primary'){
-            _gcalPickMode='simple';
-            _gcalPickCalendar(function(){ _gcalDoUploadAll(); });
-          } else {
-            _gcalDoUploadAll();
-          }
-        });
+        _gcalRunUploadBoth();
       } else if(_gcalPendingAction==='pickCal'){
         _gcalPendingAction=null;
         _gcalPickCalendar(function(){ _gcalSyncUI(); });
@@ -3093,6 +3082,80 @@ function getDeviceName(){ return _deviceName||'알 수 없음'; }
 
 
 /* 상세 + 간략 순차 업로드 — 토큰 1회 갱신 후 연속 실행 */
+/* ── 업로드 메인 오케스트레이터 ─────────────────────────── */
+function _gcalGetActiveSites(){
+  /* 확정된 현장 목록 수집 */
+  var base = (typeof _cloudSites!=='undefined'&&_cloudSites) ? _cloudSites.slice() : [];
+  if(typeof S!=='undefined'&&S&&S.pn&&IS_RO){
+    var si=base.findIndex(function(x){return x.pn===S.pn;});
+    if(si>=0) base[si]=S; else base.push(S);
+  }
+  getRecent().forEach(function(item){
+    if(!item.confirmed||!item.pn||!item.snap) return;
+    if(!base.some(function(x){return x.pn===item.pn;})){
+      try{ var p=JSON.parse(item.snap); if(p&&p.pn) base.push(p); }catch(e){}
+    }
+  });
+  return base;
+}
+
+function _gcalDeleteInactiveSites(activeSites, detailCalId, simpleCalId, cb){
+  /* 해시 기록에 있지만 활성 목록에 없는 현장 → 해당 캘린더에서 삭제 */
+  var activePns = activeSites.map(function(s){return s.pn;});
+  var jobs = [];
+  [detailCalId, simpleCalId].forEach(function(cid){
+    if(!cid) return;
+    var map = {};
+    try{ map=JSON.parse(localStorage.getItem(_gcalTsKey(cid))||'{}'); }catch(e){}
+    var toRemove = Object.keys(map).filter(function(pn){return activePns.indexOf(pn)<0;});
+    if(toRemove.length) jobs.push({cid:cid, pns:toRemove});
+  });
+  if(!jobs.length){ cb(); return; }
+  var ji=0;
+  function nextJob(){
+    if(ji>=jobs.length){ cb(); return; }
+    var job=jobs[ji++];
+    _gcalCalendarId=job.cid;
+    _gcalDeleteSiteEvents(job.pns, function(){
+      job.pns.forEach(function(pn){ _gcalClearUploadTs_pn(pn); });
+      nextJob();
+    });
+  }
+  nextJob();
+}
+
+function _gcalRunUploadBoth(){
+  var detailCalId = _gcalCalIdDetail;
+  var simpleCalId = _gcalCalIdSimple;
+
+  /* 캘린더 미지정 확인 */
+  var missingModes = [];
+  if(!detailCalId||detailCalId==='primary') missingModes.push('detail');
+  if(!simpleCalId||simpleCalId==='primary') missingModes.push('simple');
+  if(missingModes.length){
+    _gcalPickCalendarQueue(missingModes, function(){
+      _gcalRunUploadBoth();
+    });
+    return;
+  }
+
+  var sites = _gcalGetActiveSites();
+  if(!sites.length){ toast('확정된 현장이 없어요'); return; }
+
+  /* 비활성 현장 삭제 (비동기, 업로드와 무관하게 선행) */
+  _gcalDeleteInactiveSites(sites, detailCalId, simpleCalId, function(){
+    /* detail 업로드 */
+    _gcalUploadMode = 'detail';
+    _gcalDoUploadAll(detailCalId, sites, function(){
+      /* simple 업로드 */
+      _gcalUploadMode = 'simple';
+      _gcalDoUploadAll(simpleCalId, sites, function(){
+        toast('📅 캘린더 업로드 완료 ✅');
+      });
+    });
+  });
+}
+
 function _gcalUploadBoth(){
   if(!_gcalEnabled){ toast('구글 캘린더 연동 스위치를 켜주세요'); return; }
   if(!_gcalTokenClient){ toast('잠깐, 초기화 중이에요...'); setTimeout(_gcalUploadBoth, 800); return; }
@@ -3107,110 +3170,64 @@ function _gcalUploadNow(mode){
   _gcalPendingAction = 'upload';
   _gcalTokenClient.requestAccessToken({prompt:''});
 }
-function _gcalDoUploadAll(onAllDone){
-  /* 모드별 캘린더 ID 결정 */
-  var _modeCalId = (_gcalUploadMode==='simple') ? _gcalCalIdSimple : _gcalCalIdDetail;
-  if(!_modeCalId||_modeCalId==='primary'){
-    /* 아직 캘린더 미지정 → 선택 모달 */
-    _gcalPickMode = _gcalUploadMode;
-    _gcalPickCalendar(function(){ _gcalDoUploadAll(); }); return;
+function _gcalDoUploadAll(calId, sites, onAllDone){
+  /* calId: 이번 업로드 대상 캘린더 ID (전역변수 race condition 방지) */
+  if(!calId||calId==='primary'){
+    if(onAllDone)onAllDone();
+    return;
   }
-  _gcalCalendarId = _modeCalId; /* 업로드 중 사용할 ID 세팅 */
-  /* 확정된 현장만 업로드 대상 */
-  var base = (typeof _cloudSites!=='undefined' && _cloudSites) ? _cloudSites.slice() : [];
-  /* S가 확정 상태일 때만 포함 */
-  if(typeof S!=='undefined' && S && S.pn && IS_RO){
-    var _si=base.length; for(var _ii=0;_ii<base.length;_ii++){if(base[_ii].pn===S.pn){_si=_ii;break;}}
-    if(_si<base.length) base[_si]=S; else base.push(S);
-  }
-  /* 로컬 확정 현장 중 _cloudSites에 없는 것도 포함 */
-  var localArr = getRecent();
-  localArr.forEach(function(item){
-    if(!item.confirmed||!item.pn) return;
-    var inBase = base.some(function(x){ return x.pn===item.pn; });
-    if(!inBase && item.snap){
-      try{ var parsed=JSON.parse(item.snap); if(parsed&&parsed.pn) base.push(parsed); }catch(e){}
-    }
-  });
-  var sites=base;
 
-  /* 업로드 기록에 있지만 현재 확정 목록에 없는 현장 → detail+simple 양쪽 캘린더에서 삭제 */
-  (function(){
-    try{
-      var activePns = sites.map(function(s){ return s.pn; });
-      var calIds = [];
-      if(_gcalCalIdDetail) calIds.push(_gcalCalIdDetail);
-      if(_gcalCalIdSimple && calIds.indexOf(_gcalCalIdSimple)<0) calIds.push(_gcalCalIdSimple);
-      calIds.forEach(function(cid){
-        var tsRaw = localStorage.getItem(_gcalTsKey(cid));
-        var tsMap = tsRaw ? JSON.parse(tsRaw) : {};
-        var toRemove = Object.keys(tsMap).filter(function(pn){ return activePns.indexOf(pn)<0; });
-        if(toRemove.length){
-          var prevCalId = _gcalCalendarId;
-          _gcalCalendarId = cid;
-          _gcalDeleteSiteEvents(toRemove, function(){
-            _gcalCalendarId = prevCalId;
-            toRemove.forEach(function(pn){ _gcalClearUploadTs_pn(pn); });
-          });
-        }
-      });
-    }catch(e){}
-  })();
-
-  if(!sites.length){ toast('확정된 현장이 없어요'); return; }
-
-  /* 변경된 현장만 업로드 (수정 없으면 스킵) */
-  var changed = sites.filter(function(s){ return _gcalNeedsUpload(s); });
+  /* 변경된 현장만 필터 */
+  var prevMode = _gcalUploadMode;
+  var changed = sites.filter(function(s){ return _gcalNeedsUpload(s, calId); });
   var skipped = sites.length - changed.length;
 
   if(!changed.length){
-    toast('📅 모든 현장이 최신 상태예요 ✅');
+    if(sites.length) toast('📅 변경된 현장이 없어요 ✅');
     if(onAllDone)onAllDone();
     return;
   }
 
   _gcalShowLoading();
-  /* 토큰은 진입 전(_gcalUploadBoth/_gcalUploadNow)에서 이미 갱신됨 — 여기서 재요청 안 함 */
-  (function(){
-    if(skipped > 0){
-      _gcalUpdateLoading(skipped+'개 현장은 변경 없어 스킵', 10);
-    } else {
-      _gcalUpdateLoading('기존 일정 체크 중...', 10);
-    }
-    /* 변경된 현장의 기존 이벤트만 삭제 후 재업로드 */
-    _gcalDeleteSiteEvents(changed.map(function(s){return s.pn;}), function(){
-      var queue = changed.slice();
-      var total = queue.length;
-      var done = 0;
-      /* 이벤트 총 수 기반 타임아웃 재설정: 이벤트당 1초 + 삭제시간 30초 + 여유 30초 */
-      var totalEvts = changed.reduce(function(acc, s){
-        return acc + (s.tasks||[]).filter(function(t){ return t.on&&t.sd&&t.ed; }).length;
-      }, 0);
-      var dynTimeout = Math.max(120000, (totalEvts * 1000) + 60000);
-      clearTimeout(window._gcalLoadTimer);
-      window._gcalLoadTimer = setTimeout(function(){
+  if(skipped>0) _gcalUpdateLoading(skipped+'개 현장은 변경 없어 스킵', 10);
+  else _gcalUpdateLoading('기존 일정 체크 중...', 10);
+
+  /* 변경된 현장의 기존 이벤트 삭제 후 재업로드 */
+  var prevCalId = _gcalCalendarId;
+  _gcalCalendarId = calId;
+
+  _gcalDeleteSiteEvents(changed.map(function(s){return s.pn;}), function(){
+    var queue = changed.slice();
+    var total = queue.length;
+    var done = 0;
+    var totalEvts = changed.reduce(function(acc,s){
+      return acc+(s.tasks||[]).filter(function(t){return t.on&&t.sd&&t.ed;}).length;
+    },0);
+    var timeoutMs = Math.max(120000, totalEvts*1000+60000);
+    _gcalUpdateLoading('업로드 준비 중...', 20);
+
+    function uploadNext(){
+      if(!queue.length){
+        _gcalCalendarId = prevCalId;
         _gcalHideLoading();
-        toast('⚠️ 업로드 시간 초과 — 다시 시도해주세요');
-      }, dynTimeout);
-      _gcalUpdateLoading('업로드 준비 중...', 20);
-      function uploadNext(){
-        if(!queue.length){ _gcalHideLoading(); if(onAllDone)onAllDone(); return; }
-        var snap = queue.shift();
-        done++;
-        var pct = Math.round(20 + (done/total)*75);
-        _gcalUpdateLoading((snap.pn||'현장') + ' 업로드 중... ('+done+'/'+total+')', pct);
-        var uploadFn = (_gcalUploadMode === 'simple') ? _gcalDoUploadSimple : _gcalDoUpload;
-        uploadFn(snap, function(){
-          _gcalSaveUploadTs(snap.pn, _gcalCalendarId, snap); /* 업로드 완료 해시 저장 */
-          uploadNext();
-        });
+        if(onAllDone)onAllDone();
+        return;
       }
-      uploadNext();
-    });
-  })();
+      var snap = queue.shift();
+      done++;
+      var pct = Math.round(20+(done/total)*75);
+      _gcalUpdateLoading((snap.pn||'현장')+' 업로드 중... ('+done+'/'+total+')', pct);
+      var uploadFn = (_gcalUploadMode==='simple') ? _gcalDoUploadSimple : _gcalDoUpload;
+      uploadFn(snap, function(){
+        _gcalSaveUploadTs(snap.pn, calId, snap);
+        uploadNext();
+      });
+    }
+    uploadNext();
+  });
 }
-/* 업로드된 이벤트 ID 저장/로드 */
-/* 업로드 로딩 오버레이 */
+
+
 function _gcalShowLoading(){
   var old=document.getElementById('gcalLoadingBg');if(old)old.remove();
   var bg=document.createElement('div');
@@ -3302,8 +3319,8 @@ function _gcalClearUploadTs_pn(pn){
     });
   }catch(e){}
 }
-function _gcalNeedsUpload(site){
-  var calId = (_gcalUploadMode==='simple') ? _gcalCalIdSimple : _gcalCalIdDetail;
+function _gcalNeedsUpload(site, calId){
+  if(!calId) calId = (_gcalUploadMode==='simple') ? _gcalCalIdSimple : _gcalCalIdDetail;
   var savedHash = _gcalGetUploadTs(site.pn, calId);
   if(!savedHash) return true;
   return _gcalDataHash(site) !== savedHash;
