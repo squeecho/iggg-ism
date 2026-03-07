@@ -237,8 +237,8 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
   .ig-ctor-section{border-top:1px solid var(--bd);border-right:1px solid var(--bd);}
   .ig-ctor-section:nth-child(2n){border-right:none;}
 }
-/* 태블릿 가로 / 데스크탑 (1100px~) → 3열 */
-@media(min-width:1100px){
+/* 태블릿 가로 / 데스크탑 (960px~) → 3열 */
+@media(min-width:960px){
   .ig-trade-body{grid-template-columns:repeat(3,1fr);}
   .ig-ctor-section:nth-child(2n){border-right:1px solid var(--bd);}
   .ig-ctor-section:nth-child(3n){border-right:none;}
@@ -257,7 +257,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 
 /* 달력 */
 .ig-month-label{padding:8px 10px 3px;font-size:11px;font-weight:900;color:var(--mu);letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid var(--bd);}
-.ig-cal-wrap{padding:6px 8px 8px;}
+.ig-cal-wrap{padding:6px 8px 8px;position:relative;}
 .ig-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--bd);border-bottom:none;border-radius:6px 6px 0 0;overflow:hidden;}
 .ig-cal-dow-cell{text-align:center;font-size:9px;font-weight:700;color:var(--mu);padding:4px 0;background:var(--al);}
 .ig-cal-dow-cell.sun{color:#c53030;}.ig-cal-dow-cell.sat{color:#2045a8;}
@@ -309,9 +309,10 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-ctor-edit-btn.empty{background:#f8fafc;border-color:#cbd5e1;color:#64748b;}
 .ig-ctor-edit-btn.empty:hover{background:#f1f5f9;border-color:#94a3b8;}
 
-/* 이미지 저장 버튼 (업체 섹션 하단) */
-.ig-ctor-save-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:12px 14px;background:#f8fafc;color:#334155;border:none;border-top:1.5px solid var(--bd);font-size:13px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;transition:background .14s;}
-.ig-ctor-save-btn:hover{background:#e2e8f0;}
+/* 이미지 저장 버튼 (달력 우하단 아이콘) */
+.ig-ctor-save-btn{position:absolute;bottom:7px;right:7px;width:28px;height:28px;border-radius:50%;background:rgba(30,30,28,.55);backdrop-filter:blur(4px);border:1.5px solid rgba(255,255,255,.18);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,transform .12s;z-index:10;padding:0;line-height:1;}
+.ig-ctor-save-btn:hover{background:rgba(30,30,28,.82);transform:scale(1.12);}
+.ig-ctor-save-btn:active{transform:scale(.95);}
 
 /* 업체 배정 모달 */
 .ig-ctor-modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:flex;align-items:flex-end;justify-content:center;}
@@ -3428,6 +3429,13 @@ function rIntegrated() {
     h += '</div>';
     return h;
   }
+  function makeCalWithSaveBtn(siteList, curTid, tname, safeCtorName){
+    var cal = makeCalHtml(siteList, curTid);
+    /* 달력 닫힘 </div> 바로 앞에 아이콘 버튼 삽입 */
+    var insertPos = cal.lastIndexOf('</div>');
+    var btn = '<button class="ig-ctor-save-btn no-print" title="이미지 저장" onclick="doIGCtorImg(this,\''+tname+'\',\''+safeCtorName+'\')">📷</button>';
+    return cal.slice(0, insertPos) + btn + cal.slice(insertPos);
+  }
 
   var html = setupBanner;
 
@@ -3574,7 +3582,7 @@ function rIntegrated() {
         + (displayName ? '<span class="'+nmClass+'">'+icon+' '+displayName+'</span>' : '')
         + '<span class="'+bdgClass+' no-print">'+siteList.length+'개 현장</span>'
         + '</div>';
-      s += makeCalHtml(siteList, tid);
+      s += makeCalWithSaveBtn(siteList, tid, tname, safeCtorName);
       /* 겹침 경고 배너 */
       var _ov = igDetectOverlaps(siteList);
       if (_ov.length) {
@@ -3591,11 +3599,7 @@ function rIntegrated() {
       s += '<div class="ig-legend"><div class="ig-legend-chips">';
       siteList.forEach(function(entry) { s += makeEntryHtml(entry, tid); });
       s += '</div></div></div>';
-      /* 업체별 이미지 저장 버튼 */
-      var btnLabel = displayName ? displayName + '  ·  ' + tname : tname;
-      s += '<button class="ig-ctor-save-btn no-print" onclick="doIGCtorImg(this,\''+tname+'\',\''+safeCtorName+'\')">'
-         + '📷 &nbsp;' + btnLabel + ' &nbsp;이미지 저장'
-         + '</button>';
+
       return s;
     }
 
