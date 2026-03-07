@@ -16,12 +16,63 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{--bg:#f2f0eb;--sf:#fff;--bd:#e0dbd2;--bmd:#ccc7bc;--tx:#18170f;--mu:#7a7870;--mu2:#b5b0a8;
 --bar:#cbd5e1;--barh:#94a3b8;--al:#eef2fd;
 --sc:rgba(255,60,60,.07);--sh:#fde8e8;--ac:rgba(60,100,255,.07);--ah:#e4eaff;
 --hc:rgba(255,140,0,.10);--hh:#fff3cd;
 --hd:#1a1916;--ht:#f2f0eb;--rd:#dc2626;--gn:#86efac;--am:#b45309;}
+/* 캡처 시 강제 라이트모드 */
+[data-force-light]{
+--bg:#f2f0eb!important;--sf:#fff!important;--bd:#e0dbd2!important;--bmd:#ccc7bc!important;
+--tx:#18170f!important;--mu:#7a7870!important;--mu2:#b5b0a8!important;
+--bar:#cbd5e1!important;--barh:#94a3b8!important;--al:#eef2fd!important;
+--sc:rgba(255,60,60,.07)!important;--sh:#fde8e8!important;
+--ac:rgba(60,100,255,.07)!important;--ah:#e4eaff!important;
+--hc:rgba(255,140,0,.10)!important;--hh:#fff3cd!important;
+--hd:#1a1916!important;--ht:#f2f0eb!important;--rd:#dc2626!important;
+--gn:#86efac!important;--am:#b45309!important;
+}
+[data-force-light] .pnchip,[data-force-light] .cd,[data-force-light] .ig-trade,
+[data-force-light] .ig-cal-day,[data-force-light] .tabs{background:revert!important;}
+@media(prefers-color-scheme:dark){
+:root{
+--bg:#141412;--sf:#1e1e1b;--bd:#2e2d29;--bmd:#3a3935;
+--tx:#f0ede6;--mu:#8a8880;--mu2:#5a5855;
+--bar:#4a6fa5;--barh:#6b8fc7;--al:#1a2035;
+--sc:rgba(255,80,80,.12);--sh:#3a1a1a;--ac:rgba(80,120,255,.12);--ah:#1a2040;
+--hc:rgba(255,160,0,.12);--hh:#2e2200;
+--hd:#0e0e0c;--ht:#e8e5de;--rd:#f87171;--gn:#4ade80;--am:#fbbf24;
+}
+/* 하드코딩 색상 다크모드 보정 */
+.pnchip{background:var(--sf);}
+.pnchip-nm{color:var(--tx);}
+.pn-drop{background:var(--sf);}
+.pn-drop-head{background:var(--bg);}
+.pn-item:hover{background:var(--al);}
+.tabs{background:#1a1a17;}
+.tab.on{background:var(--sf);color:var(--tx);}
+.archive-header{background:#1e1d18;border-color:#2e2d28;}
+.archive-header:hover{background:#252420;}
+.ig-site-pill{background:var(--sf);}
+.ig-trade{background:var(--sf);}
+.master-modal{background:var(--sf);}
+.master-modal-bg{background:rgba(0,0,0,.75);}
+.cal-wrap,.cal-nav{background:var(--sf);}
+.cal-grid-cell{background:var(--sf);}
+.cal-grid-cell.today{background:var(--al);}
+.ig-cal-day{background:var(--sf);}
+.ig-cal-day.empty{background:var(--bg);}
+.pnchip.archived{background:var(--bg);}
+.pnchip.active{background:#1e3a5f;}
+.cd{background:var(--sf);}
+.fi{background:var(--bg);color:var(--tx);border-color:var(--bd);}
+.fi:focus{background:var(--sf);}
+input,textarea,select{background:var(--bg);color:var(--tx);}
+.btn{background:var(--sf);color:var(--tx);border-color:var(--bd);}
+.bb{background:var(--bar);border-color:var(--bar);}
+}
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);}
 .tb{background:var(--hd);color:var(--ht);padding:0 14px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:500;height:52px;}
@@ -76,6 +127,8 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .pnchip.active{background:#1e293b;border-color:#1e293b;box-shadow:0 2px 8px rgba(30,41,59,.2);}
 .pnchip.confirmed{border-color:#16a34a;border-width:2px;}
 .pnchip.confirmed.active{background:#14532d;border-color:#16a34a;}
+/* 미확정 기간종료 — 흐릿하게 */
+
 .pnchip:hover{border-color:var(--barh);box-shadow:0 2px 6px rgba(0,0,0,.07);}
 .pnchip.confirmed:hover{border-color:#16a34a;}
 .cloud-viewing .pnchip.confirmed:not(.active){opacity:.75;}
@@ -177,6 +230,19 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 /* 공종 카드 */
 .ig-trade{background:var(--sf);border:1.5px solid var(--bd);border-radius:16px;margin-bottom:14px;overflow:hidden;}
 .ig-trade.collapsed .ig-trade-body{display:none;}
+.ig-trade-body{display:grid;grid-template-columns:1fr;gap:0;}
+/* 태블릿 세로 (768px~) → 2열 */
+@media(min-width:768px){
+  .ig-trade-body{grid-template-columns:repeat(2,1fr);}
+  .ig-ctor-section{border-top:1px solid var(--bd);border-right:1px solid var(--bd);}
+  .ig-ctor-section:nth-child(2n){border-right:none;}
+}
+/* 태블릿 가로 / 데스크탑 (1100px~) → 3열 */
+@media(min-width:1100px){
+  .ig-trade-body{grid-template-columns:repeat(3,1fr);}
+  .ig-ctor-section:nth-child(2n){border-right:1px solid var(--bd);}
+  .ig-ctor-section:nth-child(3n){border-right:none;}
+}
 .ig-trade-hd{display:flex;align-items:center;gap:8px;padding:12px 14px 10px;background:var(--tx);flex-wrap:wrap;cursor:pointer;-webkit-tap-highlight-color:transparent;}
 .ig-trade-hd:active{opacity:.85;}
 .ig-trade-nm{font-size:15px;font-weight:900;color:#fff;letter-spacing:-0.3px;}
@@ -216,7 +282,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-cal-next-month{border-top:1px dashed var(--bd);}
 
 /* 업체별 섹션 */
-.ig-ctor-section{border-top:1px solid var(--bd);padding:12px 14px 10px;}
+.ig-ctor-section{border-top:1px solid var(--bd);padding:12px 14px 10px;min-width:0;}
 .ig-ctor-hd{display:flex;align-items:center;gap:7px;margin-bottom:10px;flex-wrap:wrap;}
 .ig-ctor-nm{font-size:13px;font-weight:900;color:#15803d;}
 .ig-ctor-nm.unassigned{color:var(--mu);}
@@ -598,7 +664,10 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 <div class="pg on ep" id="pe">
   <!-- 현장명·칩: 블러 없음 -->
   <div class="cd">
-    <div class="sl">프로젝트 정보</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div class="sl" style="margin-bottom:0;">프로젝트 정보</div>
+      <button id="clearCacheBtn" onclick="_showClearCacheModal()" style="display:none;border:none;background:rgba(239,68,68,.12);border-radius:6px;font-size:10px;font-weight:700;color:#f87171;cursor:pointer;padding:3px 9px;line-height:1.6;font-family:'Noto Sans KR',sans-serif;">🗑️ 캐시 초기화</button>
+    </div>
     <div class="ff fu">
       <label>현장명</label>
       <div class="pn-row">
@@ -613,7 +682,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
       <div class="archive-wrap" id="archiveWrap" style="display:none;">
         <div class="archive-header" id="archiveHeader" onclick="toggleArchive()">
           <span class="archive-header-icon">🗂️</span>
-          <span class="archive-header-title">지난 확정현장</span>
+          <span class="archive-header-title">지난 현장</span>
           <span class="archive-header-count" id="archiveCount">0</span>
           <span class="archive-header-arrow" id="archiveArrow">▶</span>
         </div>
@@ -628,7 +697,6 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
           </div>
           <div style="display:flex;align-items:center;gap:4px;">
             <button id="masterToggleBtn" onclick="_showMasterModal()" title="마스터 모드" style="border:none;background:none;font-size:14px;color:var(--mu2);cursor:pointer;padding:2px 5px;line-height:1;opacity:.5;">🔒</button>
-            <button onclick="loadCloudSites().then(rCloudChips)" style="border:none;background:none;font-size:12px;color:#3b82f6;font-weight:700;cursor:pointer;padding:2px 6px;">↻ 새로고침</button>
           </div>
         </div>
         <div id="cloudChipsBody" style="display:none;">
@@ -646,6 +714,22 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
         </div><!-- /cloudChipsBody -->
       </div>
     </div>
+  </div>
+  <!-- Google Calendar 연동 -->
+  <div id="gcalSection" style="margin-top:12px;padding:10px 14px;background:var(--card);border-radius:10px;border:1px solid var(--bd);">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:14px;">📅</span>
+        <span style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;">구글 캘린더 자동 연동</span>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
+        <span id="gcalStatusLabel" style="font-size:10px;color:var(--mu);">꺼짐</span>
+        <div id="gcalToggleWrap" onclick="gcalToggleChange()" style="width:36px;height:20px;border-radius:10px;background:#d1d5db;position:relative;cursor:pointer;transition:background .2s;">
+          <div id="gcalToggleThumb" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);"></div>
+        </div>
+      </label>
+    </div>
+    <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-top:4px;">확정 시 자동으로 구글 캘린더에 업로드됩니다</div>
   </div>
   <!-- 잠금 영역: 공사기간 + 공종 + 비고 -->
   <div id="edit-lockable" style="position:relative">
@@ -1207,6 +1291,8 @@ function _doConfirmToggle(pn,confirming){
     }
   }
 
+  /* 작성자 기록 */
+  if(arr[ci])arr[ci].author=getDeviceName();
   setRecent(arr);
 
   /* Firebase 동기화 */
@@ -1214,6 +1300,8 @@ function _doConfirmToggle(pn,confirming){
   if(item&&item.confirmed){
     var snap=item.snap?JSON.parse(item.snap):null;
     if(snap){snap.pn=pn;snap.confirmed=true;saveToCloud(snap);}
+    /* Google Calendar 자동 업로드 */
+    if(snap) gcalUploadOnConfirm(snap);
   } else {
     deleteFromCloud(pn);
   }
@@ -1257,8 +1345,13 @@ var _masterLockUntil=0;
 var _masterLongPressTimer=null;
 
 async function _sha256(str){
-  var buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+  try{
+    var buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));
+    return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+  }catch(e){
+    toast('⚠️ 암호화 오류 — HTTPS 환경에서만 사용 가능합니다');
+    return null;
+  }
 }
 
 function _showMasterModal(){
@@ -1298,6 +1391,7 @@ async function _submitMaster(){
   var inp=document.getElementById('masterPwInput');
   if(!inp)return;
   var hash=await _sha256(inp.value);
+  if(!hash)return; /* _sha256 실패 시 조용히 중단 */
   if(hash===_MASTER_HASH){
     _masterFailCount=0;
     _masterMode=true;
@@ -1307,6 +1401,7 @@ async function _submitMaster(){
     var mbtn=document.getElementById('masterToggleBtn');
     if(mbtn){mbtn.textContent='🔓';mbtn.style.opacity='1';mbtn.title='마스터 모드 해제';}
     toast('🔑 마스터 모드 활성화 — 클라우드 삭제 가능');
+    var ccBtn=document.getElementById('clearCacheBtn');if(ccBtn)ccBtn.style.display='';
     loadCloudSites().then(rCloudChips);
     /* 5분 후 자동 해제 */
     setTimeout(_exitMasterMode, 5*60*1000);
@@ -1325,12 +1420,62 @@ async function _submitMaster(){
   }
 }
 
+/* ─ 캐시 초기화 ─ */
+function _closeClearCacheModal(){
+  var bg=document.getElementById('_clearCacheModalBg');if(bg)bg.remove();
+}
+function _showClearCacheModal(){
+  var old=document.getElementById('_clearCacheModalBg');if(old)old.remove();
+  var bg=document.createElement('div');
+  bg.id='_clearCacheModalBg';
+  bg.className='master-modal-bg';
+  bg.innerHTML='<div class="master-modal" style="gap:14px;">'
+    +'<div class="master-modal-title">🗑️ 캐시 초기화</div>'
+    +'<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:10px;padding:12px 14px;">'
+    +'<div style="color:#fca5a5;font-size:12px;font-weight:700;margin-bottom:6px;">삭제되는 항목</div>'
+    +'<div style="color:#94a3b8;font-size:11px;line-height:1.8;">• 앱 캐시 (localStorage)<br>• Service Worker 캐시<br>• 임시 세션 데이터</div>'
+    +'</div>'
+    +'<div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);border-radius:10px;padding:10px 14px;">'
+    +'<div style="color:#fbbf24;font-size:11px;font-weight:700;">⚠️ 참고</div>'
+    +'<div style="color:#94a3b8;font-size:11px;margin-top:3px;">초기화 후 기기 별명을 다시 입력해야 해요</div>'
+    +'</div>'
+    +'<div style="color:#64748b;font-size:11px;text-align:center;">초기화 후 페이지가 자동으로 새로고침됩니다</div>'
+    +'<div class="master-modal-btns">'
+    +'<button class="master-modal-cancel" onclick="_closeClearCacheModal()">취소</button>'
+    +'<button class="master-modal-ok" style="background:#ef4444;" onclick="_doClearCache()">🗑️ 초기화 후 새로고침</button>'
+    +'</div></div>';
+  document.body.appendChild(bg);
+}
+async function _doClearCache(){
+  /* localStorage 전체 삭제 */
+  try{localStorage.clear();}catch(e){}
+  /* sessionStorage 삭제 */
+  try{sessionStorage.clear();}catch(e){}
+  /* Service Worker 캐시 삭제 */
+  if('caches' in window){
+    try{
+      var keys=await caches.keys();
+      await Promise.all(keys.map(function(k){return caches.delete(k);}));
+    }catch(e){}
+  }
+  /* Service Worker 등록 해제 */
+  if('serviceWorker' in navigator){
+    try{
+      var regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(function(r){return r.unregister();}));
+    }catch(e){}
+  }
+  /* 새로고침 */
+  window.location.reload(true);
+}
+
 function _exitMasterMode(){
   _masterMode=false;
   var badge=document.getElementById('masterBadge');
   if(badge)badge.style.display='none';
   var mbtn=document.getElementById('masterToggleBtn');
   if(mbtn){mbtn.textContent='🔒';mbtn.style.opacity='.5';mbtn.title='마스터 모드';}
+  var ccBtn=document.getElementById('clearCacheBtn');if(ccBtn)ccBtn.style.display='none';
   toast('🔒 마스터 모드 해제');
   loadCloudSites().then(rCloudChips);
 }
@@ -1360,10 +1505,15 @@ function _showDeleteConfirmModal(pn){
 async function _confirmDeleteCloud(pn){
   var bg=document.getElementById('_delConfirmBg');
   if(bg)bg.remove();
-  await deleteFromCloud(pn);
-  _cloudSites=(_cloudSites||[]).filter(function(s){return s.pn!==pn;});
-  loadCloudSites().then(rCloudChips);
-  toast('🗑️ "'+pn+'" 삭제됐어요');
+  try{
+    await deleteFromCloud(pn);
+    _cloudSites=(_cloudSites||[]).filter(function(s){return s.pn!==pn;});
+    loadCloudSites().then(rCloudChips);
+    toast('🗑️ "'+pn+'" 삭제됐어요');
+  }catch(e){
+    toast('⚠️ 삭제 실패 — 네트워크를 확인해주세요');
+    loadCloudSites().then(rCloudChips);
+  }
 }
 
 function toggleCloudArchive(){
@@ -1383,8 +1533,9 @@ function rChips(){
   if(!el)return;
 
   var today=new Date().toISOString().slice(0,10);
-  var active=arr.filter(function(x){return !x.confirmed || (x.ed && x.ed>=today);});
-  var archived=arr.filter(function(x){return !!x.confirmed && (!x.ed || x.ed<today);});
+  /* 기간 안 지남(또는 미설정) → active / 기간 지남 → 지난현장 (확정 여부 무관) */
+  var active=arr.filter(function(x){return !x.ed || x.ed>=today;});
+  var archived=arr.filter(function(x){return x.ed && x.ed<today;});
 
   /* ── 활성 칩 렌더 ── */
   if(!active.length){el.innerHTML='';} else {
@@ -1403,13 +1554,14 @@ function rChips(){
       var lockIcon=isConfirmed?'<span style="font-size:11px;">🔒</span>':'';
       var confirmBtn=isConfirmed
         ?'<button class="pnchip-confirm on" data-pn="'+nm+'">✓ 확정됨</button>'
-        :'<button class="pnchip-confirm" data-pn="'+nm+'">확정</button>';
+        :'<button class="pnchip-confirm" data-pn="'+nm+'">미확정</button>';
       var statusTxt=isConfirmed?'수정 잠금':'편집 가능';
       h+='<div class="'+cls+'" data-pn="'+nm+'">'
         +'<div class="pnchip-body"><span class="pnchip-nm">'+lockIcon+' '+nm+'</span>'+delBtn+'</div>'
         +'<div class="pnchip-meta">'
         +'<div class="pnchip-row"><b>등록</b>&nbsp;'+fmtDT(created)+'</div>'
         +'<div class="pnchip-row"><b>저장</b>&nbsp;'+fmtDT(saved)+'</div>'
+        +(item.author?'<div class="pnchip-row"><b>작성</b>&nbsp;'+esc(item.author)+'</div>':'')
         +'</div>'
         +'<div class="pnchip-period">'+period+'</div>'
         +'<div class="pnchip-footer">'+confirmBtn+'<span style="font-size:10px;color:var(--mu)">'+statusTxt+'</span></div>'
@@ -1442,21 +1594,28 @@ function rChips(){
   archived.forEach(function(item){
     var nm=esc(item.pn);
     var isActive=(!_cloudView)&&(item.pn===S.pn);
+    var isConfirmed=!!item.confirmed;
     var created=item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'--';
     var saved=item.savedAt?item.savedAt.slice(2).replace(/-/g,'.'):(item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'-');
     function fmtDT(s){if(!s||s==='--'||s==='-')return s;var p=s.split(' ');return p[0]+(p[1]?' <span style="opacity:.7">'+p[1]+'</span>':'');}
     var period=(item.sd&&item.ed)?(item.sd.slice(5).replace('-','.')+' ~ '+item.ed.slice(5).replace('-','.')):'기간 미설정';
-    var cls='pnchip archived confirmed'+(isActive?' active':'');
-    var delBtn='<button class="pnchip-del" data-pn="'+nm+'" title="삭제 (Firebase 유지)">&#xD7;</button>';
-    var unarchBtn='<button class="pnchip-confirm on" data-pn="'+nm+'" title="확정 해제 후 활성으로 이동">✓ 확정됨</button>';
+    var pastDueBadge=!isConfirmed?'<span style="font-size:9px;color:#ef4444;font-weight:700;margin-left:4px;">기간종료</span>':'';
+    var cls='pnchip archived'+(isConfirmed?' confirmed':'')+(isActive?' active':'');
+    var delBtn='<button class="pnchip-del" data-pn="'+nm+'" title="삭제">&#xD7;</button>';
+    var lockIcon=isConfirmed?'<span style="font-size:11px;">🔒</span> ':'';
+    var actionBtn=isConfirmed
+      ?'<button class="pnchip-confirm on" data-pn="'+nm+'">✓ 확정됨</button>'
+      :'<button class="pnchip-confirm" data-pn="'+nm+'">미확정</button>';
+    var statusTxt=isConfirmed?'수정 잠금':'편집 가능';
     ah+='<div class="'+cls+'" data-pn="'+nm+'">'
-      +'<div class="pnchip-body"><span class="pnchip-nm"><span style="font-size:11px;">🔒</span> '+nm+'</span>'+delBtn+'</div>'
+      +'<div class="pnchip-body"><span class="pnchip-nm">'+lockIcon+nm+'</span>'+delBtn+'</div>'
       +'<div class="pnchip-meta">'
       +'<div class="pnchip-row"><b>등록</b>&nbsp;'+fmtDT(created)+'</div>'
       +'<div class="pnchip-row"><b>저장</b>&nbsp;'+fmtDT(saved)+'</div>'
+      +(item.author?'<div class="pnchip-row"><b>작성</b>&nbsp;'+esc(item.author)+'</div>':'')
       +'</div>'
-      +'<div class="pnchip-period">'+period+'</div>'
-      +'<div class="pnchip-footer">'+unarchBtn+'<span style="font-size:10px;color:var(--mu)">수정 잠금</span></div>'
+      +'<div class="pnchip-period">'+period+pastDueBadge+'</div>'
+      +'<div class="pnchip-footer">'+actionBtn+'<span style="font-size:10px;color:var(--mu)">'+statusTxt+'</span></div>'
       +'</div>';
   });
   archEl.innerHTML=ah;
@@ -1472,7 +1631,12 @@ function rChips(){
   archEl.querySelectorAll('.pnchip-del').forEach(function(b){
     b.onclick=function(e){
       e.stopPropagation();
-      if(!confirm('"'+b.dataset.pn+'" 확정 현장을 삭제할까요?\n(이 기기 및 Firebase 클라우드에서 모두 삭제됩니다)'))return;
+      var arr2=getRecent();
+      var item2=arr2.find(function(x){return x.pn===b.dataset.pn;});
+      var msg=item2&&item2.confirmed
+        ? '"'+b.dataset.pn+'" 확정 현장을 삭제할까요?\n(이 기기 및 Firebase 클라우드에서 모두 삭제됩니다)'
+        : '"'+b.dataset.pn+'" 현장을 삭제할까요?';
+      if(!confirm(msg))return;
       deleteRecent(b.dataset.pn,e);
     };
   });
@@ -1663,7 +1827,7 @@ function autoSave(){
     if(ci<0)return;
     if(arr[ci].confirmed)return; /* 확정된 프로젝트는 자동저장 차단 */
     var now=nowTS();
-    arr[ci]=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});
+    arr[ci]=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S),author:getDeviceName()});
     setRecent(arr);try{localStorage.setItem('cs_last',nm);}catch(e){}
     rChips();
   },800);
@@ -2378,6 +2542,13 @@ function oTU(){
 
 /* PDF */
 
+/* 캡처 시 라이트모드 강제 적용 */
+function _forceLightMode(){
+  document.documentElement.setAttribute('data-force-light','1');
+}
+function _restoreLightMode(){
+  document.documentElement.removeAttribute('data-force-light');
+}
 async function doIMG(){
   if(typeof html2canvas==='undefined'){toast('캡처 라이브러리 로딩 중...');return;}
   /* no-print 숨기기 */
@@ -2395,6 +2566,7 @@ async function doIMG(){
   var sels=document.querySelectorAll('.sc');
   var selPos=[];
   sels.forEach(function(el){selPos.push(el.style.position);el.style.position='static';});
+  _forceLightMode();
   await new Promise(function(r){setTimeout(r,150);});
   try{
     var tbl=document.getElementById('pa');
@@ -2409,6 +2581,7 @@ async function doIMG(){
     toast('이미지 저장 완료!');
   }catch(e){console.error(e);toast('이미지 저장 실패: '+e.message);}
   finally{
+    _restoreLightMode();
     if(cs){cs.style.overflow=csOvf;cs.style.width=csW;}
     if(cw){cw.style.overflow=cwOvf;}
     sels.forEach(function(el,i){el.style.position=selPos[i]||'';});
@@ -2425,6 +2598,7 @@ async function doPDF(){
   document.getElementById('pov').style.display='flex';
   var sels=document.querySelectorAll('.sc');
   sels.forEach(function(el){el.dataset.op=el.style.position;el.style.position='static';});
+  _forceLightMode();
   await new Promise(function(r){setTimeout(r,400);});
   try{
     var jsPDF=window.jspdf.jsPDF;
@@ -2451,7 +2625,7 @@ async function doPDF(){
     var fn=today().replace(/-/g,'').substring(2)+' '+( (_cloudView&&_cloudView.pn) ? _cloudView.pn : (S.pn||'현장명') )+' 일정표';pdf.save(fn+'.pdf');
     toast('PDF 저장 완료!');
   }catch(err){console.error(err);toast('PDF 오류 — 브라우저 인쇄(Ctrl+P)로 저장해주세요.');}
-  finally{sels.forEach(function(el){el.style.position=el.dataset.op||'';});ca.style.visibility='';document.getElementById('pov').style.display='none';document.querySelectorAll('.no-print').forEach(function(el){el.style.display='';});}
+  finally{_restoreLightMode();sels.forEach(function(el){el.style.position=el.dataset.op||'';});ca.style.visibility='';document.getElementById('pov').style.display='none';document.querySelectorAll('.no-print').forEach(function(el){el.style.display='';});}
 }
 
 /* READONLY */
@@ -2618,6 +2792,270 @@ function calMPickSel(m){
   calRender();
 }
 
+
+/* ════════════════════════════════════════════════
+   Google Calendar 연동 로직
+════════════════════════════════════════════════ */
+/* ─ 작성자(기기 별명) ─ */
+var _deviceName = '';
+
+var _gcalToken = null;
+var _gcalEnabled = false;
+var _gcalCalendarId = 'primary';
+var _gcalTokenClient = null;
+var _gcalPendingSnap = null;
+
+var TASK_SHORT = {
+  '가설공사':'가설','철거공사':'철거','소방공사':'소방',
+  '목공사':'목공','전기공사':'전기','도장공사':'도장',
+  '금속공사':'금속','설비공사':'설비','타일공사':'타일',
+  '공조공사':'공조','필름공사':'필름','가스공사':'가스',
+  '기타공사':'기타','준공청소':'청소'
+};
+
+var GCAL_COLOR_IDS = ['1','2','3','4','5','6','7','8','9','10','11'];
+
+function _gcalColorId(pn){
+  var h=0;
+  for(var i=0;i<pn.length;i++) h=Math.imul(h,31)+pn.charCodeAt(i)|0;
+  return GCAL_COLOR_IDS[Math.abs(h)%GCAL_COLOR_IDS.length];
+}
+
+function _gcalShortPn(pn){
+  return pn.length>8?pn.slice(0,6)+'…':pn;
+}
+
+function _gcalEventTitle(pn,taskName,vendor){
+  var s=_gcalShortPn(pn);
+  var t=TASK_SHORT[taskName]||taskName;
+  return s+' | '+t+(vendor?' | '+vendor:'');
+}
+
+function initGoogleAuth(){
+  if(typeof google==='undefined'||!google.accounts){setTimeout(initGoogleAuth,600);return;}
+  try{
+    _gcalEnabled=localStorage.getItem('_gcalEnabled')==='1';
+    _gcalCalendarId=localStorage.getItem('_gcalCalendarId')||'primary';
+  }catch(e){}
+  _gcalTokenClient=google.accounts.oauth2.initTokenClient({
+    client_id:'509649339630-bfj8s4t7bsfdoaqu4o7sr68gtgnbvq2m.apps.googleusercontent.com',
+    scope:'https://www.googleapis.com/auth/calendar',
+    callback:function(resp){
+      if(resp.error){toast('⚠️ 구글 로그인 실패');_gcalEnabled=false;_gcalSyncUI();return;}
+      _gcalToken=resp.access_token;
+      _gcalEnabled=true;
+      try{localStorage.setItem('_gcalEnabled','1');}catch(e){}
+      _gcalSyncUI();
+      if(_gcalPendingSnap){
+        var ps=_gcalPendingSnap; _gcalPendingSnap=null;
+        /* 캘린더 선택 후 업로드 */
+        _gcalPickCalendar(function(){_gcalDoUpload(ps);});
+      } else {
+        _gcalPickCalendar(null);
+      }
+    }
+  });
+  _gcalSyncUI();
+}
+
+function _gcalSyncUI(){
+  var wrap=document.getElementById('gcalToggleWrap');
+  var thumb=document.getElementById('gcalToggleThumb');
+  var label=document.getElementById('gcalStatusLabel');
+  var sub=document.getElementById('gcalSubLabel');
+  if(!wrap)return;
+  if(_gcalEnabled){
+    wrap.style.background='#16a34a';
+    if(thumb)thumb.style.left='18px';
+    if(label)label.textContent='연동 중';
+    if(sub){
+      var calName=_gcalCalendarId==='primary'?'기본 캘린더':_gcalCalendarId;
+      sub.textContent='확정 시 자동 업로드 · '+calName;
+    }
+  } else {
+    wrap.style.background='#d1d5db';
+    if(thumb)thumb.style.left='2px';
+    if(label)label.textContent='꺼짐';
+    if(sub)sub.textContent='확정 시 자동으로 구글 캘린더에 업로드됩니다';
+  }
+}
+
+/* ─ 기기 별명 ─ */
+function initDeviceName(){
+  try{ _deviceName=localStorage.getItem('_deviceName')||''; }catch(e){}
+  if(!_deviceName) _showDeviceNameModal();
+}
+function _showDeviceNameModal(){
+  var old=document.getElementById('_deviceModalBg');
+  if(old)old.remove();
+  var bg=document.createElement('div');
+  bg.id='_deviceModalBg';
+  bg.className='master-modal-bg';
+  bg.innerHTML='<div class="master-modal" style="gap:10px;">'
+    +'<div class="master-modal-title">👤 이름을 입력해주세요</div>'
+    +'<div class="master-modal-sub">일정 수정 시 작성자로 표시됩니다</div>'
+    +'<input id="_deviceNameInput" type="text" placeholder="예: SSB-mobile, SSB-laptop" maxlength="20"'
+    +' style="width:100%;padding:10px 12px;border:1.5px solid var(--bd);border-radius:8px;font-size:14px;background:#fff;color:#111;box-sizing:border-box;" />'
+    +'<button class="master-modal-ok" onclick="_submitDeviceName()" style="margin-top:4px;">확인</button>'
+    +'</div>';
+  document.body.appendChild(bg);
+  var inp=document.getElementById('_deviceNameInput');
+  if(inp){ inp.focus(); inp.addEventListener('keydown',function(e){ if(e.key==='Enter')_submitDeviceName(); }); }
+}
+function _submitDeviceName(){
+  var inp=document.getElementById('_deviceNameInput');
+  if(!inp)return;
+  var val=inp.value.trim();
+  if(!val){inp.focus();inp.style.borderColor='#ef4444';return;}
+  _deviceName=val;
+  try{localStorage.setItem('_deviceName',val);}catch(e){}
+  var bg=document.getElementById('_deviceModalBg');
+  if(bg)bg.remove();
+  toast('👤 '+val+' 으로 저장됐어요');
+}
+function getDeviceName(){ return _deviceName||'알 수 없음'; }
+
+function _gcalCloseCalModal(){
+  var m=document.getElementById('_gcalCalModalBg');
+  if(m)m.remove();
+}
+function gcalToggleChange(){
+  if(_gcalEnabled){
+    /* 끄기 */
+    _gcalEnabled=false;
+    _gcalToken=null;
+    try{localStorage.setItem('_gcalEnabled','0');}catch(e){}
+    _gcalSyncUI();
+    toast('📅 구글 캘린더 연동 해제됐어요');
+  } else {
+    /* 켜기 — OAuth 요청 */
+    if(!_gcalTokenClient){toast('잠깐, 초기화 중이에요...');setTimeout(gcalToggleChange,800);return;}
+    _gcalTokenClient.requestAccessToken({prompt:'consent'});
+  }
+}
+
+function _gcalPickCalendar(onDone){
+  if(!_gcalToken){if(onDone)onDone();return;}
+  fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList',{
+    headers:{'Authorization':'Bearer '+_gcalToken}
+  }).then(function(r){return r.json();}).then(function(data){
+    var items=(data.items||[]).filter(function(c){
+      return c.accessRole==='owner'||c.accessRole==='writer';
+    });
+    _gcalShowCalModal(items,onDone);
+  }).catch(function(){
+    if(onDone)onDone();
+    toast('📅 구글 캘린더 연동됐어요');
+    _gcalSyncUI();
+  });
+}
+
+function _gcalShowCalModal(calendars,onDone){
+  var old=document.getElementById('_gcalCalModalBg');
+  if(old)old.remove();
+  var bg=document.createElement('div');
+  bg.id='_gcalCalModalBg';
+  bg.className='master-modal-bg';
+  var opts=calendars.map(function(c){
+    var color=c.backgroundColor||'#4285f4';
+    return '<button class="gcal-cal-opt" data-id="'+esc(c.id)+'" data-name="'+esc(c.summary)+'" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:9px 12px;margin:3px 0;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx);cursor:pointer;font-size:13px;">'
+      +'<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:'+color+';flex-shrink:0;"></span>'
+      +esc(c.summary)+'</button>';
+  }).join('');
+  bg.innerHTML='<div class="master-modal" style="gap:8px;">'
+    +'<div class="master-modal-title">📅 캘린더 선택</div>'
+    +'<div class="master-modal-sub" style="font-size:11px;">확정 일정을 추가할 캘린더를 선택하세요</div>'
+    +'<div style="max-height:240px;overflow-y:auto;margin-top:4px;">'+opts+'</div>'
+    +'<button class="master-modal-cancel" onclick="_gcalCloseCalModal()">닫기</button>'
+    +'</div>';
+  document.body.appendChild(bg);
+  bg.querySelectorAll('.gcal-cal-opt').forEach(function(btn){
+    btn.onclick=function(){
+      _gcalCalendarId=btn.dataset.id;
+      var calName=btn.dataset.name||_gcalCalendarId;
+      try{
+        localStorage.setItem('_gcalCalendarId',_gcalCalendarId);
+        localStorage.setItem('_gcalCalendarName',calName);
+      }catch(e){}
+      bg.remove();
+      _gcalSyncUI();
+      toast('📅 "'+calName+'" 캘린더 연동됐어요');
+      if(onDone)onDone();
+    };
+  });
+}
+
+function gcalUploadOnConfirm(snap){
+  if(!_gcalEnabled)return;
+  if(!_gcalToken){
+    _gcalPendingSnap=snap;
+    if(_gcalTokenClient)_gcalTokenClient.requestAccessToken({prompt:''});
+    return;
+  }
+  _gcalDoUpload(snap);
+}
+
+function _gcalDoUpload(snap){
+  if(!snap||!snap.tasks)return;
+  var pn=snap.pn||'';
+  var colorId=_gcalColorId(pn);
+  var tasks=(snap.tasks||[]).filter(function(t){return t.on&&t.sd&&t.ed;});
+  if(!tasks.length){toast('📅 업로드할 활성 일정이 없어요');return;}
+
+  var total=0;
+  var done=0;
+  var failed=0;
+
+  function onResult(ok){
+    done++;
+    if(!ok)failed++;
+    if(done===total){
+      if(failed===0) toast('📅 '+total+'개 일정이 캘린더에 추가됐어요 ✅');
+      else toast('📅 '+(total-failed)+'개 추가 완료 ('+failed+'개 실패)');
+    }
+  }
+
+  function postEvent(evt){
+    total++;
+    fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+_gcalToken,'Content-Type':'application/json'},
+      body:JSON.stringify(evt)
+    }).then(function(r){onResult(r.ok);}).catch(function(){onResult(false);});
+  }
+
+  tasks.forEach(function(t){
+    /* contractor 정보: contractors 배열 첫 번째 비어있지 않은 값 사용 */
+    var vendor='';
+    if(t.contractors&&Array.isArray(t.contractors)){
+      for(var i=0;i<t.contractors.length;i++){
+        if(t.contractors[i]&&t.contractors[i].trim()){vendor=t.contractors[i].trim();break;}
+      }
+    }
+    var title=_gcalEventTitle(pn,t.name,vendor);
+    var desc=pn+' 공사 일정\n공종: '+t.name+(vendor?'\n업체: '+vendor:'');
+
+    postEvent({
+      summary:title,
+      description:desc,
+      start:{date:t.sd},
+      end:{date:addD(t.ed,1)}, /* Google Calendar end는 exclusive */
+      colorId:colorId
+    });
+
+    /* 분리 일정 (2차) */
+    if(t.split&&t.sd2&&t.ed2){
+      postEvent({
+        summary:title+' (2차)',
+        description:desc+'\n(2차 일정)',
+        start:{date:t.sd2},
+        end:{date:addD(t.ed2,1)},
+        colorId:colorId
+      });
+    }
+  });
+}
+
 </script>
 <div id="tcalOv" style="display:none" class="tcal-ov" onclick="if(event.target===this)closeTCal()">
   <div class="tcal-box">
@@ -2685,7 +3123,7 @@ async function saveToCloud(siteSnap) {
   if (!_fbReady || !_db) return;
   try {
     var key = sanitizeKey(siteSnap.pn);
-    await _db.collection('sites').doc(key).set(Object.assign({}, siteSnap, {_updatedAt: Date.now()}));
+    await _db.collection('sites').doc(key).set(Object.assign({}, siteSnap, {_updatedAt: Date.now(), _author: getDeviceName()}));
   } catch(e) { console.warn('Cloud save failed:', e); }
 }
 
@@ -2740,6 +3178,8 @@ function _syncConfirmedWithCloud() {
 /* 확정 버튼 핸들러 — toggleConfirmed 자체에서 Firebase 처리 */
 document.addEventListener('DOMContentLoaded', function(){
   initFirebase();
+  initGoogleAuth();
+  initDeviceName();
   /* 초기 로드 시 클라우드 현장 칩 표시 - 로딩 표시 후 Firebase 완료되면 렌더 */
   setTimeout(function(){
     var body = document.getElementById('cloudChipsBody');
@@ -3010,7 +3450,7 @@ function rIntegrated() {
     + '<button class="btn bur" id="igBtnUndo" onclick="igDoUndo()" title="실행 취소" style="font-size:12px;padding:6px 12px;">↩ Undo</button>'
     + '<button class="btn bur" id="igBtnRedo" onclick="igDoRedo()" title="다시 실행" style="font-size:12px;padding:6px 12px;">↪ Redo</button>'
     + '</div>'
-    + '<button class="ig-refresh" onclick="loadCloudSites().then(rIntegrated)">↻ 새로고침</button>'
+    + ''
     + '</div>';
   /* 버튼 활성 상태 반영 (렌더 직후) */
   setTimeout(_igUpdUR, 0);
@@ -3414,7 +3854,7 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
 
   /* 오프스크린 클론 */
   var clone = document.createElement('div');
-  clone.style.cssText = 'position:fixed;left:-9999px;top:0;width:'+Math.floor(containerW)+'px;background:#fff;border-radius:0;font-family:Noto Sans KR,sans-serif;';
+  clone.style.cssText = 'position:fixed;left:-9999px;top:0;width:'+Math.floor(containerW)+'px;background:#fff;border-radius:0;font-family:Noto Sans KR,sans-serif;--bg:#f2f0eb;--sf:#fff;--bd:#e0dbd2;--bmd:#ccc7bc;--tx:#18170f;--mu:#7a7870;--mu2:#b5b0a8;--bar:#cbd5e1;--barh:#94a3b8;--al:#eef2fd;--sc:rgba(255,60,60,.07);--sh:#fde8e8;--ac:rgba(60,100,255,.07);--ah:#e4eaff;--hc:rgba(255,140,0,.10);--hh:#fff3cd;color:#18170f;';
 
   if (tradeHd) {
     var hdC = tradeHd.cloneNode(true);
@@ -3583,6 +4023,7 @@ function igSaveDateModal() {
 
   toast('일정 수정 완료 ✓  (차트탭 반영됨)');
   igCloseDateModal();
+  rChips();
   rIntegrated();
 }
 
@@ -3887,6 +4328,7 @@ function igBarpickSave() {
 
   toast('일정 수정 완료 ✓');
   igBarpickClose();
+  rChips();
   rIntegrated();
 }
 
