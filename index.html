@@ -3134,19 +3134,26 @@ function _gcalDoUploadAll(onAllDone){
   });
   var sites=base;
 
-  /* 업로드 기록에 있지만 현재 확정 목록에 없는 현장 → 캘린더에서 삭제 */
+  /* 업로드 기록에 있지만 현재 확정 목록에 없는 현장 → detail+simple 양쪽 캘린더에서 삭제 */
   (function(){
     try{
-      var tsRaw = localStorage.getItem(_gcalTsKey(_gcalCalendarId));
-      var tsMap = tsRaw ? JSON.parse(tsRaw) : {};
-      var uploadedPns = Object.keys(tsMap);
       var activePns = sites.map(function(s){ return s.pn; });
-      var toRemove = uploadedPns.filter(function(pn){ return activePns.indexOf(pn)<0; });
-      if(toRemove.length){
-        _gcalDeleteSiteEvents(toRemove, function(){
-          toRemove.forEach(function(pn){ _gcalClearUploadTs_pn(pn); });
-        });
-      }
+      var calIds = [];
+      if(_gcalCalIdDetail) calIds.push(_gcalCalIdDetail);
+      if(_gcalCalIdSimple && calIds.indexOf(_gcalCalIdSimple)<0) calIds.push(_gcalCalIdSimple);
+      calIds.forEach(function(cid){
+        var tsRaw = localStorage.getItem(_gcalTsKey(cid));
+        var tsMap = tsRaw ? JSON.parse(tsRaw) : {};
+        var toRemove = Object.keys(tsMap).filter(function(pn){ return activePns.indexOf(pn)<0; });
+        if(toRemove.length){
+          var prevCalId = _gcalCalendarId;
+          _gcalCalendarId = cid;
+          _gcalDeleteSiteEvents(toRemove, function(){
+            _gcalCalendarId = prevCalId;
+            toRemove.forEach(function(pn){ _gcalClearUploadTs_pn(pn); });
+          });
+        }
+      });
     }catch(e){}
   })();
 
@@ -3194,7 +3201,7 @@ function _gcalDoUploadAll(onAllDone){
         _gcalUpdateLoading((snap.pn||'현장') + ' 업로드 중... ('+done+'/'+total+')', pct);
         var uploadFn = (_gcalUploadMode === 'simple') ? _gcalDoUploadSimple : _gcalDoUpload;
         uploadFn(snap, function(){
-          _gcalSaveUploadTs(snap.pn, _gcalCalendarId); /* 업로드 완료 시간 기록 */
+          _gcalSaveUploadTs(snap.pn, _gcalCalendarId, snap); /* 업로드 완료 해시 저장 */
           uploadNext();
         });
       }
@@ -3236,56 +3243,70 @@ function _gcalHideLoading(){
 }
 
 /* 현장별 마지막 업로드 시간 저장/로드 */
-function _gcalTsKey(calId){ return '_gcalUploadTs_'+(calId||_gcalCalendarId||'primary'); }
-function _gcalSaveUploadTs(pn, calId){
+/* ── 캘린더 업로드 변경 감지: 데이터 해시 비교 ── */
+function _gcalDataHash(site){
+  /* 캘린더에 실제 반영되는 데이터만 해시: 현장기간 + 공종별 on/sd/ed/contractors */
+  try{
+    var snap = site.snap ? JSON.parse(site.snap) : site;
+    var parts = [snap.pn||'', snap.sd||'', snap.ed||''];
+    var tasks = snap.tasks||[];
+    if(Array.isArray(tasks)){
+      tasks.forEach(function(t){
+        if(!t.on) return; /* 비활성 공종 제외 */
+        var vendor = '';
+        if(t.contractors&&Array.isArray(t.contractors)){
+          for(var i=0;i<t.contractors.length;i++){
+            if(t.contractors[i]&&t.contractors[i].trim()){vendor=t.contractors[i].trim();break;}
+          }
+        }
+        parts.push(t.name+'|'+t.sd+'|'+t.ed+'|'+vendor);
+        if(t.split&&t.sd2&&t.ed2) parts.push(t.name+'|'+t.sd2+'|'+t.ed2+'|2');
+      });
+    }
+    var str = parts.join(';;');
+    var h = 5381;
+    for(var i=0;i<str.length;i++){ h = ((h<<5)+h)^str.charCodeAt(i); h = h>>>0; }
+    return String(h);
+  }catch(e){ return String(Date.now()); }
+}
+function _gcalTsKey(calId){ return '_gcalUploadHash_'+(calId||_gcalCalendarId||'primary'); }
+function _gcalSaveUploadTs(pn, calId, site){
   try{
     var key = _gcalTsKey(calId);
     var map = JSON.parse(localStorage.getItem(key)||'{}');
-    map[pn] = Date.now();
+    map[pn] = site ? _gcalDataHash(site) : ('ts:'+Date.now());
     localStorage.setItem(key, JSON.stringify(map));
-    console.log('[gcalSaveTs]', pn, 'key='+key, 'ts='+map[pn]);
   }catch(e){}
 }
 function _gcalGetUploadTs(pn, calId){
   try{
     var map = JSON.parse(localStorage.getItem(_gcalTsKey(calId))||'{}');
-    return map[pn] || 0;
-  }catch(e){ return 0; }
+    return map[pn] || null;
+  }catch(e){ return null; }
 }
 function _gcalClearUploadTs(){
-  /* 모든 캘린더 TS 초기화 */
   try{
-    Object.keys(localStorage).filter(function(k){ return k.indexOf('_gcalUploadTs_')===0; })
-      .forEach(function(k){ localStorage.removeItem(k); });
+    Object.keys(localStorage).filter(function(k){
+      return k.indexOf('_gcalUploadHash_')===0||k.indexOf('_gcalUploadTs_')===0;
+    }).forEach(function(k){ localStorage.removeItem(k); });
   }catch(e){}
 }
 function _gcalClearUploadTs_pn(pn){
   try{
-    Object.keys(localStorage).filter(function(k){ return k.indexOf('_gcalUploadTs_')===0; })
-      .forEach(function(k){
-        var map = JSON.parse(localStorage.getItem(k)||'{}');
-        delete map[pn];
-        localStorage.setItem(k, JSON.stringify(map));
-      });
+    Object.keys(localStorage).filter(function(k){
+      return k.indexOf('_gcalUploadHash_')===0||k.indexOf('_gcalUploadTs_')===0;
+    }).forEach(function(k){
+      var map = JSON.parse(localStorage.getItem(k)||'{}');
+      delete map[pn];
+      localStorage.setItem(k, JSON.stringify(map));
+    });
   }catch(e){}
 }
 function _gcalNeedsUpload(site){
   var calId = (_gcalUploadMode==='simple') ? _gcalCalIdSimple : _gcalCalIdDetail;
-  var tsKey = _gcalTsKey(calId);
-  var lastUp = _gcalGetUploadTs(site.pn, calId);
-  var savedAt = site.savedAt;
-  var savedMs;
-  if(!savedAt){ savedMs = Date.now(); }
-  else if(typeof savedAt === 'number'){ savedMs = savedAt; }
-  else {
-    var s = String(savedAt).trim().replace(' ','T');
-    if(/T\d{2}:\d{2}$/.test(s)) s += ':00';
-    savedMs = new Date(s).getTime();
-  }
-  if(isNaN(savedMs)) savedMs = Date.now();
-  var needs = !lastUp || savedMs > lastUp;
-  console.log('[gcalNeeds]', site.pn, 'mode='+_gcalUploadMode, 'calId='+calId.slice(-8), 'tsKey='+tsKey, 'lastUp='+lastUp, 'savedMs='+savedMs, 'needs='+needs);
-  return needs;
+  var savedHash = _gcalGetUploadTs(site.pn, calId);
+  if(!savedHash) return true;
+  return _gcalDataHash(site) !== savedHash;
 }
 /* 토큰 갱신 후 콜백 — 만료됐을 가능성 있을 때 안전하게 재발급 */
 function _gcalRefreshToken(cb){
