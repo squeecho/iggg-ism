@@ -716,6 +716,11 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 
 <script>
 var WK=['일','월','화','수','목','금','토'];
+/* Firebase / cloud 전역 변수 — script 블록 분리 문제 방지용 상단 선언 */
+var _db = null;
+var _cloudSites = [];
+var _fbReady = false;
+var _cloudView = null; /* 공유 현장 보기 전용 - S를 덮어쓰지 않음 */
 var _open=null,IS_RO=false,_origPn=null,_cancelPn=null;
 var RK='cs_recent';
 var _undoStack=[],_redoStack=[];
@@ -1627,7 +1632,8 @@ window.addEventListener('beforeunload',function(){
 
 function sync(){
   /* 클라우드 뷰 중이면 헤더에 클라우드 현장명 표시 */
-  var _tpnVal = (_cloudView ? _cloudView.pn : S.pn) || '(현장명 미입력)';
+  var _cv = (typeof _cloudView !== 'undefined') ? _cloudView : null;
+  var _tpnVal = (_cv ? _cv.pn : S.pn) || '(현장명 미입력)';
   document.getElementById('tpn').textContent = _tpnVal;
   var fn=document.getElementById('fn');if(fn&&document.activeElement!==fn)fn.value=S.pn;
   var fs=document.getElementById('fs');if(fs&&document.activeElement!==fs)fs.value=S.sd;
@@ -2655,14 +2661,16 @@ var FIREBASE_CONFIG = {
   measurementId: "G-G83YMFZW2L"
 };
 
-var _db = null;
-var _cloudSites = [];
-var _fbReady = false;
-var _cloudView = null; /* 공유 현장 보기 전용 - S를 덮어쓰지 않음 */
+/* _db, _cloudSites, _fbReady, _cloudView — 첫 번째 script 블록으로 이동 */
 
 function initFirebase() {
   try {
     if (!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') return;
+    /* Firebase SDK가 아직 로드 안 됐으면 잠시 후 재시도 */
+    if (typeof firebase === 'undefined') {
+      setTimeout(initFirebase, 300);
+      return;
+    }
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     _db = firebase.firestore();
     _fbReady = true;
