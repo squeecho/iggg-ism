@@ -835,10 +835,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
     <!-- 블러 오버레이 -->
     <div id="lock-overlay" style="display:none;position:absolute;top:0;left:0;right:0;bottom:0;z-index:10;border-radius:14px;pointer-events:auto;"></div>
   </div>
-  <div class="cta">
-    <button class="btn bo" onclick="sw('c')">차트 보기</button>
-    <button class="btn bp" onclick="doPDF()">PDF 저장</button><button class="btn bp" style="background:#6b7280;margin-left:4px" onclick="doIMG()">이미지 저장</button>
-  </div>
+
 </div>
 <!-- 차트 -->
 <div class="pg cp" id="pc">
@@ -3255,8 +3252,8 @@ function _gcalDoUploadAll(calId, sites, onAllDone){
       var pct = Math.round(20+(done/total)*75);
       _gcalUpdateLoading((snap.pn||'현장')+' 업로드 중... ('+done+'/'+total+')', pct);
       var uploadFn = (_gcalUploadMode==='simple') ? _gcalDoUploadSimple : _gcalDoUpload;
-      uploadFn(snap, function(){
-        _gcalSaveUploadTs(snap.pn, calId, snap);
+      uploadFn(snap, function(uploadOk){
+        if(uploadOk !== false) _gcalSaveUploadTs(snap.pn, calId, snap); /* 성공 시에만 해시 저장 */
         uploadNext();
       });
     }
@@ -3486,10 +3483,14 @@ function _gcalDeleteSiteEvents(pns, cb){
     .then(function(r){return r.json();})
     .then(function(data){
       var items=(data.items||[]).filter(function(ev){
+        var priv=(ev.extendedProperties&&ev.extendedProperties.private)||{};
         var sum=ev.summary||'';
         return pns.some(function(pn){
-          /* "현장명 | 공종" 또는 "현장명" 형태 매칭 */
-          return sum===pn || sum.indexOf(pn+' |')===0 || sum.indexOf(pn+'|')===0;
+          /* extendedProperties.pn 매칭 (신버전 이벤트) */
+          if(priv.pn) return priv.pn===pn;
+          /* summary 매칭 fallback (구버전 이벤트) */
+          var region=pn.indexOf(' ')>0?pn.slice(0,pn.indexOf(' ')):pn;
+          return sum===pn || sum.indexOf(pn+' |')===0 || sum.indexOf(region+' |')===0;
         });
       });
       var allIds = idsFromStore.slice();
@@ -3699,7 +3700,7 @@ function _gcalDoUploadSimple(snap, onDone){
     start: { date: sd },
     end:   { date: addD(ed, 1) },
     colorId: colorId,
-    extendedProperties: { private: { src: 'iggg-ism' } }
+    extendedProperties: { private: { src: 'iggg-ism', pn: pn } }
   };
 
   fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events',{
@@ -3717,10 +3718,10 @@ function _gcalDoUploadSimple(snap, onDone){
       r.json().then(function(j){ console.error('[gcal simple]',(j&&j.error&&j.error.message)||r.status); }).catch(function(){});
       toast('⚠️ '+pn+' 업로드 실패 ('+r.status+')');
     }
-    if(onDone)onDone();
+    if(onDone)onDone(r.ok);   /* success=true/false 전달 */
   }).catch(function(e){
     console.error('[gcal simple]',e);
-    if(onDone)onDone();
+    if(onDone)onDone(false);
   });
 }
 function _gcalDoUpload(snap, onDone){
@@ -3742,7 +3743,7 @@ function _gcalDoUpload(snap, onDone){
       _gcalUpdateLoading('완료!', 100);
       if(_evtFailed===0) toast('📅 '+total+'개 일정 추가됐어요 ✅');
       else toast('📅 '+_evtDone+'개 완료 ('+_evtFailed+'개 실패)');
-      if(onDone)onDone();
+      if(onDone)onDone(_evtFailed===0);  /* 전체 성공 시에만 true */
       return;
     }
     var evt=_evtQueue.shift();
@@ -3789,7 +3790,7 @@ function _gcalDoUpload(snap, onDone){
     var title=_gcalEventTitle(pn,t.name,vendor);
     var desc=pn+' 공사 일정\n공종: '+t.name+(vendor?'\n업체: '+vendor:'');
 
-    var ext={extendedProperties:{private:{src:'iggg-ism'}}};
+    var ext={extendedProperties:{private:{src:'iggg-ism',pn:pn}}};
     _evtQueue.push(Object.assign({
       summary:title,
       description:desc,
