@@ -3031,11 +3031,9 @@ function rIntegrated() {
     var isCollapsed = !!collapsed[tid];
 
     html += '<div class="ig-trade'+(isCollapsed?' collapsed':'')+'" id="ig-trade-'+tid+'">';
-    /* 전체 현장에서 겹침 여부 미리 확인 (헤더 배지용) */
-    var _allEntries = [];
-    groupNames.forEach(function(cn){ _allEntries = _allEntries.concat(groups[cn]); });
-    if (unassigned.length) _allEntries = _allEntries.concat(unassigned);
-    var _hasOverlap = igDetectOverlaps(_allEntries).length > 0;
+    /* 겹침 여부: 같은 업체 내에서만 체크 (업체가 달라도 날짜 겹침은 정상) */
+    var _hasOverlap = groupNames.some(function(cn){ return igDetectOverlaps(groups[cn]).length > 0; })
+      || (unassigned.length > 0 && igDetectOverlaps(unassigned).length > 0);
 
     html += '<div class="ig-trade-hd" onclick="igToggleTrade('+tid+')">'
           + '<span class="ig-trade-nm">' + tname + '</span>'
