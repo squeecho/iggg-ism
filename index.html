@@ -2982,6 +2982,9 @@ function initGoogleAuth(){
       } else if(_gcalPendingAction==='pickCal'){
         _gcalPendingAction=null;
         _gcalPickCalendar(function(){ _gcalSyncUI(); });
+      } else if(_gcalPendingAction==='deleteAll'){
+        _gcalPendingAction=null;
+        _gcalDeleteAllEvents();
       } else if(_gcalPendingSnap){
         var ps=_gcalPendingSnap; _gcalPendingSnap=null;
         _gcalPickCalendar(function(){_gcalDoUpload(ps);});
@@ -3483,7 +3486,14 @@ function _gcalRefreshToken(cb){
 }
 
 function _gcalDeleteAllEvents(){
-  if(!_gcalToken){ toast('먼저 캘린더 연동을 켜주세요'); return; }
+  if(!_gcalEnabled){ toast('구글 캘린더 연동 스위치를 켜주세요'); return; }
+  if(!_gcalTokenClient){ toast('잠깐, 초기화 중이에요...'); setTimeout(_gcalDeleteAllEvents, 800); return; }
+  if(!_gcalToken){
+    /* 토큰 없으면 silent 재인증 후 재실행 */
+    _gcalPendingAction = 'deleteAll';
+    _gcalTokenClient.requestAccessToken({prompt:''});
+    return;
+  }
   if(!confirm('구글 캘린더의 iggg-ism 일정을 모두 삭제할까요?')) return;
   _gcalShowLoading();
   _gcalUpdateLoading('캘린더 일정 삭제 중...', 10);
