@@ -3236,7 +3236,7 @@ function _gcalRunUploadBoth(){
   /* 비활성 현장 삭제 */
   _gcalDeleteInactiveSites(sites, detailCalId, simpleCalId, function(){
     if(!sites.length){
-      /* 삭제만 하고 업로드 없음 */
+      /* 삭제만 하고 업로드 없음 → 로딩 닫기 */
       _gcalUpdateLoading('완료!', 100);
       setTimeout(function(){ _gcalHideLoading(); toast('📅 미확정 현장 캘린더에서 삭제됐어요 ✅'); }, 600);
       return;
@@ -3247,6 +3247,8 @@ function _gcalRunUploadBoth(){
       /* simple 업로드 */
       _gcalUploadMode = 'simple';
       _gcalDoUploadAll(simpleCalId, sites, function(){
+        /* hasDeletions로 열린 로딩이 _gcalDoUploadAll 내부에서 안 닫혔을 수 있으므로 강제 닫기 */
+        _gcalHideLoading();
         toast('🔄 캘린더 동기화 완료 ✅');
       });
     });
@@ -3280,6 +3282,7 @@ function _gcalDoUploadAll(calId, sites, onAllDone){
   var skipped = sites.length - changed.length;
 
   if(!changed.length){
+    _gcalHideLoading(); /* hasDeletions로 열린 로딩이 있을 수 있으므로 닫기 */
     if(sites.length) toast('📅 변경된 현장이 없어요 ✅');
     if(onAllDone)onAllDone();
     return;
