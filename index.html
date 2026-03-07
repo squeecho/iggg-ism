@@ -1707,8 +1707,14 @@ function rCloudChips() {
   }
 
   var localPns = getRecent().map(function(x){ return x.pn; });
-  /* 로컬에 없는 클라우드 현장만 표시 */
-  var remote = (_cloudSites || []).filter(function(s){ return s.pn && localPns.indexOf(s.pn) < 0; });
+  var myDevice = getDeviceName();
+  /* 로컬에 없고 + 내 기기가 올린 것도 아닌 현장만 "공유된 현장"으로 표시 */
+  var remote = (_cloudSites || []).filter(function(s){
+    if(!s.pn) return false;
+    if(localPns.indexOf(s.pn) >= 0) return false; /* 로컬에 있으면 내 현장 */
+    if(myDevice && s.author === myDevice) return false; /* 내 기기가 올린 현장 */
+    return true;
+  });
 
   if (!remote.length) {
     if(body)body.style.display = 'none';
@@ -3290,7 +3296,33 @@ async function loadCloudSites() {
     var snap = await _db.collection('sites').get();
     _cloudSites = snap.docs.map(function(d){ return d.data(); }).filter(function(s){ return s.pn; });
     _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 */
+    _restoreMyCloudSites();   /* 캐시 지워도 내 기기 현장 복구 */
   } catch(e) { console.warn('Cloud load failed:', e); _cloudSites = []; }
+}
+
+/* 내 기기가 올린 현장이 로컬에 없으면 자동 복구 */
+function _restoreMyCloudSites() {
+  var myDevice = getDeviceName();
+  if (!myDevice || !_cloudSites || !_cloudSites.length) return;
+  var arr = getRecent();
+  var localPns = arr.map(function(x){ return x.pn; });
+  var changed = false;
+  _cloudSites.forEach(function(s) {
+    if (!s.pn || !s.author || s.author !== myDevice) return;
+    if (localPns.indexOf(s.pn) >= 0) return; /* 이미 있음 */
+    /* 내 현장인데 로컬에 없음 → 복구 */
+    var snap = s.snap ? JSON.parse(s.snap) : null;
+    arr.push({
+      pn: s.pn, sd: s.sd||'', ed: s.ed||'',
+      savedAt: s.savedAt||'', author: s.author,
+      confirmed: true,
+      snap: s.snap||''
+    });
+    localPns.push(s.pn);
+    changed = true;
+    console.log('[복구] 내 현장 로컬 복구:', s.pn);
+  });
+  if (changed) { setRecent(arr); rChips(); }
 }
 
 /* ── 로컬 확정현장 vs Firebase 동기화 ──
