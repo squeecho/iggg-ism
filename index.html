@@ -3243,6 +3243,7 @@ function _gcalSaveUploadTs(pn, calId){
     var map = JSON.parse(localStorage.getItem(key)||'{}');
     map[pn] = Date.now();
     localStorage.setItem(key, JSON.stringify(map));
+    console.log('[gcalSaveTs]', pn, 'key='+key, 'ts='+map[pn]);
   }catch(e){}
 }
 function _gcalGetUploadTs(pn, calId){
@@ -3269,24 +3270,22 @@ function _gcalClearUploadTs_pn(pn){
   }catch(e){}
 }
 function _gcalNeedsUpload(site){
-  /* 현재 모드의 캘린더 기준으로 업로드 필요 여부 판단 */
   var calId = (_gcalUploadMode==='simple') ? _gcalCalIdSimple : _gcalCalIdDetail;
+  var tsKey = _gcalTsKey(calId);
   var lastUp = _gcalGetUploadTs(site.pn, calId);
-  if(!lastUp) return true;
   var savedAt = site.savedAt;
-  if(!savedAt) return true;
   var savedMs;
-  if(typeof savedAt === 'number'){
-    savedMs = savedAt;
-  } else {
-    /* "2026-03-08 02:28" or "2026-03-08T02:28" 모두 처리 */
+  if(!savedAt){ savedMs = Date.now(); }
+  else if(typeof savedAt === 'number'){ savedMs = savedAt; }
+  else {
     var s = String(savedAt).trim().replace(' ','T');
-    /* 초가 없으면 :00 추가 */
     if(/T\d{2}:\d{2}$/.test(s)) s += ':00';
     savedMs = new Date(s).getTime();
   }
-  if(isNaN(savedMs)) return true;
-  return savedMs > lastUp;
+  if(isNaN(savedMs)) savedMs = Date.now();
+  var needs = !lastUp || savedMs > lastUp;
+  console.log('[gcalNeeds]', site.pn, 'mode='+_gcalUploadMode, 'calId='+calId.slice(-8), 'tsKey='+tsKey, 'lastUp='+lastUp, 'savedMs='+savedMs, 'needs='+needs);
+  return needs;
 }
 /* 토큰 갱신 후 콜백 — 만료됐을 가능성 있을 때 안전하게 재발급 */
 function _gcalRefreshToken(cb){
