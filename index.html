@@ -1478,6 +1478,7 @@ async function _submitMaster(){
     if(mbtn){mbtn.textContent='🔓';mbtn.style.opacity='1';mbtn.title='마스터 모드 해제';}
     toast('🔑 마스터 모드 활성화 — 클라우드 삭제 가능');
     var ccBtn=document.getElementById('clearCacheBtn');if(ccBtn)ccBtn.style.display='';
+    var gcalDelBtn=document.getElementById('gcalDeleteAllBtn');if(gcalDelBtn&&_gcalEnabled)gcalDelBtn.style.display='block';
     loadCloudSites().then(rCloudChips);
     /* 5분 후 자동 해제 */
     setTimeout(_exitMasterMode, 5*60*1000);
@@ -1552,6 +1553,7 @@ function _exitMasterMode(){
   var mbtn=document.getElementById('masterToggleBtn');
   if(mbtn){mbtn.textContent='🔒';mbtn.style.opacity='.5';mbtn.title='마스터 모드';}
   var ccBtn=document.getElementById('clearCacheBtn');if(ccBtn)ccBtn.style.display='none';
+  var gcalDelBtn=document.getElementById('gcalDeleteAllBtn');if(gcalDelBtn)gcalDelBtn.style.display='none';
   toast('🔒 마스터 모드 해제');
   loadCloudSites().then(rCloudChips);
 }
@@ -2986,7 +2988,7 @@ function _gcalSyncUI(){
     var uploadBtn=document.getElementById('gcalUploadNowBtn');
     if(uploadBtn)uploadBtn.style.display='block';
     var delBtn=document.getElementById('gcalDeleteAllBtn');
-    if(delBtn)delBtn.style.display='block';
+    if(delBtn)delBtn.style.display=(typeof _masterMode!=='undefined'&&_masterMode)?'block':'none';
     var tbBtn=document.getElementById('tbGcalBtn');
     if(tbBtn)tbBtn.style.display='block';
   } else {
@@ -3185,16 +3187,25 @@ function _gcalNeedsUpload(site){
 /* 토큰 갱신 후 콜백 — 만료됐을 가능성 있을 때 안전하게 재발급 */
 function _gcalRefreshToken(cb){
   if(!_gcalTokenClient){ cb(); return; }
+  /* 원래 콜백 백업 — 덮어쓰지 않고 완료 후 복원 */
+  var _origCb = _gcalTokenClient.callback;
   var done = false;
-  var timer = setTimeout(function(){ if(!done){ done=true; cb(); } }, 5000);
+  var timer = setTimeout(function(){
+    if(!done){ done=true; _gcalTokenClient.callback=_origCb; cb(); }
+  }, 5000);
   _gcalTokenClient.callback = function(resp){
     if(resp && resp.access_token){ _gcalToken = resp.access_token; }
-    if(!done){ done=true; clearTimeout(timer); cb(); }
+    if(!done){
+      done=true;
+      clearTimeout(timer);
+      _gcalTokenClient.callback = _origCb; /* 원래 콜백 복원 */
+      cb();
+    }
   };
   try {
     _gcalTokenClient.requestAccessToken({prompt:''});
   } catch(e) {
-    if(!done){ done=true; clearTimeout(timer); cb(); }
+    if(!done){ done=true; _gcalTokenClient.callback=_origCb; clearTimeout(timer); cb(); }
   }
 }
 
@@ -3203,12 +3214,18 @@ function _gcalDeleteAllEvents(){
     toast('먼저 캘린더 연동을 켜주세요');return;
   }
   if(!confirm('구글 캘린더의 iggg-ism 일정을 모두 삭제할까요?')) return;
-  toast('🗑 캘린더 일정 삭제 중...');
+  _gcalShowLoading();
+  _gcalUpdateLoading('캘린더 일정 삭제 중...', 10);
   _gcalRefreshToken(function(){
+    _gcalUpdateLoading('캘린더 이벤트 검색 중...', 30);
     _gcalDeleteIgEvents(function(){
       _gcalSaveIds([]);
       _gcalClearUploadTs();
-      toast('🗑 캘린더 일정이 모두 삭제됐어요');
+      _gcalUpdateLoading('삭제 완료!', 100);
+      setTimeout(function(){
+        _gcalHideLoading();
+        toast('🗑 캘린더 일정이 모두 삭제됐어요');
+      }, 600);
     });
   });
 }
