@@ -1385,8 +1385,8 @@ function _doConfirmToggle(pn,confirming){
     // if(snap) gcalUploadOnConfirm(snap);
   } else {
     deleteFromCloud(pn);
-    /* 확정 해제 → 업로드 기록 제거 (다음 업로드 시 캘린더에서도 반영됨) */
-    _gcalClearUploadTs_pn(pn);
+    /* 확정 해제 → 삭제 대기 목록에 추가 (업로드 시 캘린더에서 제거됨) */
+    _gcalAddPendingDelete(pn);
   }
 
   /* 현재 활성 프로젝트면 IS_RO 즉시 반영 */
