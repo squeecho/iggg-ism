@@ -3001,8 +3001,11 @@ function initGoogleAuth(){
         /* 최초 연동: detail 캘린더 선택 → 완료 후 simple 캘린더 선택 */
         _gcalPickMode = 'detail';
         _gcalPickCalendar(function(){
-          /* detail 지정 완료 → simple도 지정 */
-          if(!_gcalCalIdSimple || _gcalCalIdSimple === _gcalCalIdDetail){
+          /* detail 지정 완료 → simple 미지정이면 선택 요청 */
+          var simpleNotSet = !_gcalCalIdSimple
+            || _gcalCalIdSimple === 'primary'
+            || !localStorage.getItem('_gcalCalIdSimple');
+          if(simpleNotSet){
             _gcalPickMode = 'simple';
             _gcalPickCalendar(function(){ _gcalSyncUI(); });
           } else {
