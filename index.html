@@ -3112,49 +3112,37 @@ function _gcalDoUpload(snap){
   var tasks=(snap.tasks||[]).filter(function(t){return t.on&&t.sd&&t.ed;});
   if(!tasks.length){toast('📅 업로드할 활성 일정이 없어요');return;}
 
-  var total=0;
-  var done=0;
-  var failed=0;
+  /* 이벤트 목록 수집 후 순차 전송 (Rate Limit 방지) */
+  var _evtQueue=[];
+  var _evtDone=0;
+  var _evtFailed=0;
 
-  var _firstErr='';
-  function onResult(ok,errMsg){
-    done++;
-    if(!ok){failed++;if(!_firstErr)_firstErr=errMsg||'';}
-    if(done===total){
-      if(failed===0) toast('📅 '+total+'개 일정이 캘린더에 추가됐어요 ✅');
-      else toast('📅 '+(total-failed)+'개 완료 ('+failed+'개 실패)'+((_firstErr)?' — '+_firstErr.slice(0,40):''));
+  function _sendNext(){
+    if(_evtQueue.length===0){
+      var total=_evtDone+_evtFailed;
+      if(_evtFailed===0) toast('📅 '+total+'개 일정이 캘린더에 추가됐어요 ✅');
+      else toast('📅 '+_evtDone+'개 완료 ('+_evtFailed+'개 실패)');
+      return;
     }
-  }
-
-  var _retried=false;
-  function postEvent(evt){
-    total++;
-    _doPost(evt,false);
-  }
-  function _doPost(evt,isRetry){
+    var evt=_evtQueue.shift();
     fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events',{
       method:'POST',
       headers:{'Authorization':'Bearer '+_gcalToken,'Content-Type':'application/json'},
       body:JSON.stringify(evt)
     }).then(function(r){
-      if(r.ok){onResult(true);}
-      else if(r.status===401||r.status===403){
+      if(r.ok){_evtDone++;}
+      else{
+        _evtFailed++;
         r.json().then(function(j){
-          var msg=(j&&j.error&&j.error.message)||('HTTP '+r.status);
-          console.error('[gcal 403]', evt.summary, '|', msg, '| body:', JSON.stringify(evt).slice(0,200));
-          onResult(false,'인증 오류('+r.status+')');
-        }).catch(function(){
-          console.error('[gcal 403]', evt.summary, '| parse fail');
-          onResult(false,'인증 오류('+r.status+')');
-        });
-      } else {
-        r.json().then(function(j){
-          var msg=(j&&j.error&&j.error.message)||('HTTP '+r.status);
-          console.error('[gcal postEvent]',msg,evt.summary);
-          onResult(false,msg);
-        }).catch(function(){onResult(false,'HTTP '+r.status);});
+          console.error('[gcal]',evt.summary,(j&&j.error&&j.error.message)||r.status);
+        }).catch(function(){});
       }
-    }).catch(function(e){console.error('[gcal postEvent]',e);onResult(false,e.message);});
+      setTimeout(_sendNext,150); /* 150ms 간격으로 순차 전송 */
+    }).catch(function(e){
+      _evtFailed++;
+      console.error('[gcal]',e);
+      setTimeout(_sendNext,150);
+    });
   }
 
   tasks.forEach(function(t){
@@ -3169,17 +3157,17 @@ function _gcalDoUpload(snap){
     var desc=pn+' 공사 일정\n공종: '+t.name+(vendor?'\n업체: '+vendor:'');
 
     var ext={extendedProperties:{private:{src:'iggg-ism'}}};
-    postEvent(Object.assign({
+    _evtQueue.push(Object.assign({
       summary:title,
       description:desc,
       start:{date:t.sd},
-      end:{date:addD(t.ed,1)}, /* Google Calendar end는 exclusive */
+      end:{date:addD(t.ed,1)},
       colorId:colorId
     },ext));
 
     /* 분리 일정 (2차) */
     if(t.split&&t.sd2&&t.ed2){
-      postEvent(Object.assign({
+      _evtQueue.push(Object.assign({
         summary:title+' (2차)',
         description:desc+'\n(2차 일정)',
         start:{date:t.sd2},
@@ -3188,6 +3176,7 @@ function _gcalDoUpload(snap){
       },ext));
     }
   });
+  _sendNext();
 }
 
 </script>
@@ -3563,12 +3552,7 @@ function rIntegrated() {
     return h;
   }
   function makeCalWithSaveBtn(siteList, curTid, tname, safeCtorName){
-    var cal = makeCalHtml(siteList, curTid);
-    var btn = '<div class="no-print" style="display:flex;justify-content:flex-end;padding:8px 10px 6px;">'
-      + '<button class="ig-ctor-save-btn" onclick="doIGCtorImg(this,\''+tname+'\',\''+safeCtorName+'\')">'
-      + '📷&nbsp;이미지 저장'
-      + '</button></div>';
-    return cal + btn;
+    return makeCalHtml(siteList, curTid); /* 버튼은 legend 뒤에 별도 삽입 */
   }
 
   var html = setupBanner;
@@ -3733,7 +3717,13 @@ function rIntegrated() {
       }
       s += '<div class="ig-legend"><div class="ig-legend-chips">';
       siteList.forEach(function(entry) { s += makeEntryHtml(entry, tid); });
-      s += '</div></div></div>';
+      s += '</div></div>';
+      /* 이미지 저장 버튼 — legend 아래 우측 */
+      s += '<div class="no-print" style="display:flex;justify-content:flex-end;padding:6px 10px 10px;">'
+        + '<button class="ig-ctor-save-btn" onclick="doIGCtorImg(this,\''+tname+'\',\''+safeCtorName+'\')">'
+        + '📷&nbsp;이미지 저장'
+        + '</button></div>';
+      s += '</div>'; /* ig-ctor-section 닫기 */
 
       return s;
     }
