@@ -335,9 +335,9 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-ctor-edit-btn.empty:hover{background:#f1f5f9;border-color:#94a3b8;}
 
 /* 이미지 저장 버튼 (달력 우하단 아이콘) */
-.ig-ctor-save-btn{position:absolute;bottom:7px;right:7px;width:28px;height:28px;border-radius:50%;background:rgba(30,30,28,.55);backdrop-filter:blur(4px);border:1.5px solid rgba(255,255,255,.18);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,transform .12s;z-index:10;padding:0;line-height:1;}
-.ig-ctor-save-btn:hover{background:rgba(30,30,28,.82);transform:scale(1.12);}
-.ig-ctor-save-btn:active{transform:scale(.95);}
+.ig-ctor-save-btn{display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:8px;background:var(--bg);border:1.5px solid var(--bd);color:var(--mu);font-size:12px;font-weight:700;cursor:pointer;transition:background .15s,border-color .15s;z-index:10;font-family:'Noto Sans KR',sans-serif;}
+.ig-ctor-save-btn:hover{background:var(--bd);border-color:var(--mu2);color:var(--tx);}
+.ig-ctor-save-btn:active{opacity:.75;}
 
 /* 업체 배정 모달 */
 .ig-ctor-modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:flex;align-items:flex-end;justify-content:center;}
@@ -2974,7 +2974,7 @@ function _gcalUploadNow(){
   /* 항상 토큰 먼저 갱신 후 업로드 — 만료 여부 상관없이 */
   if(_gcalTokenClient){
     _gcalPendingAction = 'upload';
-    _gcalTokenClient.requestAccessToken({prompt:''});
+    _gcalTokenClient.requestAccessToken({prompt:'select_account'});
     return;
   }
   _gcalDoUploadAll();
@@ -3139,10 +3139,14 @@ function _gcalDoUpload(snap){
     }).then(function(r){
       if(r.ok){onResult(true);}
       else if(r.status===401||r.status===403){
-        /* 토큰 만료 — 재시도 없이 실패 처리 (업로드는 항상 토큰 갱신 후 시작) */
-        console.warn('[gcal] '+r.status+' Forbidden — 토큰 문제');
-        _gcalToken=null;
-        onResult(false,'인증 오류('+r.status+')');
+        r.json().then(function(j){
+          var msg=(j&&j.error&&j.error.message)||('HTTP '+r.status);
+          console.error('[gcal 403]', evt.summary, '|', msg, '| body:', JSON.stringify(evt).slice(0,200));
+          onResult(false,'인증 오류('+r.status+')');
+        }).catch(function(){
+          console.error('[gcal 403]', evt.summary, '| parse fail');
+          onResult(false,'인증 오류('+r.status+')');
+        });
       } else {
         r.json().then(function(j){
           var msg=(j&&j.error&&j.error.message)||('HTTP '+r.status);
@@ -3560,10 +3564,11 @@ function rIntegrated() {
   }
   function makeCalWithSaveBtn(siteList, curTid, tname, safeCtorName){
     var cal = makeCalHtml(siteList, curTid);
-    /* 달력 닫힘 </div> 바로 앞에 아이콘 버튼 삽입 */
-    var insertPos = cal.lastIndexOf('</div>');
-    var btn = '<button class="ig-ctor-save-btn no-print" title="이미지 저장" onclick="doIGCtorImg(this,\''+tname+'\',\''+safeCtorName+'\')">📷</button>';
-    return cal.slice(0, insertPos) + btn + cal.slice(insertPos);
+    var btn = '<div class="no-print" style="display:flex;justify-content:flex-end;padding:8px 10px 6px;">'
+      + '<button class="ig-ctor-save-btn" onclick="doIGCtorImg(this,\''+tname+'\',\''+safeCtorName+'\')">'
+      + '📷&nbsp;이미지 저장'
+      + '</button></div>';
+    return cal + btn;
   }
 
   var html = setupBanner;
