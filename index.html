@@ -773,7 +773,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;gap:8px;">
       <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);">"지금 업로드" 버튼으로 전체 현장을 업로드하세요</div>
-      <button id="gcalUploadNowBtn" onclick="_gcalUploadNow()" style="display:none;font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid #16a34a;background:transparent;color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;">지금 업로드</button>
+      <div style="display:flex;gap:6px;align-items:center;"><button id="gcalUploadNowBtn" onclick="_gcalUploadNow()" style="display:none;font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid #16a34a;background:transparent;color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;">지금 업로드</button><button id="gcalDeleteAllBtn" onclick="_gcalDeleteAllEvents()" style="display:none;font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid #ef4444;background:transparent;color:#ef4444;cursor:pointer;white-space:nowrap;font-weight:700;">🗑 전체 삭제</button></div>
     </div>
   </div>
   </div><!-- /ep-info-col -->
@@ -1229,8 +1229,12 @@ function deleteRecent(pn,ev){
   if(ev)ev.stopPropagation();
   var arr=getRecent();
   var item=arr.find(function(x){return x.pn===pn;});
-  /* 확정 현장이었으면 Firebase에서도 삭제 */
-  if(item&&item.confirmed) deleteFromCloud(pn);
+  /* 확정 현장이었으면 Firebase + 캘린더에서도 삭제 */
+  if(item&&item.confirmed){
+    deleteFromCloud(pn);
+    /* 현장 삭제 → 업로드 기록 제거 (다음 업로드 시 캘린더에서도 반영됨) */
+    _gcalClearUploadTs_pn(pn);
+  }
   var idx=arr.findIndex(function(x){return x.pn===pn;});
   var next=arr[idx+1]||arr[idx-1]||null; /* 다음 항목 또는 이전 항목 */
   setRecent(arr.filter(function(x){return x.pn!==pn;}));
@@ -1347,6 +1351,7 @@ function _doConfirmToggle(pn,confirming){
   var ci=arr.findIndex(function(x){return x.pn===pn;});
   if(ci<0)return;
   arr[ci].confirmed=confirming;
+  arr[ci].savedAt=nowTS(); /* 확정 상태 변경도 저장으로 간주 → 캘린더 업로드 대상에 포함 */
 
   /* FIFO: 확정 현장 최대 30개 유지 */
   if(confirming){
@@ -1373,6 +1378,8 @@ function _doConfirmToggle(pn,confirming){
     // if(snap) gcalUploadOnConfirm(snap);
   } else {
     deleteFromCloud(pn);
+    /* 확정 해제 → 업로드 기록 제거 (다음 업로드 시 캘린더에서도 반영됨) */
+    _gcalClearUploadTs_pn(pn);
   }
 
   /* 현재 활성 프로젝트면 IS_RO 즉시 반영 */
@@ -2978,6 +2985,8 @@ function _gcalSyncUI(){
     }
     var uploadBtn=document.getElementById('gcalUploadNowBtn');
     if(uploadBtn)uploadBtn.style.display='block';
+    var delBtn=document.getElementById('gcalDeleteAllBtn');
+    if(delBtn)delBtn.style.display='block';
     var tbBtn=document.getElementById('tbGcalBtn');
     if(tbBtn)tbBtn.style.display='block';
   } else {
@@ -2987,6 +2996,8 @@ function _gcalSyncUI(){
     if(sub)sub.textContent='"지금 업로드" 버튼으로 전체 현장을 업로드하세요';
     var uploadBtn=document.getElementById('gcalUploadNowBtn');
     if(uploadBtn)uploadBtn.style.display='none';
+    var delBtn=document.getElementById('gcalDeleteAllBtn');
+    if(delBtn)delBtn.style.display='none';
     var tbBtn=document.getElementById('tbGcalBtn');
     if(tbBtn)tbBtn.style.display='none';
   }
@@ -3036,18 +3047,24 @@ function _gcalUploadNow(){
 }
 function _gcalDoUploadAll(){
   if(!_gcalCalendarId){ _gcalPickCalendar(function(){ _gcalDoUploadAll(); }); return; }
-  /* 클라우드 현장 + 현재 편집 현장(S) 합산 — 같은 pn이면 최신 S로 덮어씀 */
+  /* 확정된 현장만 업로드 대상 */
   var base = (typeof _cloudSites!=='undefined' && _cloudSites) ? _cloudSites.slice() : [];
-  if(typeof S!=='undefined' && S && S.pn){
+  /* S가 확정 상태일 때만 포함 */
+  if(typeof S!=='undefined' && S && S.pn && IS_RO){
     var _si=base.length; for(var _ii=0;_ii<base.length;_ii++){if(base[_ii].pn===S.pn){_si=_ii;break;}}
     if(_si<base.length) base[_si]=S; else base.push(S);
   }
-  if(typeof _cloudView!=='undefined' && _cloudView && _cloudView.pn){
-    var _ci=base.length; for(var _ci2=0;_ci2<base.length;_ci2++){if(base[_ci2].pn===_cloudView.pn){_ci=_ci2;break;}}
-    if(_ci>=base.length) base.push(_cloudView);
-  }
+  /* 로컬 확정 현장 중 _cloudSites에 없는 것도 포함 */
+  var localArr = getRecent();
+  localArr.forEach(function(item){
+    if(!item.confirmed||!item.pn) return;
+    var inBase = base.some(function(x){ return x.pn===item.pn; });
+    if(!inBase && item.snap){
+      try{ var parsed=JSON.parse(item.snap); if(parsed&&parsed.pn) base.push(parsed); }catch(e){}
+    }
+  });
   var sites=base;
-  if(!sites.length){ toast('업로드할 현장이 없어요'); return; }
+  if(!sites.length){ toast('확정된 현장이 없어요'); return; }
 
   /* 변경된 현장만 업로드 (수정 없으면 스킵) */
   var changed = sites.filter(function(s){ return _gcalNeedsUpload(s); });
@@ -3146,6 +3163,14 @@ function _gcalGetUploadTs(pn){
 function _gcalClearUploadTs(){
   try{ localStorage.removeItem('_gcalUploadTs'); }catch(e){}
 }
+function _gcalClearUploadTs_pn(pn){
+  /* 특정 현장의 업로드 기록만 제거 → 다음 전체 업로드 시 포함되게 함 */
+  try{
+    var map = JSON.parse(localStorage.getItem('_gcalUploadTs')||'{}');
+    delete map[pn];
+    localStorage.setItem('_gcalUploadTs', JSON.stringify(map));
+  }catch(e){}
+}
 function _gcalNeedsUpload(site){
   /* savedAt이 없거나 마지막 업로드 이후 수정됐으면 업로드 필요 */
   var lastUp = _gcalGetUploadTs(site.pn);
@@ -3171,6 +3196,21 @@ function _gcalRefreshToken(cb){
   } catch(e) {
     if(!done){ done=true; clearTimeout(timer); cb(); }
   }
+}
+
+function _gcalDeleteAllEvents(){
+  if(!_gcalToken){
+    toast('먼저 캘린더 연동을 켜주세요');return;
+  }
+  if(!confirm('구글 캘린더의 iggg-ism 일정을 모두 삭제할까요?')) return;
+  toast('🗑 캘린더 일정 삭제 중...');
+  _gcalRefreshToken(function(){
+    _gcalDeleteIgEvents(function(){
+      _gcalSaveIds([]);
+      _gcalClearUploadTs();
+      toast('🗑 캘린더 일정이 모두 삭제됐어요');
+    });
+  });
 }
 function _gcalSaveIds(ids){try{localStorage.setItem('_gcalUploadedIds',JSON.stringify(ids));}catch(e){}}
 function _gcalLoadIds(){try{var v=localStorage.getItem('_gcalUploadedIds');return v?JSON.parse(v):[];}catch(e){return[];}}
