@@ -690,7 +690,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
     <span class="tb-site" id="tpn">(현장명 미입력)</span>
   </div>
   <div id="tbGcalBtn" style="display:none;margin-left:auto;padding-right:12px;">
-    <button onclick="_gcalUploadBoth()" style="display:flex;align-items:center;gap:5px;background:rgba(22,163,74,.15);border:1px solid rgba(22,163,74,.5);border-radius:7px;color:#4ade80;font-size:10px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;line-height:1.5;">📅 캘린더 업로드</button>
+    <button onclick="_gcalUploadBoth()" style="display:flex;align-items:center;gap:5px;background:rgba(22,163,74,.15);border:1px solid rgba(22,163,74,.5);border-radius:7px;color:#4ade80;font-size:10px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;line-height:1.5;">🔄 캘린더 동기화</button>
   </div>
   
 </div>
@@ -771,18 +771,20 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
         </div>
       </label>
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;gap:8px;">
-      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);">"지금 업로드" 버튼으로 전체 현장을 업로드하세요</div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:4px;">
-          <button id="gcalUploadNowBtn" onclick="_gcalUploadNow('detail')" style="display:none;font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid #16a34a;background:transparent;color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;">📋 상세 업로드</button>
-          <button id="gcalCalDetailBtn" onclick="_gcalChangeCalendar('detail')" title="캘린더 변경" style="display:none;font-size:9px;padding:2px 6px;border-radius:5px;border:1px solid #334155;background:transparent;color:#64748b;cursor:pointer;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis;" id="gcalCalDetailBtn"></button>
+    <div style="margin-top:8px;">
+      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-bottom:6px;">캘린더별 업로드 · 아래 버튼 사용</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <!-- 상세 동기화 -->
+        <div style="display:flex;align-items:center;gap:4px;background:rgba(22,163,74,.06);border:1.5px solid rgba(22,163,74,.3);border-radius:10px;padding:4px 6px 4px 4px;">
+          <button id="gcalUploadNowBtn" onclick="_gcalUploadNow('detail')" style="display:none;font-size:11px;padding:5px 13px;border-radius:7px;border:none;background:rgba(22,163,74,.18);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.3px;">📋 상세 동기화</button>
+          <button id="gcalCalDetailBtn" onclick="_gcalChangeCalendar('detail')" title="캘린더 변경" style="display:none;font-size:9px;padding:2px 7px;border-radius:6px;border:1px solid rgba(22,163,74,.3);background:transparent;color:#4ade80;cursor:pointer;white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;"></button>
         </div>
-        <div style="display:flex;align-items:center;gap:4px;">
-          <button id="gcalUploadSimpleBtn" onclick="_gcalUploadNow('simple')" style="display:none;font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid #0284c7;background:transparent;color:#0284c7;cursor:pointer;white-space:nowrap;font-weight:700;">📌 간략 업로드</button>
-          <button id="gcalCalSimpleBtn" onclick="_gcalChangeCalendar('simple')" title="캘린더 변경" style="display:none;font-size:9px;padding:2px 6px;border-radius:5px;border:1px solid #334155;background:transparent;color:#64748b;cursor:pointer;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis;"></button>
+        <!-- 간략 동기화 -->
+        <div style="display:flex;align-items:center;gap:4px;background:rgba(2,132,199,.06);border:1.5px solid rgba(2,132,199,.3);border-radius:10px;padding:4px 6px 4px 4px;">
+          <button id="gcalUploadSimpleBtn" onclick="_gcalUploadNow('simple')" style="display:none;font-size:11px;padding:5px 13px;border-radius:7px;border:none;background:rgba(2,132,199,.18);color:#0284c7;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.3px;">📌 간략 동기화</button>
+          <button id="gcalCalSimpleBtn" onclick="_gcalChangeCalendar('simple')" title="캘린더 변경" style="display:none;font-size:9px;padding:2px 7px;border-radius:6px;border:1px solid rgba(2,132,199,.3);background:transparent;color:#38bdf8;cursor:pointer;white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;"></button>
         </div>
-        <button id="gcalDeleteAllBtn" onclick="_gcalDeleteAllEvents()" style="display:none;font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid #ef4444;background:transparent;color:#ef4444;cursor:pointer;white-space:nowrap;font-weight:700;">🗑 전체 삭제</button>
+        <button id="gcalDeleteAllBtn" onclick="_gcalDeleteAllEvents()" style="display:none;font-size:10px;padding:5px 11px;border-radius:8px;border:1px solid #ef4444;background:rgba(239,68,68,.07);color:#ef4444;cursor:pointer;white-space:nowrap;font-weight:700;">🗑 전체 삭제</button>
       </div>
     </div>
   </div>
@@ -842,7 +844,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
   <div class="ca" id="ca">
     <button class="btn bur" id="btnUndo" ontouchstart="" ontouchend="this.blur();doUndo()" onclick="doUndo()" title="실행 취소">↩ Undo</button><button class="btn bur" id="btnRedo" ontouchstart="" ontouchend="this.blur();doRedo()" onclick="doRedo()" title="다시 실행">↪ Redo</button>
     <div class="bp-group"><button class="btn bp" onclick="doPDF()">PDF 저장</button><button class="btn bp" style="background:#6b7280" onclick="doIMG()">이미지 저장</button></div>
-    <button id="epGcalBtn" onclick="_gcalUploadBoth()" style="display:none;font-size:10px;padding:4px 10px;border-radius:6px;border:1px solid rgba(22,163,74,.6);background:rgba(22,163,74,.12);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;margin-left:4px;">📅 캘린더 업로드</button>
+    <button id="epGcalBtn" onclick="_gcalUploadBoth()" style="display:none;font-size:10px;padding:4px 10px;border-radius:6px;border:1px solid rgba(22,163,74,.6);background:rgba(22,163,74,.12);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;margin-left:4px;">🔄 캘린더 동기화</button>
   </div>
   <div id="pa">
     <div class="cw"><div class="cs"><table class="gt" id="gt"></table></div></div>
@@ -3024,7 +3026,7 @@ function _gcalSyncUI(){
     wrap.style.background='#d1d5db';
     if(thumb)thumb.style.left='2px';
     if(label)label.textContent='꺼짐';
-    if(sub)sub.textContent='"지금 업로드" 버튼으로 전체 현장을 업로드하세요';
+    if(sub)sub.textContent='아래 버튼으로 전체 현장을 동기화하세요';
     var uploadBtn=document.getElementById('gcalUploadNowBtn');
     if(uploadBtn)uploadBtn.style.display='none';
     var simpleBtn=document.getElementById('gcalUploadSimpleBtn');
@@ -3220,17 +3222,32 @@ function _gcalRunUploadBoth(){
   }
 
   var sites = _gcalGetActiveSites();
-  if(!sites.length){ toast('확정된 현장이 없어요'); return; }
+  var pendingPns = _gcalGetPendingDeletes();
+  var hasDeletions = pendingPns.length > 0;
 
-  /* 비활성 현장 삭제 (비동기, 업로드와 무관하게 선행) */
+  if(!sites.length && !hasDeletions){ toast('확정된 현장이 없어요'); return; }
+
+  /* 삭제 대상이 있으면 로딩 먼저 표시 */
+  if(hasDeletions){
+    _gcalShowLoading();
+    _gcalUpdateLoading('미확정 현장 캘린더 동기화 중...', 30);
+  }
+
+  /* 비활성 현장 삭제 */
   _gcalDeleteInactiveSites(sites, detailCalId, simpleCalId, function(){
+    if(!sites.length){
+      /* 삭제만 하고 업로드 없음 */
+      _gcalUpdateLoading('완료!', 100);
+      setTimeout(function(){ _gcalHideLoading(); toast('📅 미확정 현장 캘린더에서 삭제됐어요 ✅'); }, 600);
+      return;
+    }
     /* detail 업로드 */
     _gcalUploadMode = 'detail';
     _gcalDoUploadAll(detailCalId, sites, function(){
       /* simple 업로드 */
       _gcalUploadMode = 'simple';
       _gcalDoUploadAll(simpleCalId, sites, function(){
-        toast('📅 캘린더 업로드 완료 ✅');
+        toast('🔄 캘린더 동기화 완료 ✅');
       });
     });
   });
@@ -3296,7 +3313,7 @@ function _gcalDoUploadAll(calId, sites, onAllDone){
       var snap = queue.shift();
       done++;
       var pct = Math.round(20+(done/total)*75);
-      _gcalUpdateLoading((snap.pn||'현장')+' 업로드 중... ('+done+'/'+total+')', pct);
+      _gcalUpdateLoading((snap.pn||'현장')+' 동기화 중... ('+done+'/'+total+')', pct);
       var uploadFn = (_gcalUploadMode==='simple') ? _gcalDoUploadSimple : _gcalDoUpload;
       uploadFn(snap, function(uploadOk){
         if(uploadOk !== false) _gcalSaveUploadTs(snap.pn, calId, snap); /* 성공 시에만 해시 저장 */
@@ -3314,7 +3331,7 @@ function _gcalShowLoading(){
   bg.id='gcalLoadingBg';bg.className='gcal-loading-bg';
   bg.innerHTML='<div class="gcal-loading-box">'
     +'<div class="gcal-loading-spinner"></div>'
-    +'<div class="gcal-loading-title">📅 구글 캘린더 업로드 중</div>'
+    +'<div class="gcal-loading-title">🔄 구글 캘린더 동기화 중</div>'
     +'<div class="gcal-loading-status" id="gcalLoadStat">기존 일정 체크 중...</div>'
     +'<div class="gcal-loading-bar-wrap"><div class="gcal-loading-bar" id="gcalLoadBar"></div></div>'
     +'<button onclick="_gcalHideLoading()" style="margin-top:8px;background:none;border:none;color:#475569;font-size:11px;cursor:pointer;">✕ 닫기</button>'
