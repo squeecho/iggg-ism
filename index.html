@@ -335,8 +335,8 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-ctor-edit-btn.empty:hover{background:#f1f5f9;border-color:#94a3b8;}
 
 /* 이미지 저장 버튼 (달력 우하단 아이콘) */
-.ig-ctor-save-btn{display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:8px;background:var(--bg);border:1.5px solid var(--bd);color:var(--mu);font-size:12px;font-weight:700;cursor:pointer;transition:background .15s,border-color .15s;z-index:10;font-family:'Noto Sans KR',sans-serif;}
-.ig-ctor-save-btn:hover{background:var(--bd);border-color:var(--mu2);color:var(--tx);}
+.ig-ctor-save-btn{display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:8px;background:var(--bg);border:1.5px solid var(--bd);color:var(--tx);font-size:12px;font-weight:800;cursor:pointer;transition:background .15s,border-color .15s;z-index:10;font-family:'Noto Sans KR',sans-serif;}
+.ig-ctor-save-btn:hover{background:var(--bd);border-color:var(--mu2);}
 .ig-ctor-save-btn:active{opacity:.75;}
 
 /* 업체 배정 모달 */
@@ -762,7 +762,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
       </label>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;gap:8px;">
-      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);">확정 시 자동으로 구글 캘린더에 업로드됩니다</div>
+      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);">"지금 업로드" 버튼으로 전체 현장을 업로드하세요</div>
       <button id="gcalUploadNowBtn" onclick="_gcalUploadNow()" style="display:none;font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid #16a34a;background:transparent;color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;">지금 업로드</button>
     </div>
   </div>
@@ -1341,7 +1341,8 @@ function _doConfirmToggle(pn,confirming){
     var snap=item.snap?JSON.parse(item.snap):null;
     if(snap){snap.pn=pn;snap.confirmed=true;saveToCloud(snap);}
     /* Google Calendar 자동 업로드 */
-    if(snap) gcalUploadOnConfirm(snap);
+    /* 자동 캘린더 업로드 비활성 — 수동 "지금 업로드" 버튼 사용 */
+    // if(snap) gcalUploadOnConfirm(snap);
   } else {
     deleteFromCloud(pn);
   }
@@ -1356,7 +1357,7 @@ function _doConfirmToggle(pn,confirming){
         var cb=document.getElementById('ca');
         if(cb){var nb=document.createElement('span');nb.className='ro-badge';nb.textContent='🔒 확정됨';nb.style.cssText='font-size:11px;font-weight:700;color:#16a34a;background:#dcfce7;border:1px solid #bbf7d0;border-radius:6px;padding:3px 8px;margin-right:4px;';cb.insertBefore(nb,cb.firstChild);}
       }
-      toast('🔒 확정됐어요. 지난 확정현장으로 이동하고 다른 기기와 공유됩니다.');
+      toast('🔒 확정됐어요. 수정이 잠기고 다른 기기와 공유됩니다.');
     } else {
       if(rb)rb.remove();
       toast('🔓 확정 해제됐어요. 활성 현장으로 이동합니다.');
@@ -2043,6 +2044,10 @@ function calClick(el){
     S.sd=ds;S.ed='';
     if(oldSd&&oldSd!==ds)shiftTasks(oldSd,ds);
     _cPhase=1;
+    /* 선택한 시작일이 두 번째 달이면 달력을 한 달 앞으로 */
+    var selY=parseInt(ds.slice(0,4)),selM=parseInt(ds.slice(5,7))-1;
+    var nextM=_cM+1,nextY=_cY;if(nextM>11){nextM=0;nextY++;}
+    if(selY===nextY&&selM===nextM){_cM=nextM;_cY=nextY;}
     calRender();
   } else {
     if(ds<=S.sd){var tmp=S.sd;S.sd=ds;ds=tmp;}
@@ -2925,7 +2930,7 @@ function _gcalSyncUI(){
     wrap.style.background='#d1d5db';
     if(thumb)thumb.style.left='2px';
     if(label)label.textContent='꺼짐';
-    if(sub)sub.textContent='확정 시 자동으로 구글 캘린더에 업로드됩니다';
+    if(sub)sub.textContent='"지금 업로드" 버튼으로 전체 현장을 업로드하세요';
     var uploadBtn=document.getElementById('gcalUploadNowBtn');
     if(uploadBtn)uploadBtn.style.display='none';
     var tbBtn=document.getElementById('tbGcalBtn');
@@ -2971,7 +2976,8 @@ function getDeviceName(){ return _deviceName||'알 수 없음'; }
 function _gcalUploadNow(){
   /* 토글 꺼져있으면 안내 */
   if(!_gcalEnabled){ toast('구글 캘린더 연동 스위치를 켜주세요'); return; }
-  /* 항상 토큰 먼저 갱신 후 업로드 — 만료 여부 상관없이 */
+  /* 토큰 있으면 바로 업로드, 없을 때만 로그인 팝업 */
+  if(_gcalToken){ _gcalDoUploadAll(); return; }
   if(_gcalTokenClient){
     _gcalPendingAction = 'upload';
     _gcalTokenClient.requestAccessToken({prompt:'select_account'});
@@ -3715,14 +3721,16 @@ function rIntegrated() {
         });
         s += '</div></div>';
       }
-      s += '<div class="ig-legend"><div class="ig-legend-chips">';
+      /* 하단: 좌(현장칩) 2 : 우(이미지저장) 1 */
+      s += '<div style="display:grid;grid-template-columns:2fr 1fr;align-items:end;gap:8px;padding:8px 10px 10px;">';
+      s += '<div class="ig-legend"><div class="ig-legend-chips" style="padding:0;">';
       siteList.forEach(function(entry) { s += makeEntryHtml(entry, tid); });
       s += '</div></div>';
-      /* 이미지 저장 버튼 — legend 아래 우측 */
-      s += '<div class="no-print" style="display:flex;justify-content:flex-end;padding:6px 10px 10px;">'
+      s += '<div class="no-print" style="display:flex;justify-content:flex-end;">'
         + '<button class="ig-ctor-save-btn" onclick="doIGCtorImg(this,\''+tname+'\',\''+safeCtorName+'\')">'
-        + '📷&nbsp;이미지 저장'
+        + '이미지 저장'
         + '</button></div>';
+      s += '</div>'; /* 2:1 grid */
       s += '</div>'; /* ig-ctor-section 닫기 */
 
       return s;
