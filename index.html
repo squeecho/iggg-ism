@@ -3100,16 +3100,28 @@ function _gcalGetActiveSites(){
 }
 
 function _gcalDeleteInactiveSites(activeSites, detailCalId, simpleCalId, cb){
-  /* 해시 기록에 있지만 활성 목록에 없는 현장 → 해당 캘린더에서 삭제 */
   var activePns = activeSites.map(function(s){return s.pn;});
+
+  /* 삭제 대상: 해시 기록에 있지만 활성 목록에 없는 현장 */
   var jobs = [];
   [detailCalId, simpleCalId].forEach(function(cid){
     if(!cid) return;
+    /* 해시 맵에서 */
     var map = {};
     try{ map=JSON.parse(localStorage.getItem(_gcalTsKey(cid))||'{}'); }catch(e){}
-    var toRemove = Object.keys(map).filter(function(pn){return activePns.indexOf(pn)<0;});
+    /* pn별 ID 저장 키에서도 수집 */
+    try{
+      Object.keys(localStorage).forEach(function(k){
+        if(k.indexOf('_gcalIds_'+cid+'_')===0){
+          var pn = k.slice(('_gcalIds_'+cid+'_').length);
+          if(pn && !map[pn]) map[pn]='id_only';
+        }
+      });
+    }catch(e){}
+    var toRemove = Object.keys(map).filter(function(pn){ return activePns.indexOf(pn)<0; });
     if(toRemove.length) jobs.push({cid:cid, pns:toRemove});
   });
+
   if(!jobs.length){ cb(); return; }
   var ji=0;
   function nextJob(){
@@ -3382,53 +3394,70 @@ function _gcalDeleteAllEvents(){
   }
   deleteNext();
 }
-function _gcalIdsKey(calId){ return '_gcalIds_'+(calId||_gcalCalendarId||'primary'); }
-function _gcalSaveIds(ids,calId){try{localStorage.setItem(_gcalIdsKey(calId),JSON.stringify(ids));}catch(e){}}
-function _gcalLoadIds(calId){try{var v=localStorage.getItem(_gcalIdsKey(calId));return v?JSON.parse(v):[];}catch(e){return[];}}
+function _gcalIdsKey(calId,pn){ return '_gcalIds_'+(calId||'primary')+(pn?'_'+pn:''); }
+/* pn별 이벤트 ID 저장/로드 */
+function _gcalSaveIdsPn(ids,calId,pn){
+  try{ localStorage.setItem(_gcalIdsKey(calId,pn),JSON.stringify(ids)); }catch(e){}
+}
+function _gcalLoadIdsPn(calId,pn){
+  try{ var v=localStorage.getItem(_gcalIdsKey(calId,pn)); return v?JSON.parse(v):[]; }catch(e){return[];}
+}
+function _gcalClearIdsPn(calId,pn){
+  try{ localStorage.removeItem(_gcalIdsKey(calId,pn)); }catch(e){}
+}
+/* 하위호환: 전체 저장 (사용 안 함, 전체삭제 시에만) */
+function _gcalSaveIds(ids,calId){try{localStorage.setItem('_gcalIds_'+(calId||'primary'),JSON.stringify(ids));}catch(e){}}
+function _gcalLoadIds(calId){try{var v=localStorage.getItem('_gcalIds_'+(calId||'primary'));return v?JSON.parse(v):[];}catch(e){return[];}}
 
 
 /* 특정 현장 pn 목록의 이벤트만 삭제 (전체 삭제 대신 선택적 삭제) */
 function _gcalDeleteSiteEvents(pns, cb){
-  if(!_gcalToken||!_gcalCalendarId||!pns.length){cb();return;}
-  /* localStorage에 저장된 ID는 pn별로 관리하지 않으므로
-     태그 검색으로 해당 현장 이벤트만 찾아 삭제 */
-  var url='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)
+  /* _gcalCalendarId 기준으로 pns에 해당하는 이벤트만 삭제 */
+  if(!_gcalToken||!_gcalCalendarId||!pns||!pns.length){cb();return;}
+  var calId = _gcalCalendarId;
+  /* 1) pn별 저장 ID 수집 */
+  var idsFromStore = [];
+  pns.forEach(function(pn){
+    _gcalLoadIdsPn(calId,pn).forEach(function(id){
+      if(idsFromStore.indexOf(id)<0) idsFromStore.push(id);
+    });
+  });
+  /* 2) 태그 검색으로 summary 매칭 이벤트 ID 수집 */
+  var url='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(calId)
     +'/events?privateExtendedProperty=src%3Diggg-ism&maxResults=2500&showDeleted=false';
   fetch(url,{headers:{'Authorization':'Bearer '+_gcalToken}})
     .then(function(r){return r.json();})
     .then(function(data){
-      var items = (data.items||[]).filter(function(ev){
-        /* summary에서 pn 지역부분 매칭: "강남 | 목공..." → "강남" */
-        var sum = ev.summary || '';
+      var items=(data.items||[]).filter(function(ev){
+        var sum=ev.summary||'';
         return pns.some(function(pn){
-          var region = pn.indexOf(' ')>0 ? pn.slice(0,pn.indexOf(' ')) : pn;
-          return sum.indexOf(region+' |') === 0 || sum.indexOf(region+'|') === 0;
+          /* "현장명 | 공종" 또는 "현장명" 형태 매칭 */
+          return sum===pn || sum.indexOf(pn+' |')===0 || sum.indexOf(pn+'|')===0;
         });
       });
-      /* 저장된 ID 중 변경 현장 것도 포함 */
-      var savedIds = _gcalLoadIds(_gcalCalendarId);
-      /* 일단 전체 저장 ID 삭제 대상에 포함 (pn별 분리 없으므로 전체 클리어) */
-      var allDelIds = items.map(function(x){return x.id;});
-      savedIds.forEach(function(id){ if(allDelIds.indexOf(id)<0) allDelIds.push(id); });
-      _gcalSaveIds([], _gcalCalendarId);
-      if(!allDelIds.length){cb();return;}
-      var delQueue = allDelIds.slice();
+      var allIds = idsFromStore.slice();
+      items.forEach(function(ev){
+        if(allIds.indexOf(ev.id)<0) allIds.push(ev.id);
+      });
+      /* 3) pn별 저장 ID 클리어 */
+      pns.forEach(function(pn){ _gcalClearIdsPn(calId,pn); });
+      if(!allIds.length){cb();return;}
+      var q=allIds.slice();
       function delNext(){
-        if(!delQueue.length){cb();return;}
-        var id = delQueue.shift();
-        fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events/'+id,
+        if(!q.length){cb();return;}
+        var id=q.shift();
+        fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(calId)+'/events/'+id,
           {method:'DELETE',headers:{'Authorization':'Bearer '+_gcalToken}})
           .then(function(r){
-            if(!r.ok&&r.status!==404&&r.status!==410) console.warn('[gcal] DELETE '+r.status+' id='+id);
-          })
-          .catch(function(e){console.warn('[gcal] DELETE error',e);})
-          .finally(function(){setTimeout(delNext,80);});
+            if(r.status===429){
+              setTimeout(function(){q.unshift(id);delNext();},2000);
+            } else { delNext(); }
+          }).catch(function(){delNext();});
       }
       delNext();
-    })
-    .catch(function(){cb();});
+    }).catch(function(){cb();});
 }
-/* 저장된 ID + 태그 이벤트 전부 삭제 후 콜백 */
+
 function _gcalDeleteIgEvents(cb){
   if(!_gcalToken||!_gcalCalendarId){cb();return;}
   /* 1단계: 현재 캘린더 기준 저장된 ID만 로드 */
@@ -3623,7 +3652,7 @@ function _gcalDoUploadSimple(snap, onDone){
   }).then(function(r){
     if(r.ok){
       r.json().then(function(j){
-        if(j&&j.id){ var ids=_gcalLoadIds(_gcalCalendarId); ids.push(j.id); _gcalSaveIds(ids,_gcalCalendarId); }
+        if(j&&j.id){ var ids=_gcalLoadIdsPn(_gcalCalendarId,pn); ids.push(j.id); _gcalSaveIdsPn(ids,_gcalCalendarId,pn); }
       }).catch(function(){});
       _gcalUpdateLoading('완료!', 100);
       toast('📌 '+pn+' 간략 일정 추가됐어요 ✅');
@@ -3668,7 +3697,7 @@ function _gcalDoUpload(snap, onDone){
       }).then(function(r){
         if(r.ok){
           r.json().then(function(j){
-            if(j&&j.id){var ids=_gcalLoadIds(_gcalCalendarId);ids.push(j.id);_gcalSaveIds(ids,_gcalCalendarId);}
+            if(j&&j.id){var ids=_gcalLoadIdsPn(_gcalCalendarId,pn);ids.push(j.id);_gcalSaveIdsPn(ids,_gcalCalendarId,pn);}
           }).catch(function(){});
           _evtDone++;
           setTimeout(_sendNext, INTERVAL);
