@@ -3115,22 +3115,48 @@ function _gcalDoUpload(snap){
   var done=0;
   var failed=0;
 
-  function onResult(ok){
+  var _firstErr='';
+  function onResult(ok,errMsg){
     done++;
-    if(!ok)failed++;
+    if(!ok){failed++;if(!_firstErr)_firstErr=errMsg||'';}
     if(done===total){
       if(failed===0) toast('📅 '+total+'개 일정이 캘린더에 추가됐어요 ✅');
-      else toast('📅 '+(total-failed)+'개 추가 완료 ('+failed+'개 실패)');
+      else toast('📅 '+(total-failed)+'개 완료 ('+failed+'개 실패)'+((_firstErr)?' — '+_firstErr.slice(0,40):''));
     }
   }
 
+  var _retried=false;
   function postEvent(evt){
     total++;
+    _doPost(evt,false);
+  }
+  function _doPost(evt,isRetry){
     fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events',{
       method:'POST',
       headers:{'Authorization':'Bearer '+_gcalToken,'Content-Type':'application/json'},
       body:JSON.stringify(evt)
-    }).then(function(r){onResult(r.ok);}).catch(function(){onResult(false);});
+    }).then(function(r){
+      if(r.ok){onResult(true);}
+      else if(r.status===401||r.status===403){
+        /* 토큰 만료 → 한 번만 재인증 후 전체 재업로드 */
+        if(!_retried){
+          _retried=true;
+          console.warn('[gcal] 토큰 만료('+r.status+'), 재인증 후 재업로드');
+          _gcalToken=null;
+          if(_gcalTokenClient){
+            _gcalPendingAction='upload';
+            _gcalTokenClient.requestAccessToken({prompt:''});
+          }
+        }
+        onResult(false,'토큰 만료 — 재로그인 중');
+      } else {
+        r.json().then(function(j){
+          var msg=(j&&j.error&&j.error.message)||('HTTP '+r.status);
+          console.error('[gcal postEvent]',msg,evt.summary);
+          onResult(false,msg);
+        }).catch(function(){onResult(false,'HTTP '+r.status);});
+      }
+    }).catch(function(e){console.error('[gcal postEvent]',e);onResult(false,e.message);});
   }
 
   tasks.forEach(function(t){
