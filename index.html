@@ -167,6 +167,16 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .master-modal-err{color:#f87171;font-size:11px;font-weight:700;text-align:center;min-height:16px;}
 .master-modal-btns{display:flex;gap:8px;}
 .master-modal-cancel{flex:1;padding:11px;border:1.5px solid #334155;border-radius:10px;background:none;color:#94a3b8;font-size:14px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;}
+
+/* 캘린더 업로드 로딩 오버레이 */
+.gcal-loading-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;display:flex;align-items:center;justify-content:center;}
+.gcal-loading-box{background:#1e293b;border-radius:18px;padding:32px 28px;width:min(300px,88vw);display:flex;flex-direction:column;align-items:center;gap:16px;}
+.gcal-loading-spinner{width:44px;height:44px;border:4px solid #334155;border-top-color:#3b82f6;border-radius:50%;animation:gcalSpin .8s linear infinite;}
+@keyframes gcalSpin{to{transform:rotate(360deg);}}
+.gcal-loading-title{color:#f1f5f9;font-size:14px;font-weight:800;letter-spacing:-.2px;}
+.gcal-loading-status{color:#64748b;font-size:11px;font-weight:600;text-align:center;line-height:1.6;min-height:32px;}
+.gcal-loading-bar-wrap{width:100%;height:6px;background:#334155;border-radius:99px;overflow:hidden;}
+.gcal-loading-bar{height:100%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:99px;transition:width .3s ease;width:0%;}
 .master-modal-ok{flex:2;padding:11px;border:none;border-radius:10px;background:#3b82f6;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;}
 .cloud-del-btn{border:none;background:rgba(239,68,68,.15);color:#ef4444;border-radius:6px;font-size:11px;font-weight:700;padding:3px 8px;cursor:pointer;transition:background .14s;}
 .cloud-del-btn:hover{background:rgba(239,68,68,.3);}
@@ -1573,6 +1583,11 @@ function toggleCloudArchive(){
   chips.classList.toggle('open',!isOpen);
   if(arrow)arrow.classList.toggle('open',!isOpen);
 }
+function _safeDateStr(v){
+  if(!v)return '';
+  if(typeof v==='number'){var d=new Date(v);return d.getFullYear()+'-'+(d.getMonth()<9?'0':'')+(d.getMonth()+1)+'-'+(d.getDate()<10?'0':'')+d.getDate();}
+  return String(v);
+}
 function rChips(){
   var arr=getRecent();
   var el=document.getElementById('pnchips');
@@ -1594,8 +1609,9 @@ function rChips(){
       /* _cloudView 활성 중에는 로컬 칩 active 해제 */
       var isActive=(!_cloudView)&&(item.pn===S.pn);
       var isConfirmed=!!item.confirmed;
-      var created=item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'--';
-      var saved=item.savedAt?item.savedAt.slice(2).replace(/-/g,'.'):(item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'-');
+      var _cat=_safeDateStr(item.createdAt),_sat=_safeDateStr(item.savedAt);
+      var created=_cat?_cat.slice(2).replace(/-/g,'.'):'--';
+      var saved=_sat?_sat.slice(2).replace(/-/g,'.'):(_cat?_cat.slice(2).replace(/-/g,'.'):'-');
       function fmtDT(s){if(!s||s==='--'||s==='-')return s;var p=s.split(' ');return p[0]+(p[1]?' <span style="opacity:.7">'+p[1]+'</span>':'');}
       var period=(item.sd&&item.ed)?(item.sd.slice(5).replace('-','.')+' ~ '+item.ed.slice(5).replace('-','.')):'기간 미설정';
       var cls='pnchip'+(isActive?' active':'')+(isConfirmed?' confirmed':'');
@@ -1644,8 +1660,9 @@ function rChips(){
     var nm=esc(item.pn);
     var isActive=(!_cloudView)&&(item.pn===S.pn);
     var isConfirmed=!!item.confirmed;
-    var created=item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'--';
-    var saved=item.savedAt?item.savedAt.slice(2).replace(/-/g,'.'):(item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'-');
+    var _cat=_safeDateStr(item.createdAt),_sat=_safeDateStr(item.savedAt);
+    var created=_cat?_cat.slice(2).replace(/-/g,'.'):'--';
+    var saved=_sat?_sat.slice(2).replace(/-/g,'.'):(_cat?_cat.slice(2).replace(/-/g,'.'):'-');
     function fmtDT(s){if(!s||s==='--'||s==='-')return s;var p=s.split(' ');return p[0]+(p[1]?' <span style="opacity:.7">'+p[1]+'</span>':'');}
     var period=(item.sd&&item.ed)?(item.sd.slice(5).replace('-','.')+' ~ '+item.ed.slice(5).replace('-','.')):'기간 미설정';
     var pastDueBadge=!isConfirmed?'<span style="font-size:9px;color:#ef4444;font-weight:700;margin-left:4px;">기간종료</span>':'';
@@ -3019,19 +3036,49 @@ function _gcalDoUploadAll(){
   }
   var sites=base;
   if(!sites.length){ toast('업로드할 현장이 없어요'); return; }
-  toast('📅 기존 일정 삭제 후 업로드 중...');
-  _gcalDeleteIgEvents(function(){
-    /* 현장별 순차 업로드 (Rate Limit 방지) */
-    var queue = sites.slice();
-    function uploadNext(){
-      if(!queue.length) return;
-      var snap = queue.shift();
-      _gcalDoUpload(snap, function(){ uploadNext(); });
-    }
-    uploadNext();
+  _gcalShowLoading();
+  _gcalRefreshToken(function(){
+    _gcalUpdateLoading('기존 일정 삭제 중...', 10);
+    _gcalDeleteIgEvents(function(){
+      var queue = sites.slice();
+      var total = queue.length;
+      var done = 0;
+      _gcalUpdateLoading('업로드 준비 중...', 20);
+      function uploadNext(){
+        if(!queue.length){ _gcalHideLoading(); return; }
+        var snap = queue.shift();
+        done++;
+        var pct = Math.round(20 + (done/total)*75);
+        _gcalUpdateLoading((snap.pn||'현장') + ' 업로드 중... ('+done+'/'+total+')', pct);
+        _gcalDoUpload(snap, function(){ uploadNext(); });
+      }
+      uploadNext();
+    });
   });
 }
 /* 업로드된 이벤트 ID 저장/로드 */
+/* 업로드 로딩 오버레이 */
+function _gcalShowLoading(){
+  var bg=document.createElement('div');
+  bg.id='gcalLoadingBg';bg.className='gcal-loading-bg';
+  bg.innerHTML='<div class="gcal-loading-box">'
+    +'<div class="gcal-loading-spinner"></div>'
+    +'<div class="gcal-loading-title">📅 구글 캘린더 업로드 중</div>'
+    +'<div class="gcal-loading-status" id="gcalLoadStat">기존 일정 삭제 중...</div>'
+    +'<div class="gcal-loading-bar-wrap"><div class="gcal-loading-bar" id="gcalLoadBar"></div></div>'
+    +'</div>';
+  document.body.appendChild(bg);
+}
+function _gcalUpdateLoading(msg,pct){
+  var s=document.getElementById('gcalLoadStat');
+  var b=document.getElementById('gcalLoadBar');
+  if(s)s.textContent=msg;
+  if(b)b.style.width=(pct||0)+'%';
+}
+function _gcalHideLoading(){
+  var bg=document.getElementById('gcalLoadingBg');
+  if(bg)bg.remove();
+}
 function _gcalSaveIds(ids){try{localStorage.setItem('_gcalUploadedIds',JSON.stringify(ids));}catch(e){}}
 function _gcalLoadIds(){try{var v=localStorage.getItem('_gcalUploadedIds');return v?JSON.parse(v):[];}catch(e){return[];}}
 
@@ -3175,6 +3222,7 @@ function _gcalDoUpload(snap, onDone){
   function _sendNext(){
     if(_evtQueue.length===0){
       var total=_evtDone+_evtFailed;
+      _gcalUpdateLoading('완료!', 100);
       if(_evtFailed===0) toast('📅 '+total+'개 일정 추가됐어요 ✅');
       else toast('📅 '+_evtDone+'개 완료 ('+_evtFailed+'개 실패)');
       if(onDone)onDone();
@@ -3542,6 +3590,15 @@ function rIntegrated() {
     return;
   }
 
+  /* S(현재 편집 현장)도 포함한 merged 목록으로 렌더링 */
+  var _igBase = _cloudSites.slice();
+  if (typeof S !== 'undefined' && S && S.pn) {
+    var _si = _igBase.findIndex(function(x){ return x.pn === S.pn; });
+    if (_si >= 0) _igBase[_si] = S; else _igBase.push(S);
+  }
+  /* rIntegrated 내에서 _cloudSites 대신 _igBase 사용 */
+  var _cs = _cloudSites; _cloudSites = _igBase;
+
   /* 현장별 색상 */
   var siteColors = {};
   _cloudSites.forEach(function(site, i) {
@@ -3707,11 +3764,18 @@ function rIntegrated() {
     });
   });
 
-  if (visibleTids.length > 1) {
+  /* 필터 칩은 현재 월 무관하게 전체 현장에 존재하는 공종을 모두 표시 */
+  var allTids = IG_TASK_ORDER.filter(function(tid) {
+    return _cloudSites.some(function(site) {
+      return site.tasks && site.tasks.some(function(t){ return t.id===tid && t.on; });
+    });
+  });
+
+  if (allTids.length > 1) {
     html += '<div class="ig-filter-panel no-print">';
     html += '<div class="ig-filter-label">공종 표시 설정</div>';
     html += '<div class="ig-filter-chips">';
-    visibleTids.forEach(function(tid) {
+    allTids.forEach(function(tid) {
       var isOn = !collapsed[tid]; /* 기본 펼침 */
       var tname = IG_TASK_NAMES[tid] || '공종'+tid;
       html += '<div class="ig-filter-chip'+(isOn?' on':'')+'" onclick="igToggleTrade('+tid+')" id="ig-chip-'+tid+'">'
@@ -3837,6 +3901,7 @@ function rIntegrated() {
 
   html += '</div>'; /* ig-card-grid */
   el.innerHTML = html;
+  _cloudSites = _cs; /* _igBase 임시 대체 원본 복원 */
 }
 
 var _igSaveTimers = {};
@@ -4152,6 +4217,7 @@ var _igDateEdit = {pn:'', tid:0};
 
 function igOpenDateModal(pn, tid) {
   var site = _cloudSites.find(function(s){ return s.pn === pn; });
+  if (!site && typeof S !== 'undefined' && S && S.pn === pn) site = S;
   var task = site ? (site.tasks||[]).find(function(t){ return t.id===tid; }) : null;
   if (!site || !task) return;
 
@@ -4201,6 +4267,7 @@ function igSaveDateModal() {
   var pn = _igDateEdit.pn;
   var tid = _igDateEdit.tid;
   var site = _cloudSites.find(function(s){ return s.pn === pn; });
+  if (!site && typeof S !== 'undefined' && S && S.pn === pn) site = S;
   var task = site ? (site.tasks||[]).find(function(t){ return t.id===tid; }) : null;
   if (!site || !task) { igCloseDateModal(); return; }
 
