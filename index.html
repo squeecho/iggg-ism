@@ -3176,7 +3176,7 @@ function _gcalDoUploadAll(onAllDone){
         _gcalUpdateLoading((snap.pn||'현장') + ' 업로드 중... ('+done+'/'+total+')', pct);
         var uploadFn = (_gcalUploadMode === 'simple') ? _gcalDoUploadSimple : _gcalDoUpload;
         uploadFn(snap, function(){
-          _gcalSaveUploadTs(snap.pn); /* 업로드 완료 시간 기록 */
+          _gcalSaveUploadTs(snap.pn, _gcalCalendarId); /* 업로드 완료 시간 기록 */
           uploadNext();
         });
       }
@@ -3218,37 +3218,45 @@ function _gcalHideLoading(){
 }
 
 /* 현장별 마지막 업로드 시간 저장/로드 */
-function _gcalSaveUploadTs(pn){
+function _gcalTsKey(calId){ return '_gcalUploadTs_'+(calId||_gcalCalendarId||'primary'); }
+function _gcalSaveUploadTs(pn, calId){
   try{
-    var map = JSON.parse(localStorage.getItem('_gcalUploadTs')||'{}');
+    var key = _gcalTsKey(calId);
+    var map = JSON.parse(localStorage.getItem(key)||'{}');
     map[pn] = Date.now();
-    localStorage.setItem('_gcalUploadTs', JSON.stringify(map));
+    localStorage.setItem(key, JSON.stringify(map));
   }catch(e){}
 }
-function _gcalGetUploadTs(pn){
+function _gcalGetUploadTs(pn, calId){
   try{
-    var map = JSON.parse(localStorage.getItem('_gcalUploadTs')||'{}');
+    var map = JSON.parse(localStorage.getItem(_gcalTsKey(calId))||'{}');
     return map[pn] || 0;
   }catch(e){ return 0; }
 }
 function _gcalClearUploadTs(){
-  try{ localStorage.removeItem('_gcalUploadTs'); }catch(e){}
+  /* 모든 캘린더 TS 초기화 */
+  try{
+    Object.keys(localStorage).filter(function(k){ return k.indexOf('_gcalUploadTs_')===0; })
+      .forEach(function(k){ localStorage.removeItem(k); });
+  }catch(e){}
 }
 function _gcalClearUploadTs_pn(pn){
-  /* 특정 현장의 업로드 기록만 제거 → 다음 전체 업로드 시 포함되게 함 */
   try{
-    var map = JSON.parse(localStorage.getItem('_gcalUploadTs')||'{}');
-    delete map[pn];
-    localStorage.setItem('_gcalUploadTs', JSON.stringify(map));
+    Object.keys(localStorage).filter(function(k){ return k.indexOf('_gcalUploadTs_')===0; })
+      .forEach(function(k){
+        var map = JSON.parse(localStorage.getItem(k)||'{}');
+        delete map[pn];
+        localStorage.setItem(k, JSON.stringify(map));
+      });
   }catch(e){}
 }
 function _gcalNeedsUpload(site){
-  /* savedAt이 없거나 마지막 업로드 이후 수정됐으면 업로드 필요 */
-  var lastUp = _gcalGetUploadTs(site.pn);
+  /* 현재 모드의 캘린더 기준으로 업로드 필요 여부 판단 */
+  var calId = (_gcalUploadMode==='simple') ? _gcalCalIdSimple : _gcalCalIdDetail;
+  var lastUp = _gcalGetUploadTs(site.pn, calId);
   if(!lastUp) return true;
   var savedAt = site.savedAt;
   if(!savedAt) return true;
-  /* savedAt이 문자열 '2026-03-08 01:59' 형식이면 Date로 변환 */
   var savedMs = typeof savedAt === 'number' ? savedAt : new Date(savedAt.replace(' ','T')).getTime();
   if(isNaN(savedMs)) return true;
   return savedMs > lastUp;
@@ -3279,24 +3287,36 @@ function _gcalRefreshToken(cb){
 }
 
 function _gcalDeleteAllEvents(){
-  if(!_gcalToken){
-    toast('먼저 캘린더 연동을 켜주세요');return;
-  }
+  if(!_gcalToken){ toast('먼저 캘린더 연동을 켜주세요'); return; }
   if(!confirm('구글 캘린더의 iggg-ism 일정을 모두 삭제할까요?')) return;
   _gcalShowLoading();
   _gcalUpdateLoading('캘린더 일정 삭제 중...', 10);
-  _gcalRefreshToken(function(){
-    _gcalUpdateLoading('캘린더 이벤트 검색 중...', 30);
-    _gcalDeleteIgEvents(function(){
-      _gcalSaveIds([], _gcalCalendarId);
+
+  /* 삭제 대상 캘린더: detail + simple (중복 제거) */
+  var calIds = [];
+  if(_gcalCalIdDetail) calIds.push(_gcalCalIdDetail);
+  if(_gcalCalIdSimple && calIds.indexOf(_gcalCalIdSimple)<0) calIds.push(_gcalCalIdSimple);
+  if(!calIds.length){ calIds.push(_gcalCalendarId||'primary'); }
+
+  var idx = 0;
+  function deleteNext(){
+    if(idx >= calIds.length){
       _gcalClearUploadTs();
       _gcalUpdateLoading('삭제 완료!', 100);
-      setTimeout(function(){
-        _gcalHideLoading();
-        toast('🗑 캘린더 일정이 모두 삭제됐어요');
-      }, 600);
+      setTimeout(function(){ _gcalHideLoading(); toast('🗑 캘린더 일정이 모두 삭제됐어요'); }, 600);
+      return;
+    }
+    var calId = calIds[idx++];
+    var pct = Math.round(10 + (idx/calIds.length)*70);
+    _gcalUpdateLoading((idx===1?'상세':'간략')+' 캘린더 삭제 중... ('+idx+'/'+calIds.length+')', pct);
+    /* 현재 삭제 대상 캘린더로 임시 세팅 */
+    _gcalCalendarId = calId;
+    _gcalDeleteIgEvents(function(){
+      _gcalSaveIds([], calId);
+      deleteNext();
     });
-  });
+  }
+  deleteNext();
 }
 function _gcalIdsKey(calId){ return '_gcalIds_'+(calId||_gcalCalendarId||'primary'); }
 function _gcalSaveIds(ids,calId){try{localStorage.setItem(_gcalIdsKey(calId),JSON.stringify(ids));}catch(e){}}
