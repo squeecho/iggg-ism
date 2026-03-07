@@ -2979,11 +2979,17 @@ function initGoogleAuth(){
         _gcalDoUploadAll();
       } else if(_gcalPendingAction==='uploadBoth'){
         _gcalPendingAction=null;
+        /* 토큰 갱신 완료 — 상세 업로드 후 간략 업로드 순차 실행 */
         _gcalUploadMode='detail';
         _gcalDoUploadAll(function(){
-          /* 상세 완료 후 간략 업로드 */
           _gcalUploadMode='simple';
-          _gcalDoUploadAll();
+          /* 간략 캘린더 미지정 시 먼저 선택 */
+          if(!_gcalCalIdSimple||_gcalCalIdSimple==='primary'){
+            _gcalPickMode='simple';
+            _gcalPickCalendar(function(){ _gcalDoUploadAll(); });
+          } else {
+            _gcalDoUploadAll();
+          }
         });
       } else if(_gcalPendingAction==='pickCal'){
         _gcalPendingAction=null;
@@ -3085,11 +3091,10 @@ function _submitDeviceName(){
 function getDeviceName(){ return _deviceName||'알 수 없음'; }
 
 
-/* 상세 + 간략 순차 업로드 */
+/* 상세 + 간략 순차 업로드 — 토큰 1회 갱신 후 연속 실행 */
 function _gcalUploadBoth(){
   if(!_gcalEnabled){ toast('구글 캘린더 연동 스위치를 켜주세요'); return; }
   if(!_gcalTokenClient){ toast('잠깐, 초기화 중이에요...'); setTimeout(_gcalUploadBoth, 800); return; }
-  _gcalUploadMode = 'detail';
   _gcalPendingAction = 'uploadBoth';
   _gcalTokenClient.requestAccessToken({prompt:''});
 }
@@ -3140,7 +3145,8 @@ function _gcalDoUploadAll(onAllDone){
   }
 
   _gcalShowLoading();
-  _gcalRefreshToken(function(){
+  /* 토큰은 진입 전(_gcalUploadBoth/_gcalUploadNow)에서 이미 갱신됨 — 여기서 재요청 안 함 */
+  (function(){
     if(skipped > 0){
       _gcalUpdateLoading(skipped+'개 현장은 변경 없어 스킵', 10);
     } else {
@@ -3176,7 +3182,7 @@ function _gcalDoUploadAll(onAllDone){
       }
       uploadNext();
     });
-  });
+  })();
 }
 /* 업로드된 이벤트 ID 저장/로드 */
 /* 업로드 로딩 오버레이 */
