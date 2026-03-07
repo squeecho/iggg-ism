@@ -690,7 +690,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
     <span class="tb-site" id="tpn">(현장명 미입력)</span>
   </div>
   <div id="tbGcalBtn" style="display:none;margin-left:auto;padding-right:12px;">
-    <button onclick="_gcalUploadNow()" style="display:flex;align-items:center;gap:5px;background:rgba(22,163,74,.15);border:1px solid rgba(22,163,74,.5);border-radius:7px;color:#4ade80;font-size:10px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;line-height:1.5;">📅 캘린더 업로드</button>
+    <button onclick="_gcalUploadBoth()" style="display:flex;align-items:center;gap:5px;background:rgba(22,163,74,.15);border:1px solid rgba(22,163,74,.5);border-radius:7px;color:#4ade80;font-size:10px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;line-height:1.5;">📅 캘린더 업로드</button>
   </div>
   
 </div>
@@ -845,7 +845,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
   <div class="ca" id="ca">
     <button class="btn bur" id="btnUndo" ontouchstart="" ontouchend="this.blur();doUndo()" onclick="doUndo()" title="실행 취소">↩ Undo</button><button class="btn bur" id="btnRedo" ontouchstart="" ontouchend="this.blur();doRedo()" onclick="doRedo()" title="다시 실행">↪ Redo</button>
     <div class="bp-group"><button class="btn bp" onclick="doPDF()">PDF 저장</button><button class="btn bp" style="background:#6b7280" onclick="doIMG()">이미지 저장</button></div>
-    
+    <button id="epGcalBtn" onclick="_gcalUploadBoth()" style="display:none;font-size:10px;padding:4px 10px;border-radius:6px;border:1px solid rgba(22,163,74,.6);background:rgba(22,163,74,.12);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;margin-left:4px;">📅 캘린더 업로드</button>
   </div>
   <div id="pa">
     <div class="cw"><div class="cs"><table class="gt" id="gt"></table></div></div>
@@ -2977,6 +2977,14 @@ function initGoogleAuth(){
       if(_gcalPendingAction==='upload'){
         _gcalPendingAction=null;
         _gcalDoUploadAll();
+      } else if(_gcalPendingAction==='uploadBoth'){
+        _gcalPendingAction=null;
+        _gcalUploadMode='detail';
+        _gcalDoUploadAll(function(){
+          /* 상세 완료 후 간략 업로드 */
+          _gcalUploadMode='simple';
+          _gcalDoUploadAll();
+        });
       } else if(_gcalPendingAction==='pickCal'){
         _gcalPendingAction=null;
         _gcalPickCalendar(function(){ _gcalSyncUI(); });
@@ -3017,6 +3025,8 @@ function _gcalSyncUI(){
     if(delBtn)delBtn.style.display=(typeof _masterMode!=='undefined'&&_masterMode)?'block':'none';
     var tbBtn=document.getElementById('tbGcalBtn');
     if(tbBtn)tbBtn.style.display='block';
+    var epBtn=document.getElementById('epGcalBtn');
+    if(epBtn)epBtn.style.display='';
   } else {
     wrap.style.background='#d1d5db';
     if(thumb)thumb.style.left='2px';
@@ -3034,6 +3044,8 @@ function _gcalSyncUI(){
     if(delBtn)delBtn.style.display='none';
     var tbBtn=document.getElementById('tbGcalBtn');
     if(tbBtn)tbBtn.style.display='none';
+    var epBtn=document.getElementById('epGcalBtn');
+    if(epBtn)epBtn.style.display='none';
   }
 }
 
@@ -3072,6 +3084,15 @@ function _submitDeviceName(){
 }
 function getDeviceName(){ return _deviceName||'알 수 없음'; }
 
+
+/* 상세 + 간략 순차 업로드 */
+function _gcalUploadBoth(){
+  if(!_gcalEnabled){ toast('구글 캘린더 연동 스위치를 켜주세요'); return; }
+  if(!_gcalTokenClient){ toast('잠깐, 초기화 중이에요...'); setTimeout(_gcalUploadBoth, 800); return; }
+  _gcalUploadMode = 'detail';
+  _gcalPendingAction = 'uploadBoth';
+  _gcalTokenClient.requestAccessToken({prompt:''});
+}
 var _gcalUploadMode = 'detail'; /* 'detail' | 'simple' */
 function _gcalUploadNow(mode){
   _gcalUploadMode = mode || 'detail';
@@ -3080,7 +3101,7 @@ function _gcalUploadNow(mode){
   _gcalPendingAction = 'upload';
   _gcalTokenClient.requestAccessToken({prompt:''});
 }
-function _gcalDoUploadAll(){
+function _gcalDoUploadAll(onAllDone){
   /* 모드별 캘린더 ID 결정 */
   var _modeCalId = (_gcalUploadMode==='simple') ? _gcalCalIdSimple : _gcalCalIdDetail;
   if(!_modeCalId||_modeCalId==='primary'){
@@ -3114,6 +3135,7 @@ function _gcalDoUploadAll(){
 
   if(!changed.length){
     toast('📅 모든 현장이 최신 상태예요 ✅');
+    if(onAllDone)onAllDone();
     return;
   }
 
@@ -3141,7 +3163,7 @@ function _gcalDoUploadAll(){
       }, dynTimeout);
       _gcalUpdateLoading('업로드 준비 중...', 20);
       function uploadNext(){
-        if(!queue.length){ _gcalHideLoading(); return; }
+        if(!queue.length){ _gcalHideLoading(); if(onAllDone)onAllDone(); return; }
         var snap = queue.shift();
         done++;
         var pct = Math.round(20 + (done/total)*75);
