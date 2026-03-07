@@ -192,7 +192,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .pnchip.active .pnchip-confirm.on{background:#16a34a;border-color:#16a34a;color:#fff;}
 .pnchip-lock{font-size:12px;line-height:1;}
 /* 통합 탭 */
-.ig-wrap{padding:14px 14px 90px;display:grid;grid-template-columns:1fr;gap:14px;align-items:start;}
+.ig-wrap{padding:14px 14px 90px;display:block;}.ig-card-grid{display:grid;grid-template-columns:1fr;gap:14px;align-items:start;}
 .ig-empty{padding:50px 16px;text-align:center;color:var(--mu);}
 .ig-empty-icon{font-size:36px;margin-bottom:12px;}
 .ig-empty-title{font-weight:700;font-size:15px;margin-bottom:6px;color:var(--tx);}
@@ -233,12 +233,41 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-trade-body{display:flex;flex-direction:column;}
 /* 태블릿 세로 (768px~) → 공종 2열 */
 @media(min-width:768px){
-  .ig-wrap{grid-template-columns:repeat(2,1fr);}
+  .ig-card-grid{grid-template-columns:repeat(2,1fr);}
 }
 /* 태블릿 가로 / 데스크탑 (960px~) → 공종 3열 */
 @media(min-width:960px){
-  .ig-wrap{grid-template-columns:repeat(3,1fr);}
+  .ig-card-grid{grid-template-columns:repeat(3,1fr);}
 }
+/* ── 편집탭 반응형 ── */
+/* 기본(모바일 1열 좁음 <540px): 달력 세로 */
+.cal-months-wrap{display:grid;grid-template-columns:1fr;border-top:1px solid var(--bd);}
+.cal-months-wrap>div:last-child{border-top:1px solid var(--bd);}
+.ep-top-row{display:block;}
+/* 1열 넓음(540~767px): 달력 가로 */
+@media(min-width:540px) and (max-width:767px){
+  .cal-months-wrap{grid-template-columns:1fr 1fr;}
+  .cal-months-wrap>div:last-child{border-top:none;border-left:1px solid var(--bd);}
+}
+/* 2열 (768~959px): 프로젝트 1fr / 달력 1fr, 달력 세로 */
+@media(min-width:768px){
+  .ep-top-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-bottom:14px;}
+  .ep-cal-col{margin-top:0;}
+  .ep-cal-col .cd{margin-top:0!important;}
+  .cal-months-wrap{grid-template-columns:1fr;}
+  .cal-months-wrap>div:last-child{border-top:1px solid var(--bd);border-left:none;}
+}
+/* 3열 전환 (960~1099px): 프로젝트 1fr / 달력 2fr, 달력 세로 유지 */
+@media(min-width:960px){
+  .ep-top-row{grid-template-columns:1fr 2fr;}
+}
+/* 3열 풀 (1100px+): 달력 가로 */
+@media(min-width:1100px){
+  .ep{max-width:1440px;margin-left:auto;margin-right:auto;}
+  .cal-months-wrap{grid-template-columns:1fr 1fr;}
+  .cal-months-wrap>div:last-child{border-top:none;border-left:1px solid var(--bd);}
+}
+
 .ig-trade-hd{display:flex;align-items:center;gap:8px;padding:12px 14px 10px;background:var(--tx);flex-wrap:wrap;cursor:pointer;-webkit-tap-highlight-color:transparent;}
 .ig-trade-hd:active{opacity:.85;}
 .ig-trade-nm{font-size:15px;font-weight:900;color:#fff;letter-spacing:-0.3px;}
@@ -456,7 +485,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 /* notes */
 .nt{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;}
 .nt th{background:#f0ede6;padding:7px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.5px;border-bottom:2px solid var(--bd);}
-.nt td{padding:7px 8px;border-bottom:1px solid var(--bd);vertical-align:middle;}
+.nt td{padding:4px 8px;border-bottom:1px solid var(--bd);vertical-align:middle;}
 .nt tr:last-child td{border-bottom:none;}
 .ni{border:1.5px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:13px;font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);outline:none;width:100%;}
 .ni:focus{border-color:var(--bar);background:#fff;}
@@ -474,7 +503,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .gt{border-collapse:collapse;table-layout:fixed;}
 .gt th,.gt td{border-right:1px solid rgba(0,0,0,.06);border-bottom:1px solid var(--bd);}
 .gt tbody tr:last-child td{border-bottom:none;}
-.sc{position:sticky;z-index:5;}
+.sc{position:static;z-index:5;}
 .s1{left:0;width:32px;min-width:32px;}
 .s2{left:32px;width:90px;min-width:90px;border-right:2px solid var(--bmd)!important;}
 .hpm{background:#eeebe4;text-align:center;padding:10px 8px;border-bottom:1px solid var(--bd);}
@@ -662,6 +691,9 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 </div>
 <!-- 편집 -->
 <div class="pg on ep" id="pe">
+  <div class="ep-top-row">
+  <!-- 왼쪽: 프로젝트 정보 + 구글캘린더 -->
+  <div class="ep-info-col">
   <!-- 현장명·칩: 블러 없음 -->
   <div class="cd">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
@@ -734,11 +766,13 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
       <button id="gcalUploadNowBtn" onclick="_gcalUploadNow()" style="display:none;font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid #16a34a;background:transparent;color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;">지금 업로드</button>
     </div>
   </div>
-  <!-- 잠금 영역: 공사기간 + 공종 + 비고 -->
-  <div id="edit-lockable" style="position:relative">
+  </div><!-- /ep-info-col -->
+  <!-- 오른쪽: 공사기간 달력 -->
+  <div class="ep-cal-col">
+  <div id="edit-lockable-cal" style="position:relative">
     <!-- 확정 잠금 배너 -->
     <div id="lock-banner" style="display:none;align-items:center;justify-content:center;gap:8px;background:#dcfce7;border:1.5px solid #86efac;border-radius:12px;padding:10px 16px;margin-bottom:10px;font-size:13px;font-weight:700;color:#15803d;">🔒 확정된 현장입니다 · 수정이 잠겨있습니다</div>
-    <div class="cd" style="margin-top:12px">
+    <div class="cd" style="margin-top:0">
       <div class="sl" style="margin-bottom:6px">공사 기간
         <span id="dbg" style="font-weight:700;color:var(--bar);font-family:DM Mono,monospace;font-size:11px;margin-left:4px"></span>
       </div>
@@ -753,11 +787,11 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
           <button class="cal-nav-btn" onclick="calMove(1)">&#8594;</button>
         </div>
         <div class="cal-hint" id="calHint">시작일을 선택하세요</div>
-        <div style="display:grid;grid-template-columns:1fr;gap:0;border-top:1px solid var(--bd)">
+        <div class="cal-months-wrap">
           <div>
             <div class="cal-grid" id="calGrid"></div>
           </div>
-          <div style="border-top:1px solid var(--bd)">
+          <div>
             <div class="cal-grid" id="calGrid2"></div>
           </div>
         </div>
@@ -766,6 +800,11 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
       <input type="hidden" id="fs" value="">
       <input type="hidden" id="fend" value="">
     </div>
+  </div><!-- /edit-lockable-cal -->
+  </div><!-- /ep-cal-col -->
+  </div><!-- /ep-top-row -->
+  <!-- 하단 풀폭: 공종 + 비고 (잠금 영역) -->
+  <div id="edit-lockable" style="position:relative">
     <div class="sl" style="margin:12px 2px 8px">공종별 일정 <span style="font-weight:400;color:var(--mu2)">(탭하여 편집)</span></div>
     <div class="tl" id="tl"></div>
     <div class="cd" style="margin-top:10px">
@@ -817,21 +856,19 @@ function doRedo(){if(IS_RO)return;if(!_redoStack.length)return;if(navigator.vibr
 function _updUR(){var u=document.getElementById('btnUndo');var r=document.getElementById('btnRedo');if(u)u.classList.toggle('on',_undoStack.length>0);if(r)r.classList.toggle('on',_redoStack.length>0);}
 function _updLockOverlay(){
   var wrap=document.getElementById('edit-lockable');
+  var calWrap=document.getElementById('edit-lockable-cal');
   var ov=document.getElementById('lock-overlay');
-  if(!wrap||!ov)return;
-  if(IS_RO){
-    wrap.style.filter='blur(3px)';
-    wrap.style.opacity='0.45';
-    wrap.style.pointerEvents='none';
-    wrap.style.userSelect='none';
-    ov.style.display='flex';
-  } else {
-    wrap.style.filter='';
-    wrap.style.opacity='';
-    wrap.style.pointerEvents='';
-    wrap.style.userSelect='';
-    ov.style.display='none';
+  function applyLock(el,on){
+    if(!el)return;
+    el.style.filter=on?'blur(3px)':'';
+    el.style.opacity=on?'0.45':'';
+    el.style.pointerEvents=on?'none':'';
+    el.style.userSelect=on?'none':'';
   }
+  if(!wrap)return;
+  applyLock(wrap,IS_RO);
+  applyLock(calWrap,IS_RO);
+  if(ov)ov.style.display=IS_RO?'flex':'none';
 }
 var HOLS={'2025-01-01':'신정','2025-01-28':'설전날','2025-01-29':'설날','2025-01-30':'설후날',
   '2025-03-01':'삼일절','2025-05-05':'어린이날','2025-06-06':'현충일','2025-08-15':'광복절',
@@ -2205,14 +2242,14 @@ function rNE(){
     h+='<tr><td><input class="ni" type="text" value="'+esc(n.label)+'" oninput="upN('+n.id+',\'label\',this.value)" placeholder="항목명"></td><td style="min-width:140px">';
     if(n.type==='auto'){
       h+='<span style="font-size:12px;color:var(--gn);font-weight:700;font-family:DM Mono,monospace">'+(nd?dspK(nd):'미정')+'</span>';
-      h+='<br><small style="font-size:10px;color:var(--mu)">'+autoDesc+' 자동</small>';
+      h+='<small style="font-size:10px;color:var(--mu);display:block;line-height:1.4">'+autoDesc+' 자동</small>';
     } else if(n.type==='auto_mk'||n.type==='auto_sb'){
       var autoNd=nDt(n);
       var autoLogic=n.type==='auto_mk'?'목공사 종료+1일':'설비공사 종료+2일';
       if(!n.dt){
         h+='<span style="font-size:12px;color:var(--gn);font-weight:700;font-family:DM Mono,monospace">'+(autoNd?dspK(autoNd):'미정')+'</span>';
-        h+='<br><small style="font-size:10px;color:var(--mu)">'+autoLogic+' 자동</small>';
-        h+='<br><small style="font-size:9px;color:#9ca3af">차트에서 drag로 수정가능</small>';
+        h+='<small style="font-size:10px;color:var(--mu);display:block;line-height:1.4">'+autoLogic+' 자동</small>';
+        h+='<small style="font-size:9px;color:#9ca3af;display:block;line-height:1.3">차트에서 drag로 수정가능</small>';
       } else {
         h+='<div class="date-disp" style="font-size:12px;cursor:pointer" onclick="openNCal('+n.id+')">'+dspK(n.dt)+'</div>';
         h+='<small style="font-size:10px;color:var(--mu);display:block;margin-top:2px">수동 설정됨</small>';
@@ -2223,8 +2260,8 @@ function rNE(){
       var autoNd1=(t9chk&&t9chk.on&&t9chk.ed)?addD(t9chk.ed,2):'';
       if(!n.dt){
         h+='<span style="font-size:12px;color:var(--gn);font-weight:700;font-family:DM Mono,monospace">'+(autoNd1?dspK(autoNd1):'미정')+'</span>';
-        h+='<br><small style="font-size:10px;color:var(--mu)">타일공사 종료+2일 자동</small>';
-        h+='<br><small style="font-size:9px;color:#9ca3af">차트에서 drag로 수정가능</small>';
+        h+='<small style="font-size:10px;color:var(--mu);display:block;line-height:1.4">타일공사 종료+2일 자동</small>';
+        h+='<small style="font-size:9px;color:#9ca3af;display:block;line-height:1.3">차트에서 drag로 수정가능</small>';
       } else {
         h+='<div class="date-disp" style="font-size:12px;cursor:pointer" onclick="openNCal('+n.id+')">'+dspK(n.dt)+'</div>';
         h+='<small style="font-size:10px;color:var(--mu);display:block;margin-top:2px">수동 설정됨</small>';
@@ -2861,10 +2898,7 @@ function initGoogleAuth(){
       }
     }
   });
-  /* 이전 세션에서 연동됐으면 자동 silent 재인증 (토큰은 보안상 저장 불가) */
-  if(_gcalEnabled && _gcalTokenClient){
-    try{ _gcalTokenClient.requestAccessToken({prompt:''}); }catch(e){}
-  }
+  /* 토큰은 보안상 저장 불가 → UI만 복원, 실제 토큰은 사용 시점에 요청 */
   _gcalSyncUI();
 }
 
@@ -2946,9 +2980,36 @@ function _gcalUploadNow(){
     return;
   }
   if(!_gcalCalendarId){ _gcalPickCalendar(function(){ _gcalUploadNow(); }); return; }
-  var snap = typeof _cloudView!=='undefined'&&_cloudView ? _cloudView : (typeof S!=='undefined'?S:null);
-  if(!snap||!snap.pn){ toast('편집 중인 현장이 없어요'); return; }
-  _gcalDoUpload(snap);
+  /* 클라우드 현장 전체 업로드 (없으면 현재 편집 현장) */
+  var sites = (typeof _cloudSites!=='undefined' && _cloudSites && _cloudSites.length)
+    ? _cloudSites
+    : ((typeof _cloudView!=='undefined'&&_cloudView) ? [_cloudView]
+      : ((typeof S!=='undefined'&&S&&S.pn) ? [S] : []));
+  if(!sites.length){ toast('업로드할 현장이 없어요'); return; }
+  toast('📅 기존 일정 삭제 후 업로드 중...');
+  _gcalDeleteIgEvents(function(){
+    sites.forEach(function(snap){ _gcalDoUpload(snap); });
+  });
+}
+/* iggg-ism 태그 이벤트 전체 삭제 후 콜백 */
+function _gcalDeleteIgEvents(cb){
+  if(!_gcalToken||!_gcalCalendarId){cb();return;}
+  var url='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)
+    +'/events?privateExtendedProperty=src%3Diggg-ism&maxResults=2500&showDeleted=false';
+  fetch(url,{headers:{'Authorization':'Bearer '+_gcalToken}})
+    .then(function(r){return r.json();})
+    .then(function(data){
+      var items=(data.items||[]);
+      if(!items.length){cb();return;}
+      var done=0;
+      items.forEach(function(item){
+        fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events/'+item.id,
+          {method:'DELETE',headers:{'Authorization':'Bearer '+_gcalToken}})
+          .catch(function(){})
+          .finally(function(){done++;if(done===items.length)cb();});
+      });
+    })
+    .catch(function(){cb();});
 }
 function _gcalCloseCalModal(){
   var m=document.getElementById('_gcalCalModalBg');
@@ -3077,23 +3138,24 @@ function _gcalDoUpload(snap){
     var title=_gcalEventTitle(pn,t.name,vendor);
     var desc=pn+' 공사 일정\n공종: '+t.name+(vendor?'\n업체: '+vendor:'');
 
-    postEvent({
+    var ext={extendedProperties:{private:{src:'iggg-ism'}}};
+    postEvent(Object.assign({
       summary:title,
       description:desc,
       start:{date:t.sd},
       end:{date:addD(t.ed,1)}, /* Google Calendar end는 exclusive */
       colorId:colorId
-    });
+    },ext));
 
     /* 분리 일정 (2차) */
     if(t.split&&t.sd2&&t.ed2){
-      postEvent({
+      postEvent(Object.assign({
         summary:title+' (2차)',
         description:desc+'\n(2차 일정)',
         start:{date:t.sd2},
         end:{date:addD(t.ed2,1)},
         colorId:colorId
-      });
+      },ext));
     }
   });
 }
@@ -3550,6 +3612,7 @@ function rIntegrated() {
     });
     html += '</div></div>';
   }
+  html += '<div class="ig-card-grid">';
   IG_TASK_ORDER.forEach(function(tid) {
     /* 해당 월 OR 전체 기간 내에 작업 있는 현장 (지난 현장도 달력 이동 시 보임) */
     var activeSites = _cloudSites.filter(function(site) {
@@ -3655,6 +3718,7 @@ function rIntegrated() {
     html += '</div>'; /* ig-trade */
   });
 
+  html += '</div>'; /* ig-card-grid */
   el.innerHTML = html;
 }
 
