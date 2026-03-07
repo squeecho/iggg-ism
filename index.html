@@ -1583,6 +1583,10 @@ async function loadCloudProject(pn) {
   _cloudView = loaded;
   IS_RO = true;
 
+  /* ★ 헤더(검정 바) 현장명을 클라우드 현장명으로 업데이트 */
+  var tpnEl = document.getElementById('tpn');
+  if (tpnEl) tpnEl.textContent = pn;
+
   /* 잠금 오버레이만 적용, 칩만 리렌더 */
   _updLockOverlay();
   rChips();
@@ -1622,7 +1626,9 @@ window.addEventListener('beforeunload',function(){
 });
 
 function sync(){
-  document.getElementById('tpn').textContent=S.pn||'(현장명 미입력)';
+  /* 클라우드 뷰 중이면 헤더에 클라우드 현장명 표시 */
+  var _tpnVal = (_cloudView ? _cloudView.pn : S.pn) || '(현장명 미입력)';
+  document.getElementById('tpn').textContent = _tpnVal;
   var fn=document.getElementById('fn');if(fn&&document.activeElement!==fn)fn.value=S.pn;
   var fs=document.getElementById('fs');if(fs&&document.activeElement!==fs)fs.value=S.sd;
   var fe=document.getElementById('fend');if(fe)fe.value=S.ed||'';
@@ -3544,18 +3550,28 @@ function igSaveDateModal() {
     } catch(e) { console.warn('snap update failed', e); }
   }
 
-  /* 4. 현재 차트에 열려있는 현장이면 S도 즉시 갱신 → 차트 즉시 반영 */
-  if (typeof S !== 'undefined' && S && S.pn === pn && S.tasks) {
-    var st2 = S.tasks.find(function(t){ return t.id === tid; });
-    if (st2) {
-      st2.sd = sd; st2.ed = ed;
-      st2.split = hasSplit;
-      if (hasSplit) { st2.sd2 = sd2; st2.ed2 = ed2; }
-      else { delete st2.sd2; delete st2.ed2; }
-    }
-    if (typeof syncPeriod === 'function') syncPeriod();
-    if (typeof rChart === 'function') rChart();
+  /* 4. 차트 즉시 반영: S 또는 _cloudView 모두 체크 */
+  function _applyDateToState(state) {
+    if (!state || !state.tasks) return false;
+    var st2 = state.tasks.find(function(t){ return t.id === tid; });
+    if (!st2) return false;
+    st2.sd = sd; st2.ed = ed;
+    st2.split = hasSplit;
+    if (hasSplit) { st2.sd2 = sd2; st2.ed2 = ed2; }
+    else { delete st2.sd2; delete st2.ed2; }
+    return true;
   }
+  var _chartUpdated = false;
+  if (typeof _cloudView !== 'undefined' && _cloudView && _cloudView.pn === pn) {
+    _applyDateToState(_cloudView);
+    _chartUpdated = true;
+  }
+  if (typeof S !== 'undefined' && S && S.pn === pn) {
+    _applyDateToState(S);
+    if (typeof syncPeriod === 'function') syncPeriod();
+    _chartUpdated = true;
+  }
+  if (_chartUpdated && typeof rChart === 'function') rChart();
 
   toast('일정 수정 완료 ✓  (차트탭 반영됨)');
   igCloseDateModal();
@@ -3840,16 +3856,26 @@ function igBarpickSave() {
     } catch(e) {}
   }
 
-  /* S 즉시 반영 */
-  if (typeof S !== 'undefined' && S && S.pn === pn && S.tasks) {
-    var st2 = S.tasks.find(function(t){ return t.id === tid; });
-    if (st2) {
-      if (rIdx === 1) { st2.sd2 = sd; st2.ed2 = ed; st2.split = true; }
-      else { st2.sd = sd; st2.ed = ed; }
-    }
-    if (typeof syncPeriod === 'function') syncPeriod();
-    if (typeof rChart === 'function') rChart();
+  /* S / _cloudView 즉시 반영 */
+  function _applyBarToState(state) {
+    if (!state || !state.tasks) return false;
+    var st2 = state.tasks.find(function(t){ return t.id === tid; });
+    if (!st2) return false;
+    if (rIdx === 1) { st2.sd2 = sd; st2.ed2 = ed; st2.split = true; }
+    else { st2.sd = sd; st2.ed = ed; }
+    return true;
   }
+  var _barUpdated = false;
+  if (typeof _cloudView !== 'undefined' && _cloudView && _cloudView.pn === pn) {
+    _applyBarToState(_cloudView);
+    _barUpdated = true;
+  }
+  if (typeof S !== 'undefined' && S && S.pn === pn) {
+    _applyBarToState(S);
+    if (typeof syncPeriod === 'function') syncPeriod();
+    _barUpdated = true;
+  }
+  if (_barUpdated && typeof rChart === 'function') rChart();
 
   toast('일정 수정 완료 ✓');
   igBarpickClose();
