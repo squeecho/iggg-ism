@@ -562,6 +562,21 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .dg-note-line{position:absolute;top:0;bottom:0;width:16px;margin-left:-8px;z-index:4;cursor:ew-resize;opacity:.7;touch-action:none;}
 .dg-note-line::after{content:'';position:absolute;left:7px;top:0;bottom:0;width:2px;border-left:2px dashed #a16207;}.dg-note-line.dragging::after{border-left:2px dashed #10b981;}
 
+@keyframes chipPop {
+  0%   { transform:scale(1);   box-shadow:0 0 0 0 rgba(22,163,74,.6); }
+  30%  { transform:scale(1.04);box-shadow:0 0 0 8px rgba(22,163,74,.25); }
+  60%  { transform:scale(.98); box-shadow:0 0 0 4px rgba(22,163,74,.1); }
+  100% { transform:scale(1);   box-shadow:0 0 0 0 rgba(22,163,74,0); }
+}
+@keyframes chipShake {
+  0%,100%{ transform:translateX(0); }
+  20%    { transform:translateX(-6px); }
+  40%    { transform:translateX(6px); }
+  60%    { transform:translateX(-4px); }
+  80%    { transform:translateX(4px); }
+}
+.pnchip.chip-new  { animation:chipPop  .55s ease forwards; }
+.pnchip.chip-dupe { animation:chipShake .4s ease forwards; border-color:#f59e0b!important; box-shadow:0 0 0 3px rgba(245,158,11,.35)!important; }
 </style>
 </head>
 <body>
@@ -905,7 +920,23 @@ function pnBtnClick(){
   } else {
     /* 새 현장 추가 — 중복 이름 차단 */
     if(arr.some(function(x){return x.pn===newNm;})){
-      toast('"'+newNm+'" 이름의 현장이 이미 있어요');return;
+      toast('"'+newNm+'" 이름의 현장이 이미 있어요 👆 위를 확인해주세요');
+      /* 기존 칩 찾아서 하이라이트 + 스크롤 */
+      setTimeout(function(){
+        var allChips=document.querySelectorAll('#pnchips .pnchip, #archiveChips .pnchip');
+        for(var i=0;i<allChips.length;i++){
+          if(allChips[i].dataset.pn===newNm){
+            window.scrollTo({top:0,behavior:'smooth'});
+            setTimeout(function(el){
+              el.scrollIntoView({behavior:'smooth',block:'center'});
+              el.classList.add('chip-dupe');
+              setTimeout(function(){el.classList.remove('chip-dupe');},1000);
+            }.bind(null,allChips[i]),250);
+            break;
+          }
+        }
+      },50);
+      return;
     }
     saveProject();
   }
@@ -915,7 +946,22 @@ function renameProject(oldNm,newNm){
   var arr=getRecent();
   /* 새 이름 중복 체크 */
   if(arr.some(function(x){return x.pn===newNm;})){
-    toast('"'+newNm+'" 이름이 이미 존재합니다');return;
+    toast('"'+newNm+'" 이름이 이미 존재합니다 👆 위를 확인해주세요');
+    setTimeout(function(){
+      var allChips=document.querySelectorAll('#pnchips .pnchip, #archiveChips .pnchip');
+      for(var i=0;i<allChips.length;i++){
+        if(allChips[i].dataset.pn===newNm){
+          window.scrollTo({top:0,behavior:'smooth'});
+          setTimeout(function(el){
+            el.scrollIntoView({behavior:'smooth',block:'center'});
+            el.classList.add('chip-dupe');
+            setTimeout(function(){el.classList.remove('chip-dupe');},1000);
+          }.bind(null,allChips[i]),250);
+          break;
+        }
+      }
+    },50);
+    return;
   }
   var ci=arr.findIndex(function(x){return x.pn===oldNm;});
   if(ci<0)return;
@@ -974,9 +1020,16 @@ function saveProject(){
     S=ds;_open=null;_origPn=nm;calInit();sync();rEdit();rChips();rChart();
     setTimeout(function(){
       var activeChip=document.querySelector('#pnchips .pnchip.active');
-      if(activeChip)activeChip.scrollIntoView({behavior:'smooth',block:'nearest'});
-    },50);
-    toast(nm+' 등록됐어요!');
+      if(activeChip){
+        /* 신규 칩 팝 애니메이션 */
+        activeChip.classList.add('chip-new');
+        setTimeout(function(){activeChip.classList.remove('chip-new');},700);
+        /* 스크롤: 먼저 페이지 최상단, 그 뒤 칩으로 */
+        window.scrollTo({top:0,behavior:'smooth'});
+        setTimeout(function(){activeChip.scrollIntoView({behavior:'smooth',block:'nearest'});},200);
+      }
+    },80);
+    toast(nm+' 등록됐어요! ✅');
     var fnEl=document.getElementById('fn');if(fnEl)fnEl.blur();
   }else{
     var upd=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});
@@ -1078,11 +1131,23 @@ function toggleConfirmed(pn,e){
 }
 
 async function _checkCloudConflict(pn){
+  /* 1차: 이미 로드된 클라우드 목록에서 대소문자 무시 비교 */
+  var lowerPn = pn.toLowerCase();
+  if (_cloudSites && _cloudSites.length > 0) {
+    if (_cloudSites.some(function(s){ return s.pn.toLowerCase() === lowerPn; })) return true;
+  }
+  /* 2차: Firebase 직접 확인 (대소문자 다른 키도 조회) */
   if(!_fbReady||!_db)return false;
   try{
-    var key=sanitizeKey(pn);
-    var doc=await _db.collection('sites').doc(key).get();
-    return doc.exists;
+    var keyOrig = sanitizeKey(pn);
+    var keyLow  = sanitizeKey(lowerPn);
+    var docOrig = await _db.collection('sites').doc(keyOrig).get();
+    if (docOrig.exists) return true;
+    if (keyOrig !== keyLow) {
+      var docLow = await _db.collection('sites').doc(keyLow).get();
+      if (docLow.exists) return true;
+    }
+    return false;
   }catch(e){return false;}
 }
 
@@ -1321,7 +1386,8 @@ function rChips(){
     var h='';
     active.forEach(function(item){
       var nm=esc(item.pn);
-      var isActive=(item.pn===S.pn);
+      /* _cloudView 활성 중에는 로컬 칩 active 해제 */
+      var isActive=(!_cloudView)&&(item.pn===S.pn);
       var isConfirmed=!!item.confirmed;
       var created=item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'--';
       var saved=item.savedAt?item.savedAt.slice(2).replace(/-/g,'.'):(item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'-');
@@ -1370,7 +1436,7 @@ function rChips(){
   var ah='';
   archived.forEach(function(item){
     var nm=esc(item.pn);
-    var isActive=(item.pn===S.pn);
+    var isActive=(!_cloudView)&&(item.pn===S.pn);
     var created=item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'--';
     var saved=item.savedAt?item.savedAt.slice(2).replace(/-/g,'.'):(item.createdAt?item.createdAt.slice(2).replace(/-/g,'.'):'-');
     function fmtDT(s){if(!s||s==='--'||s==='-')return s;var p=s.split(' ');return p[0]+(p[1]?' <span style="opacity:.7">'+p[1]+'</span>':'');}
