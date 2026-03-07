@@ -1260,21 +1260,25 @@ function toggleConfirmed(pn,e){
 }
 
 async function _checkCloudConflict(pn){
-  /* 1차: 이미 로드된 클라우드 목록에서 대소문자 무시 비교 */
+  /* 1차: 이미 로드된 클라우드 목록에서 대소문자 무시 비교
+     단, 같은 기기(author)가 올린 현장은 충돌 아님 */
   var lowerPn = pn.toLowerCase();
+  var myDevice = getDeviceName();
   if (_cloudSites && _cloudSites.length > 0) {
-    if (_cloudSites.some(function(s){ return s.pn.toLowerCase() === lowerPn; })) return true;
+    if (_cloudSites.some(function(s){
+      return s.pn.toLowerCase() === lowerPn && s.author !== myDevice;
+    })) return true;
   }
-  /* 2차: Firebase 직접 확인 (대소문자 다른 키도 조회) */
+  /* 2차: Firebase 직접 확인 */
   if(!_fbReady||!_db)return false;
   try{
     var keyOrig = sanitizeKey(pn);
     var keyLow  = sanitizeKey(lowerPn);
     var docOrig = await _db.collection('sites').doc(keyOrig).get();
-    if (docOrig.exists) return true;
+    if (docOrig.exists && docOrig.data().author !== myDevice) return true;
     if (keyOrig !== keyLow) {
       var docLow = await _db.collection('sites').doc(keyLow).get();
-      if (docLow.exists) return true;
+      if (docLow.exists && docLow.data().author !== myDevice) return true;
     }
     return false;
   }catch(e){return false;}
@@ -1360,7 +1364,7 @@ function _doConfirmToggle(pn,confirming){
       toast('🔒 확정됐어요. 수정이 잠기고 다른 기기와 공유됩니다.');
     } else {
       if(rb)rb.remove();
-      toast('🔓 확정 해제됐어요. 활성 현장으로 이동합니다.');
+      toast('🔓 확정 해제됐어요. 다시 편집할 수 있습니다.');
     }
     _updLockOverlay();
     rEdit();
@@ -3004,22 +3008,33 @@ function _gcalDoUploadAll(){
     sites.forEach(function(snap){ _gcalDoUpload(snap); });
   });
 }
-/* iggg-ism 태그 이벤트 전체 삭제 후 콜백 */
+/* 업로드된 이벤트 ID 저장/로드 */
+function _gcalSaveIds(ids){try{localStorage.setItem('_gcalUploadedIds',JSON.stringify(ids));}catch(e){}}
+function _gcalLoadIds(){try{var v=localStorage.getItem('_gcalUploadedIds');return v?JSON.parse(v):[];}catch(e){return[];}}
+
+/* 저장된 ID + 태그 이벤트 전부 삭제 후 콜백 */
 function _gcalDeleteIgEvents(cb){
   if(!_gcalToken||!_gcalCalendarId){cb();return;}
+  /* 1단계: 저장된 ID 목록으로 삭제 */
+  var savedIds=_gcalLoadIds();
+  /* 2단계: 태그로도 추가 검색 */
   var url='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)
     +'/events?privateExtendedProperty=src%3Diggg-ism&maxResults=2500&showDeleted=false';
   fetch(url,{headers:{'Authorization':'Bearer '+_gcalToken}})
     .then(function(r){return r.json();})
     .then(function(data){
-      var items=(data.items||[]);
-      if(!items.length){cb();return;}
+      var tagIds=(data.items||[]).map(function(x){return x.id;});
+      /* 합집합 (중복 제거) */
+      var allIds=savedIds.slice();
+      tagIds.forEach(function(id){if(allIds.indexOf(id)<0)allIds.push(id);});
+      _gcalSaveIds([]); /* 삭제 시작 전 초기화 */
+      if(!allIds.length){cb();return;}
       var done=0;
-      items.forEach(function(item){
-        fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events/'+item.id,
+      allIds.forEach(function(id){
+        fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events/'+id,
           {method:'DELETE',headers:{'Authorization':'Bearer '+_gcalToken}})
           .catch(function(){})
-          .finally(function(){done++;if(done===items.length)cb();});
+          .finally(function(){done++;if(done===allIds.length)cb();});
       });
     })
     .catch(function(){cb();});
@@ -3136,7 +3151,12 @@ function _gcalDoUpload(snap){
       headers:{'Authorization':'Bearer '+_gcalToken,'Content-Type':'application/json'},
       body:JSON.stringify(evt)
     }).then(function(r){
-      if(r.ok){_evtDone++;}
+      if(r.ok){
+        r.json().then(function(j){
+          if(j&&j.id){var ids=_gcalLoadIds();ids.push(j.id);_gcalSaveIds(ids);}
+        }).catch(function(){});
+        _evtDone++;
+      }
       else{
         _evtFailed++;
         r.json().then(function(j){
