@@ -2980,11 +2980,17 @@ function _gcalUploadNow(){
     return;
   }
   if(!_gcalCalendarId){ _gcalPickCalendar(function(){ _gcalUploadNow(); }); return; }
-  /* 클라우드 현장 전체 업로드 (없으면 현재 편집 현장) */
-  var sites = (typeof _cloudSites!=='undefined' && _cloudSites && _cloudSites.length)
-    ? _cloudSites
-    : ((typeof _cloudView!=='undefined'&&_cloudView) ? [_cloudView]
-      : ((typeof S!=='undefined'&&S&&S.pn) ? [S] : []));
+  /* 클라우드 현장 + 현재 편집 현장(S) 합산 — 같은 pn이면 최신 S로 덮어씀 */
+  var base = (typeof _cloudSites!=='undefined' && _cloudSites) ? _cloudSites.slice() : [];
+  if(typeof S!=='undefined' && S && S.pn){
+    var _si=base.length; for(var _ii=0;_ii<base.length;_ii++){if(base[_ii].pn===S.pn){_si=_ii;break;}}
+    if(_si<base.length) base[_si]=S; else base.push(S);
+  }
+  if(typeof _cloudView!=='undefined' && _cloudView && _cloudView.pn){
+    var _ci=base.length; for(var _ci2=0;_ci2<base.length;_ci2++){if(base[_ci2].pn===_cloudView.pn){_ci=_ci2;break;}}
+    if(_ci>=base.length) base.push(_cloudView);
+  }
+  var sites=base;
   if(!sites.length){ toast('업로드할 현장이 없어요'); return; }
   toast('📅 기존 일정 삭제 후 업로드 중...');
   _gcalDeleteIgEvents(function(){
