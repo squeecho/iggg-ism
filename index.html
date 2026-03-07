@@ -1242,8 +1242,8 @@ function deleteRecent(pn,ev){
   /* 확정 현장이었으면 Firebase + 캘린더에서도 삭제 */
   if(item&&item.confirmed){
     deleteFromCloud(pn);
-    /* 현장 삭제 → 업로드 기록 제거 (다음 업로드 시 캘린더에서도 반영됨) */
-    _gcalClearUploadTs_pn(pn);
+    /* 현장 삭제 → 삭제 대기 목록에 추가 (업로드 시 캘린더에서 제거됨) */
+    _gcalAddPendingDelete(pn);
   }
   var idx=arr.findIndex(function(x){return x.pn===pn;});
   var next=arr[idx+1]||arr[idx-1]||null; /* 다음 항목 또는 이전 항목 */
@@ -3102,23 +3102,45 @@ function _gcalGetActiveSites(){
 function _gcalDeleteInactiveSites(activeSites, detailCalId, simpleCalId, cb){
   var activePns = activeSites.map(function(s){return s.pn;});
 
-  /* 삭제 대상: 해시 기록에 있지만 활성 목록에 없는 현장 */
+  /* pendingDelete 목록도 삭제 대상에 포함 */
+  var pendingPns = _gcalGetPendingDeletes();
+
+  /* 모든 업로드 기록 키에서 pn 수집 (신버전 해시 + 구버전 TS + pn별 ID) */
+  function _collectUploadedPns(cid){
+    var pns = {};
+    /* 신버전 해시 키 */
+    try{
+      var m=JSON.parse(localStorage.getItem('_gcalUploadHash_'+cid)||'{}');
+      Object.keys(m).forEach(function(pn){pns[pn]=1;});
+    }catch(e){}
+    /* 구버전 TS 키 */
+    try{
+      var m2=JSON.parse(localStorage.getItem('_gcalUploadTs_'+cid)||'{}');
+      Object.keys(m2).forEach(function(pn){pns[pn]=1;});
+    }catch(e){}
+    /* pn별 ID 키 (_gcalIds_[cid]_[pn]) */
+    try{
+      var prefix='_gcalIds_'+cid+'_';
+      for(var i=0;i<localStorage.length;i++){
+        var k=localStorage.key(i);
+        if(k&&k.indexOf(prefix)===0){
+          var pn=k.slice(prefix.length);
+          if(pn)pns[pn]=1;
+        }
+      }
+    }catch(e){}
+    return Object.keys(pns);
+  }
+
   var jobs = [];
   [detailCalId, simpleCalId].forEach(function(cid){
     if(!cid) return;
-    /* 해시 맵에서 */
-    var map = {};
-    try{ map=JSON.parse(localStorage.getItem(_gcalTsKey(cid))||'{}'); }catch(e){}
-    /* pn별 ID 저장 키에서도 수집 */
-    try{
-      Object.keys(localStorage).forEach(function(k){
-        if(k.indexOf('_gcalIds_'+cid+'_')===0){
-          var pn = k.slice(('_gcalIds_'+cid+'_').length);
-          if(pn && !map[pn]) map[pn]='id_only';
-        }
-      });
-    }catch(e){}
-    var toRemove = Object.keys(map).filter(function(pn){ return activePns.indexOf(pn)<0; });
+    var uploaded = _collectUploadedPns(cid);
+    var toRemove = uploaded.filter(function(pn){ return activePns.indexOf(pn)<0; });
+    /* pendingDelete: 업로드 기록 없어도 삭제 대상에 포함 */
+    pendingPns.forEach(function(pn){
+      if(activePns.indexOf(pn)<0 && toRemove.indexOf(pn)<0) toRemove.push(pn);
+    });
     if(toRemove.length) jobs.push({cid:cid, pns:toRemove});
   });
 
@@ -3129,7 +3151,10 @@ function _gcalDeleteInactiveSites(activeSites, detailCalId, simpleCalId, cb){
     var job=jobs[ji++];
     _gcalCalendarId=job.cid;
     _gcalDeleteSiteEvents(job.pns, function(){
-      job.pns.forEach(function(pn){ _gcalClearUploadTs_pn(pn); });
+      job.pns.forEach(function(pn){
+        _gcalClearUploadTs_pn(pn);
+        _gcalClearPendingDelete(pn);
+      });
       nextJob();
     });
   }
@@ -3298,6 +3323,23 @@ function _gcalDataHash(site){
     return String(h);
   }catch(e){ return String(Date.now()); }
 }
+/* ── 캘린더 삭제 대기 목록 ── */
+function _gcalAddPendingDelete(pn){
+  try{
+    var list=JSON.parse(localStorage.getItem('_gcalPendingDelete')||'[]');
+    if(list.indexOf(pn)<0) list.push(pn);
+    localStorage.setItem('_gcalPendingDelete',JSON.stringify(list));
+  }catch(e){}
+}
+function _gcalGetPendingDeletes(){
+  try{ return JSON.parse(localStorage.getItem('_gcalPendingDelete')||'[]'); }catch(e){ return []; }
+}
+function _gcalClearPendingDelete(pn){
+  try{
+    var list=JSON.parse(localStorage.getItem('_gcalPendingDelete')||'[]');
+    localStorage.setItem('_gcalPendingDelete',JSON.stringify(list.filter(function(x){return x!==pn;})));
+  }catch(e){}
+}
 function _gcalTsKey(calId){ return '_gcalUploadHash_'+(calId||_gcalCalendarId||'primary'); }
 function _gcalSaveUploadTs(pn, calId, site){
   try{
@@ -3315,20 +3357,35 @@ function _gcalGetUploadTs(pn, calId){
 }
 function _gcalClearUploadTs(){
   try{
-    Object.keys(localStorage).filter(function(k){
-      return k.indexOf('_gcalUploadHash_')===0||k.indexOf('_gcalUploadTs_')===0;
-    }).forEach(function(k){ localStorage.removeItem(k); });
+    var keys=[];
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(k&&(k.indexOf('_gcalUploadHash_')===0||k.indexOf('_gcalUploadTs_')===0||
+             (k.indexOf('_gcalIds_')===0&&k.indexOf('_',9)>0))) keys.push(k);
+    }
+    keys.forEach(function(k){localStorage.removeItem(k);});
   }catch(e){}
 }
 function _gcalClearUploadTs_pn(pn){
   try{
-    Object.keys(localStorage).filter(function(k){
-      return k.indexOf('_gcalUploadHash_')===0||k.indexOf('_gcalUploadTs_')===0;
-    }).forEach(function(k){
-      var map = JSON.parse(localStorage.getItem(k)||'{}');
+    var prefixes=['_gcalUploadHash_','_gcalUploadTs_'];
+    var keys=[];
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(k&&prefixes.some(function(p){return k.indexOf(p)===0;})) keys.push(k);
+    }
+    keys.forEach(function(k){
+      var map=JSON.parse(localStorage.getItem(k)||'{}');
       delete map[pn];
-      localStorage.setItem(k, JSON.stringify(map));
+      localStorage.setItem(k,JSON.stringify(map));
     });
+    /* pn별 ID 키도 제거 */
+    var idKeys=[];
+    for(var j=0;j<localStorage.length;j++){
+      var ik=localStorage.key(j);
+      if(ik&&ik.indexOf('_gcalIds_')===0&&ik.indexOf('_'+pn)>=0) idKeys.push(ik);
+    }
+    idKeys.forEach(function(k){localStorage.removeItem(k);});
   }catch(e){}
 }
 function _gcalNeedsUpload(site, calId){
