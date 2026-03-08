@@ -1600,6 +1600,14 @@ function saveProject(){
   var now=nowTS();var isNew=ci<0;
   if(isNew){
     var ds=defaultState();ds.pn=nm;
+    /* 글로벌 업체 저장소에 1개만 등록된 공종은 자동 배정 */
+    var _gcAuto=getGlobalCtors();
+    ds.tasks.forEach(function(task){
+      var ctors=(_gcAuto[task.id]||[]).filter(Boolean);
+      if(ctors.length===1){
+        task.contractors=[ctors[0],'',''];
+      }
+    });
     S=ds;autoTaskDates();ds=S;
     var upd={pn:nm,sd:ds.sd,ed:ds.ed,createdAt:now,savedAt:now,snap:JSON.stringify(ds)};
     arr.unshift(upd);if(arr.length>50)arr=arr.slice(0,50);
