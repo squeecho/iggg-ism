@@ -3824,6 +3824,9 @@ function _gcalSyncUI(){
   var thumb=document.getElementById('gcalToggleThumb');
   var label=document.getElementById('gcalStatusLabel');
   var sub=document.getElementById('gcalSubLabel');
+  /* 상단바 캘린더 동기화 버튼 표시/숨김 */
+  var tbBtns=document.getElementById('tbGcalBtns');
+  if(tbBtns)tbBtns.style.display=_gcalEnabled?'flex':'none';
   if(!wrap)return;
   if(_gcalEnabled){
     wrap.style.background='#16a34a';
