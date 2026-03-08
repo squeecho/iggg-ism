@@ -998,7 +998,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
     <span class="tb-site" id="tpn">(현장명 미입력)</span>
   </div>
   <div id="tbGcalBtns" style="display:none;align-items:center;gap:6px;flex-shrink:0;">
-    <button id="tbUploadBothBtn" onclick="_gcalRunUploadBoth()" style="font-size:10px;padding:4px 12px;border-radius:6px;border:none;background:rgba(99,102,241,.25);color:#a5b4fc;cursor:pointer;white-space:nowrap;font-weight:800;">📅 캘린더 동기화</button>
+    <button id="tbUploadBothBtn" onclick="_gcalRunUploadBoth()" style="font-size:10px;padding:4px 12px;border-radius:6px;border:none;background:#16a34a;color:#fff;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.2px;">📅 캘린더 동기화</button>
   </div>
 </div>
 <div class="tabs" id="tabs">
@@ -3647,6 +3647,18 @@ function _gcalEventTitle(pn, taskName, vendor){
   return region + ' | ' + t + (vendor ? ' | ' + vendor : '');
 }
 
+
+/* 모바일 뒤로가기 → 열린 모달 닫기 */
+window.addEventListener('popstate', function(e){
+  var ctorOv = document.getElementById('ctorCheckOv');
+  var asOv   = document.getElementById('asModalOv');
+  if(ctorOv && ctorOv.style.display==='flex'){
+    ctorOv.style.display='none'; return;
+  }
+  if(asOv && asOv.style.display==='flex'){
+    asOv.style.display='none'; return;
+  }
+});
 function initGoogleAuth(){
   if(typeof google==='undefined'||!google.accounts){setTimeout(initGoogleAuth,600);return;}
   try{
@@ -6072,11 +6084,15 @@ function openAutoSchedModal(){
     asSettings[t.id].useSplit3 = !!(t.split3);
   });
   asSaveSettings(asSettings);
-  document.getElementById('asModalOv').style.display='flex';
-  asShowStep1();
+  loadCloudSites().then(function(){
+    document.getElementById('asModalOv').style.display='flex';
+    history.pushState({modal:'autoSched'}, '');
+    asShowStep1();
+  });
 }
 function closeAutoSchedModal(){
   document.getElementById('asModalOv').style.display='none';
+  if(history.state&&history.state.modal==='autoSched') history.back();
 }
 
 /* ═══════════════════════════════════════════════════
@@ -6107,10 +6123,12 @@ function getSiteTaskCtors(task){
 function openCtorCheckModal(){
   var ov=document.getElementById('ctorCheckOv');
   ov.style.display='flex';
-  _buildCtorCheck();
+  history.pushState({modal:'ctorCheck'}, '');
+  loadCloudSites().then(function(){ _buildCtorCheck(); });
 }
 function closeCtorCheckModal(){
   document.getElementById('ctorCheckOv').style.display='none';
+  if(history.state&&history.state.modal==='ctorCheck') history.back();
 }
 
 /* 겹침삭제: 현재 현장 해당 공종의 시작일을 겹침 종료일 다음날로 조정 */
