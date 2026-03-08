@@ -3436,6 +3436,36 @@ function getGlobalCtors(){
 }
 function setGlobalCtors(obj){
   try{localStorage.setItem(GLOBAL_CTORS_KEY,JSON.stringify(obj));}catch(e){}
+  /* Firebase에도 즉시 동기화 */
+  _saveCtorsToCloud(obj);
+}
+/* ── 업체 목록 Firebase 저장/로드 ── */
+async function _saveCtorsToCloud(obj){
+  if(!_fbReady||!_db)return;
+  try{
+    await _db.collection('global').doc('contractors').set({data:JSON.stringify(obj),_updatedAt:Date.now()});
+  }catch(e){console.warn('업체 클라우드 저장 실패:',e);}
+}
+async function _loadCtorsFromCloud(){
+  if(!_fbReady||!_db)return;
+  try{
+    var doc=await _db.collection('global').doc('contractors').get();
+    if(!doc.exists)return;
+    var remote=JSON.parse(doc.data().data||'{}');
+    var local=getGlobalCtors();
+    /* 병합: 로컬+리모트 합집합 */
+    var merged=Object.assign({},remote);
+    Object.keys(local).forEach(function(tid){
+      if(!merged[tid])merged[tid]=[];
+      local[tid].forEach(function(c){if(merged[tid].indexOf(c)<0)merged[tid].push(c);});
+    });
+    var localStr=JSON.stringify(local),mergedStr=JSON.stringify(merged);
+    if(localStr!==mergedStr){
+      try{localStorage.setItem(GLOBAL_CTORS_KEY,mergedStr);}catch(e){}
+      /* 병합 결과가 로컬보다 크면 클라우드도 갱신 */
+      if(JSON.stringify(remote)!==mergedStr)_saveCtorsToCloud(merged);
+    }
+  }catch(e){console.warn('업체 클라우드 로드 실패:',e);}
 }
 function mergeGlobalCtorsToTasks(){
   var gc=getGlobalCtors();
@@ -4664,8 +4694,9 @@ function initFirebase() {
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     _db = firebase.firestore();
     _fbReady = true;
-    /* Firebase 준비 완료 → 즉시 클라우드 현장 로드 */
+    /* Firebase 준비 완료 → 클라우드 현장 + 업체 목록 로드 */
     loadCloudSites(true).then(rCloudChips);
+    _loadCtorsFromCloud();
   } catch(e) { console.warn('Firebase init error:', e); }
 }
 
@@ -6094,7 +6125,9 @@ function openAutoSchedModal(){
     asSettings[t.id].useSplit3 = !!(t.split3);
   });
   asSaveSettings(asSettings);
-  loadCloudSites().then(function(){
+  _loadCtorsFromCloud().then(function(){
+    return loadCloudSites();
+  }).then(function(){
     document.getElementById('asModalOv').style.display='flex';
     history.pushState({modal:'autoSched'}, '');
     asShowStep1();
@@ -6125,21 +6158,22 @@ function getAllConfirmedSites(){
 
 /* 확정 현장의 특정 공종에서 업체 목록 추출 (snap 저장분만 — 글로벌 스토어 미적용) */
 function getSiteTaskCtors(task){
-  return (task.contractors||[]).filter(Boolean);
+  var c=(task.contractors||[]).filter(Boolean);
+  return c.length?c:['기본'];
 }
 /* 현재 현장(S) 공종 업체 — 글로벌 스토어 포함 */
 function getCurTaskCtors(task){
   var ctors=(task.contractors||[]).filter(Boolean);
   var gc=getGlobalCtors()[task.id];
   if(gc&&gc.length){gc.forEach(function(c){if(c&&ctors.indexOf(c)<0)ctors.push(c);});}
-  return ctors;
+  return ctors.length?ctors:['기본'];
 }
 
 function openCtorCheckModal(){
   var ov=document.getElementById('ctorCheckOv');
   ov.style.display='flex';
   history.pushState({modal:'ctorCheck'}, '');
-  loadCloudSites().then(function(){ _buildCtorCheck(); });
+  _loadCtorsFromCloud().then(function(){ return loadCloudSites(); }).then(function(){ _buildCtorCheck(); });
 }
 function closeCtorCheckModal(){
   document.getElementById('ctorCheckOv').style.display='none';
@@ -6196,11 +6230,7 @@ function _buildCtorCheck(){
   var myRanges=[]; /* {tid, name, ctors[], ranges:[{sd,ed}]} */
   (S.tasks||[]).forEach(function(t){
     if(!t.on||!t.sd||!t.ed)return;
-    var ctors=(t.contractors||[]).filter(Boolean);
-    /* 글로벌 저장 업체도 포함 */
-    var gc=getGlobalCtors()[t.id];
-    if(gc&&gc.length){gc.forEach(function(c){if(c&&ctors.indexOf(c)<0)ctors.push(c);});}
-    if(!ctors.length)return; /* 업체 미지정 공종은 체크 불가 */
+    var ctors=getCurTaskCtors(t); /* 글로벌 저장 업체 포함, 미지정→기본 */
     var ranges=[{sd:t.sd,ed:t.ed}];
     if(t.split&&t.sd2&&t.ed2)ranges.push({sd:t.sd2,ed:t.ed2});
     if(t.split3&&t.sd3&&t.ed3)ranges.push({sd:t.sd3,ed:t.ed3});
@@ -7026,7 +7056,7 @@ function asSwapCtor(tid, newCtor){
 }
 
 function asFindSlot(tid,ctor,minDays,startFrom,endAt){
-  if(ctor==='기본') return {sd:startFrom,ed:addD(startFrom,minDays-1)};
+  /* '기본'(미지정)도 같은 tid 미지정 현장과 충돌 체크 */
   var busy=[];
   function addBusy(task){
     if(task.sd&&task.ed)busy.push({sd:task.sd,ed:task.ed});
