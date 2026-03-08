@@ -1060,6 +1060,11 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 .ig-barpick-sheet-item:active{background:var(--al)!important;}
 
 }
+
+/* 자동배치 스테퍼 native spinner 제거 */
+.as-stepper-val::-webkit-outer-spin-button,
+.as-stepper-val::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.as-stepper-val{-moz-appearance:textfield;}
 </style>
 </head>
 <body>
@@ -1256,7 +1261,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
   </div>
 </div>
 <!-- 협력업체 일정체크 모달 -->
-<div id="ctorCheckOv" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:flex-end;justify-content:center;">
+<div id="ctorCheckOv" onclick="if(event.target===this)closeCtorCheckModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:flex-end;justify-content:center;">
   <div style="background:var(--bg);border-radius:18px 18px 0 0;width:100%;max-width:520px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 -4px 24px rgba(0,0,0,.22);">
     <div style="padding:18px 20px 12px;border-bottom:1px solid var(--bd);flex-shrink:0;">
       <div style="display:flex;align-items:center;justify-content:space-between;">
@@ -6555,15 +6560,20 @@ function asShowStep1(){
     var _taskDays=(t.sd&&t.ed&&t.ed>=t.sd)?(dif(t.sd,t.ed)+1):0;
     /* 비례일수 우선, 없으면 고정 기본값 (너무 큰 기본값이 단기 현장에서 과도해지는 걸 방지) */
     /* 전기(5): propDays = 1차+2차 합산 기준, 60/40 분배 */
+    /* 전기(5): AS_DEFAULT_DAYS[5]=14 = 1차+2차 합산, _elecTotal = propDays 기반 합산 */
     var _elecTotal=(t.id===5)&&_propDays?_propDays:0;
-    var _defDays=_taskDays||(t.id===5?Math.ceil((_elecTotal||14)*0.6):(_propDays||AS_DEFAULT_DAYS[t.id]||5));
+    /* _taskDays 제거: 기존 차트 일수를 기본값으로 쓰면 잘못된 값이 고착됨 */
+    /* 전기: max(AS_DEFAULT_DAYS[5], elecTotal) 의 60% → 1차, 40% → 2차 */
+    var _elecTotalDef=t.id===5?Math.max(AS_DEFAULT_DAYS[5]||14,_elecTotal||0):0;
+    var _defDays=t.id===5
+      ?Math.ceil(_elecTotalDef*0.6)
+      :Math.max(AS_DEFAULT_DAYS[t.id]||3,_propDays||1);
     var minDays=(s.minDays!==undefined)?s.minDays:_defDays;
     var defaultSplit=!!(t.split||(t.id===5)||(t.id===10));
     var useSplit=(s.useSplit!==undefined)?s.useSplit:defaultSplit;
     var useSplit3=(s.useSplit3!==undefined)?s.useSplit3:false;
-    var _taskDays2=(t.split&&t.sd2&&t.ed2&&t.ed2>=t.sd2)?(dif(t.sd2,t.ed2)+1):0;
-    var _elecDays2=_elecTotal?(_elecTotal-Math.ceil(_elecTotal*0.6)):0;
-    var minDays2=(s.minDays2!==undefined)?s.minDays2:(_taskDays2||(_elecDays2||(t.id===10?4:Math.ceil(_defDays*0.5))));
+    var _elecDays2=_elecTotalDef?(_elecTotalDef-Math.ceil(_elecTotalDef*0.6)):0;
+    var minDays2=(s.minDays2!==undefined)?s.minDays2:(_elecDays2||(t.id===10?4:Math.ceil(_defDays*0.5)));
     var minDays3=(s.minDays3!==undefined)?s.minDays3:(t.id===5?5:Math.ceil((AS_DEFAULT_DAYS[t.id]||5)*0.4));
     /* asOn 기본값: task.on */
     var asOn=(s.asOn!==undefined)?s.asOn:t.on;
