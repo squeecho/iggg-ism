@@ -6112,8 +6112,12 @@ function getAllConfirmedSites(){
   return Object.values(map);
 }
 
-/* 확정 현장의 특정 공종에서 업체 목록 추출 (글로벌 스토어 포함) */
+/* 확정 현장의 특정 공종에서 업체 목록 추출 (snap 저장분만 — 글로벌 스토어 미적용) */
 function getSiteTaskCtors(task){
+  return (task.contractors||[]).filter(Boolean);
+}
+/* 현재 현장(S) 공종 업체 — 글로벌 스토어 포함 */
+function getCurTaskCtors(task){
   var ctors=(task.contractors||[]).filter(Boolean);
   var gc=getGlobalCtors()[task.id];
   if(gc&&gc.length){gc.forEach(function(c){if(c&&ctors.indexOf(c)<0)ctors.push(c);});}
@@ -6462,7 +6466,9 @@ function asShowStep1(){
       masterCtors.forEach(function(cn){
         var on=selCtors.indexOf(cn)>=0;
         var safe=cn.replace(/\\/g,'\\\\').replace(/'/g,'&#39;');
-        h+='<div class="as-ctor-chip'+(on?' on':'')+'" onclick="asToggleCtor('+t.id+',this,\''+safe+'\')" data-name="'+esc(cn)+'">'+esc(cn)+'</div>';
+        var avail=asCtorAvailLabel(cn,t.id);
+        var badge='<span class="as-avail-badge '+avail+'">'+(avail==='busy'?'⚠ 겹침':'✓ 가능')+'</span>';
+        h+='<div class="as-ctor-chip'+(on?' on':'')+(avail==='ok'?' avail':'')+'" onclick="asToggleCtor('+t.id+',this,\''+safe+'\')" data-name="'+esc(cn)+'">'+esc(cn)+badge+'</div>';
       });
     } else {
       h+='<span style="font-size:11px;color:var(--mu2);line-height:28px">편집탭에서 업체를 먼저 등록하세요</span>';
