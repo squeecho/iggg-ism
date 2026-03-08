@@ -1076,7 +1076,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
     <span class="tb-site" id="tpn">(현장명 미입력)</span>
   </div>
   <div id="tbGcalBtns" style="display:none;align-items:center;gap:6px;flex-shrink:0;">
-    <button id="tbUploadBothBtn" onclick="_gcalRunUploadBoth()" style="font-size:10px;padding:4px 12px;border-radius:6px;border:none;background:#16a34a;color:#fff;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.2px;">📅 캘린더 동기화</button>
+    <button id="tbUploadBothBtn" onclick="_gcalUploadBoth()" style="font-size:10px;padding:4px 12px;border-radius:6px;border:none;background:#16a34a;color:#fff;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.2px;">📅 캘린더 동기화</button>
   </div>
 </div>
 <div class="tabs" id="tabs">
@@ -3767,18 +3767,6 @@ function _gcalEventTitle(pn, taskName, vendor){
   return region + ' | ' + t + (vendor ? ' | ' + vendor : '');
 }
 
-
-/* 모바일 뒤로가기 → 열린 모달 닫기 */
-window.addEventListener('popstate', function(e){
-  var ctorOv = document.getElementById('ctorCheckOv');
-  var asOv   = document.getElementById('asModalOv');
-  if(ctorOv && ctorOv.style.display==='flex'){
-    ctorOv.style.display='none'; return;
-  }
-  if(asOv && asOv.style.display==='flex'){
-    asOv.style.display='none'; return;
-  }
-});
 function initGoogleAuth(){
   if(typeof google==='undefined'||!google.accounts){setTimeout(initGoogleAuth,600);return;}
   try{
@@ -3790,7 +3778,7 @@ function initGoogleAuth(){
     _gcalCalNameSimple=localStorage.getItem('_gcalCalNameSimple')||'';
   }catch(e){}
   _gcalTokenClient=google.accounts.oauth2.initTokenClient({
-    client_id:'1024187262215-kj0tssigukjv85310gkuich4jecrltrt.apps.googleusercontent.com',
+    client_id:'509649339630-bfj8s4t7bsfdoaqu4o7sr68gtgnbvq2m.apps.googleusercontent.com',
     scope:'https://www.googleapis.com/auth/calendar',
     callback:function(resp){
       if(resp.error){
@@ -3854,8 +3842,6 @@ function _gcalSyncUI(){
     if(csBtn){ csBtn.style.display='block'; csBtn.textContent=(_gcalCalNameSimple||'캘린더 선택 ▾'); }
     var delBtn=document.getElementById('gcalDeleteAllBtn');
     if(delBtn)delBtn.style.display=(typeof _masterMode!=='undefined'&&_masterMode)?'block':'none';
-    var tbBtns=document.getElementById('tbGcalBtns');
-    if(tbBtns)tbBtns.style.display='flex';
   } else {
     wrap.style.background='#d1d5db';
     if(thumb)thumb.style.left='2px';
@@ -3871,8 +3857,6 @@ function _gcalSyncUI(){
     if(csBtn)csBtn.style.display='none';
     var delBtn=document.getElementById('gcalDeleteAllBtn');
     if(delBtn)delBtn.style.display='none';
-    var tbBtns=document.getElementById('tbGcalBtns');
-    if(tbBtns)tbBtns.style.display='none';
   }
 }
 
@@ -4210,7 +4194,6 @@ function _gcalDataHash(site){
         }
         parts.push(t.name+'|'+t.sd+'|'+t.ed+'|'+vendor);
         if(t.split&&t.sd2&&t.ed2) parts.push(t.name+'|'+t.sd2+'|'+t.ed2+'|2');
-        if(t.split3&&t.sd3&&t.ed3) parts.push(t.name+'|'+t.sd3+'|'+t.ed3+'|3');
       });
     }
     var str = parts.join(';;');
@@ -4775,9 +4758,6 @@ function initFirebase() {
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     _db = firebase.firestore();
     _fbReady = true;
-    /* Firebase 준비 완료 → 클라우드 현장 + 업체 목록 로드 */
-    loadCloudSites(true).then(rCloudChips);
-    _loadCtorsFromCloud();
   } catch(e) { console.warn('Firebase init error:', e); }
 }
 
@@ -4801,12 +4781,12 @@ async function deleteFromCloud(pn) {
   } catch(e) { console.warn('Cloud delete failed:', e); }
 }
 
-async function loadCloudSites(doSync) {
+async function loadCloudSites() {
   if (!_fbReady || !_db) { _cloudSites = []; return; }
   try {
     var snap = await _db.collection('sites').get();
     _cloudSites = snap.docs.map(function(d){ return d.data(); }).filter(function(s){ return s.pn; });
-    if(doSync) _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 (탭 전환 시만) */
+    _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 */
     _restoreMyCloudSites();   /* 캐시 지워도 내 기기 현장 복구 */
   } catch(e) { console.warn('Cloud load failed:', e); _cloudSites = []; }
 }
@@ -4821,12 +4801,13 @@ function _restoreMyCloudSites() {
   _cloudSites.forEach(function(s) {
     if (!s.pn || !s.author || s.author !== myDevice) return;
     if (localPns.indexOf(s.pn) >= 0) return; /* 이미 있음 */
-    /* 내 현장인데 로컬에 없음 → 복구 (Firebase doc = full site object) */
+    /* 내 현장인데 로컬에 없음 → 복구 */
+    var snap = s.snap ? JSON.parse(s.snap) : null;
     arr.push({
       pn: s.pn, sd: s.sd||'', ed: s.ed||'',
-      savedAt: s.savedAt||s._updatedAt||'', author: s.author,
+      savedAt: s.savedAt||'', author: s.author,
       confirmed: true,
-      snap: JSON.stringify(s)  /* Firebase doc 자체가 snap */ 
+      snap: s.snap||''
     });
     localPns.push(s.pn);
     changed = true;
@@ -4872,7 +4853,6 @@ document.addEventListener('DOMContentLoaded', function(){
   initGoogleAuth();
   initDeviceName();
   /* 초기 로드 시 클라우드 현장 칩 표시 - 로딩 표시 후 Firebase 완료되면 렌더 */
-  /* 클라우드 현장 로딩 표시 (Firebase 준비 완료 시 initFirebase가 loadCloudSites 호출) */
   setTimeout(function(){
     var body = document.getElementById('cloudChipsBody');
     var el = document.getElementById('cloudChips');
@@ -4880,7 +4860,8 @@ document.addEventListener('DOMContentLoaded', function(){
       body.style.display = '';
       el.innerHTML = '<div style="font-size:11px;color:var(--mu);padding:4px 0">☁️ 불러오는 중...</div>';
     }
-  }, 50);
+    loadCloudSites().then(rCloudChips);
+  }, 400);
   document.addEventListener('click', function(e){
     /* 바 탭 → 날짜 선택 모달 */
     var bar = e.target.closest ? e.target.closest('.ig-bar-tap') : null;
