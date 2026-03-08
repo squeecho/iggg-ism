@@ -1742,16 +1742,25 @@ function _doConfirmToggle(pn,confirming){
   if(arr[ci])arr[ci].author=getDeviceName();
   setRecent(arr);
 
-  /* Firebase 동기화 */
+  /* Firebase 동기화 + _cloudSites 메모리 즉시 반영 */
   var item=arr.find(function(x){return x.pn===pn;});
   if(item&&item.confirmed){
     var snap=item.snap?JSON.parse(item.snap):null;
-    if(snap){snap.pn=pn;snap.confirmed=true;saveToCloud(snap);}
+    if(snap){
+      snap.pn=pn;snap.confirmed=true;
+      saveToCloud(snap);
+      /* _cloudSites 메모리 즉시 갱신 (모달에서 바로 반영되게) */
+      var ci2=(_cloudSites||[]).findIndex(function(s){return s.pn===pn;});
+      if(ci2>=0)_cloudSites[ci2]=Object.assign({},snap);
+      else _cloudSites.push(Object.assign({},snap));
+    }
     /* Google Calendar 자동 업로드 */
     /* 자동 캘린더 업로드 비활성 — 수동 "지금 업로드" 버튼 사용 */
     // if(snap) gcalUploadOnConfirm(snap);
   } else {
     deleteFromCloud(pn);
+    /* _cloudSites 메모리에서도 즉시 제거 */
+    _cloudSites=(_cloudSites||[]).filter(function(s){return s.pn!==pn;});
     /* 확정 해제 → 삭제 대기 목록에 추가 (업로드 시 캘린더에서 제거됨) */
     _gcalAddPendingDelete(pn);
   }
@@ -2539,8 +2548,8 @@ function sw(m){
     }
   }
   if(m==='c') swChart();
-  if(m==='e'){ rEdit(); loadCloudSites().then(rCloudChips); }
-  if(m==='i'){loadCloudSites().then(rIntegrated);}
+  if(m==='e'){ rEdit(); loadCloudSites(true).then(rCloudChips); }
+  if(m==='i'){loadCloudSites(true).then(rIntegrated);}
 }
 
 /* 차트탭 전환: Firebase 최신 데이터로 S 동기화 후 렌더 */
@@ -2851,7 +2860,7 @@ function autoDate3Call(t,id){
   /* 2차 날짜 있으면 그 바로 다음을 기준으로 */
   if(t.sd2&&t.ed2){
     switch(id){
-      case 5:  t.sd3=addD(S.sd,s(0.75)); t.ed3=addD(S.sd,e(0.90)); break; /* 전기3차=조명 */
+      case 5:  t.sd3=addD(t.ed2,1); t.ed3=addD(t.ed2,Math.max(4,Math.round(dif(S.sd,S.ed)*0.12))); break; /* 전기3차=조명: 2차 이후 */
       case 6:  t.sd3=addD(edBase,-3); t.ed3=addD(edBase,-2); break;
       case 7:  t.sd3=addD(edBase,-4); t.ed3=addD(edBase,-3); break;
       case 8:  t.sd3=addD(edBase,-3); t.ed3=addD(edBase,-2); break;
@@ -2863,7 +2872,7 @@ function autoDate3Call(t,id){
   }
   /* fallback: 2차 날짜 없는 경우 */
   switch(id){
-    case 5:  t.sd3=addD(S.sd,s(0.75)); t.ed3=addD(S.sd,e(0.90)); break;
+    case 5:  t.sd3=addD(S.sd,s(0.80)); t.ed3=addD(S.sd,e(0.92)); break;
     case 6:  t.sd3=addD(edBase,-3); t.ed3=addD(edBase,-2); break;
     case 7:  t.sd3=addD(edBase,-4); t.ed3=addD(edBase,-3); break;
     case 8:  t.sd3=addD(edBase,-3); t.ed3=addD(edBase,-2); break;
@@ -4655,6 +4664,8 @@ function initFirebase() {
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     _db = firebase.firestore();
     _fbReady = true;
+    /* Firebase 준비 완료 → 즉시 클라우드 현장 로드 */
+    loadCloudSites(true).then(rCloudChips);
   } catch(e) { console.warn('Firebase init error:', e); }
 }
 
@@ -4678,12 +4689,12 @@ async function deleteFromCloud(pn) {
   } catch(e) { console.warn('Cloud delete failed:', e); }
 }
 
-async function loadCloudSites() {
+async function loadCloudSites(doSync) {
   if (!_fbReady || !_db) { _cloudSites = []; return; }
   try {
     var snap = await _db.collection('sites').get();
     _cloudSites = snap.docs.map(function(d){ return d.data(); }).filter(function(s){ return s.pn; });
-    _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 */
+    if(doSync) _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 (탭 전환 시만) */
     _restoreMyCloudSites();   /* 캐시 지워도 내 기기 현장 복구 */
   } catch(e) { console.warn('Cloud load failed:', e); _cloudSites = []; }
 }
@@ -4698,13 +4709,12 @@ function _restoreMyCloudSites() {
   _cloudSites.forEach(function(s) {
     if (!s.pn || !s.author || s.author !== myDevice) return;
     if (localPns.indexOf(s.pn) >= 0) return; /* 이미 있음 */
-    /* 내 현장인데 로컬에 없음 → 복구 */
-    var snap = s.snap ? JSON.parse(s.snap) : null;
+    /* 내 현장인데 로컬에 없음 → 복구 (Firebase doc = full site object) */
     arr.push({
       pn: s.pn, sd: s.sd||'', ed: s.ed||'',
-      savedAt: s.savedAt||'', author: s.author,
+      savedAt: s.savedAt||s._updatedAt||'', author: s.author,
       confirmed: true,
-      snap: s.snap||''
+      snap: JSON.stringify(s)  /* Firebase doc 자체가 snap */ 
     });
     localPns.push(s.pn);
     changed = true;
@@ -4750,6 +4760,7 @@ document.addEventListener('DOMContentLoaded', function(){
   initGoogleAuth();
   initDeviceName();
   /* 초기 로드 시 클라우드 현장 칩 표시 - 로딩 표시 후 Firebase 완료되면 렌더 */
+  /* 클라우드 현장 로딩 표시 (Firebase 준비 완료 시 initFirebase가 loadCloudSites 호출) */
   setTimeout(function(){
     var body = document.getElementById('cloudChipsBody');
     var el = document.getElementById('cloudChips');
@@ -4757,8 +4768,7 @@ document.addEventListener('DOMContentLoaded', function(){
       body.style.display = '';
       el.innerHTML = '<div style="font-size:11px;color:var(--mu);padding:4px 0">☁️ 불러오는 중...</div>';
     }
-    loadCloudSites().then(rCloudChips);
-  }, 400);
+  }, 50);
   document.addEventListener('click', function(e){
     /* 바 탭 → 날짜 선택 모달 */
     var bar = e.target.closest ? e.target.closest('.ig-bar-tap') : null;
@@ -6101,13 +6111,14 @@ function closeAutoSchedModal(){
 /* 로컬 + 클라우드 확정 현장을 하나로 합쳐서 반환 (현재 현장 제외) */
 function getAllConfirmedSites(){
   var map={};
-  /* 1) 로컬 localStorage */
-  getRecent().filter(function(x){return x.confirmed&&x.snap&&x.pn!==S.pn;}).forEach(function(item){
-    try{var p=JSON.parse(item.snap);if(p&&p.pn)map[p.pn]=p;}catch(e){}
+  var curPn=(S&&S.pn?S.pn.trim():'');
+  /* 1) 로컬 localStorage (이 기기의 확정 현장) */
+  getRecent().filter(function(x){return x.confirmed&&x.snap&&x.pn.trim()!==curPn;}).forEach(function(item){
+    try{var p=JSON.parse(item.snap);if(p&&p.pn)map[p.pn.trim()]=p;}catch(e){}
   });
-  /* 2) Firebase 클라우드 현장 */
-  (_cloudSites||[]).filter(function(s){return s&&s.pn&&s.pn!==S.pn;}).forEach(function(s){
-    if(!map[s.pn])map[s.pn]=s;
+  /* 2) Firebase 클라우드 현장 (다른 기기 포함 — 클라우드 우선) */
+  (_cloudSites||[]).filter(function(s){return s&&s.pn&&s.pn.trim()!==curPn;}).forEach(function(s){
+    map[s.pn.trim()]=s; /* 클라우드가 최신 → 항상 덮어씀 */
   });
   return Object.values(map);
 }
@@ -6365,9 +6376,9 @@ function asResetToPropDays(){
     /* 스테퍼 UI 즉시 반영 */
     var inp=document.getElementById('asDays_'+tid);
     if(inp){inp.value=base;}
-    /* 2차: 공조는 4일, 전기는 7일, 나머지 40% */
+    /* 2차: 전기는 합산의 40%, 공조는 4일, 나머지 40% */
     if(settings[tid].useSplit){
-      var d2=tid===5?7:(tid===10?4:Math.ceil(base*0.4));
+      var d2=tid===5?(base?Math.max(1,propDays-base):4):(tid===10?4:Math.ceil(base*0.4));
       settings[tid].minDays2=d2;
       var inp2=document.getElementById('asDays2_'+tid);
       if(inp2){inp2.value=d2;}
@@ -6424,14 +6435,17 @@ function asShowStep1(){
     var _total=dif(S.sd,S.ed);
     var _propDays=AS_PCT_DUR[t.id]?Math.round(_total*AS_PCT_DUR[t.id]):0;
     var _taskDays=(t.sd&&t.ed&&t.ed>=t.sd)?(dif(t.sd,t.ed)+1):0;
-    var _defDays=_taskDays||Math.max(AS_DEFAULT_DAYS[t.id]||5,_propDays||1);
+    /* 비례일수 우선, 없으면 고정 기본값 (너무 큰 기본값이 단기 현장에서 과도해지는 걸 방지) */
+    /* 전기(5): propDays = 1차+2차 합산 기준, 60/40 분배 */
+    var _elecTotal=(t.id===5)&&_propDays?_propDays:0;
+    var _defDays=_taskDays||(t.id===5?Math.ceil((_elecTotal||14)*0.6):(_propDays||AS_DEFAULT_DAYS[t.id]||5));
     var minDays=(s.minDays!==undefined)?s.minDays:_defDays;
-    /* 전기공사(5) 기본: 분할시공 ON, 2차 7일 */
     var defaultSplit=!!(t.split||(t.id===5)||(t.id===10));
     var useSplit=(s.useSplit!==undefined)?s.useSplit:defaultSplit;
     var useSplit3=(s.useSplit3!==undefined)?s.useSplit3:false;
     var _taskDays2=(t.split&&t.sd2&&t.ed2&&t.ed2>=t.sd2)?(dif(t.sd2,t.ed2)+1):0;
-    var minDays2=(s.minDays2!==undefined)?s.minDays2:(_taskDays2||(t.id===5?7:(t.id===10?4:Math.ceil(_defDays*0.5))));
+    var _elecDays2=_elecTotal?(_elecTotal-Math.ceil(_elecTotal*0.6)):0;
+    var minDays2=(s.minDays2!==undefined)?s.minDays2:(_taskDays2||(_elecDays2||(t.id===10?4:Math.ceil(_defDays*0.5))));
     var minDays3=(s.minDays3!==undefined)?s.minDays3:(t.id===5?5:Math.ceil((AS_DEFAULT_DAYS[t.id]||5)*0.4));
     /* asOn 기본값: task.on */
     var asOn=(s.asOn!==undefined)?s.asOn:t.on;
@@ -6672,13 +6686,15 @@ function asRunSchedule(){
     var total=dif(pStart,pEnd);
     var propDays=AS_PCT_DUR[tid]?Math.round(total*AS_PCT_DUR[tid]):0;
     var _tDays=(task.sd&&task.ed&&task.ed>=task.sd)?(dif(task.sd,task.ed)+1):0;
-    var _defD=_tDays||Math.max(AS_DEFAULT_DAYS[tid]||5,propDays||1);
+    var _elecTotal2=(tid===5)&&propDays?propDays:0;
+    var _defD=_tDays||(_elecTotal2?Math.ceil(_elecTotal2*0.6):(propDays||AS_DEFAULT_DAYS[tid]||5));
     var minDays=(s.minDays!==undefined)?s.minDays:_defD;
     var defaultSplit=(tid===5||tid===10);
     var useSplit=(s.useSplit!==undefined)?s.useSplit:defaultSplit;
     var useSplit3=(s.useSplit3!==undefined)?s.useSplit3:false;
     var _tDays2=(task.split&&task.sd2&&task.ed2&&task.ed2>=task.sd2)?(dif(task.sd2,task.ed2)+1):0;
-    var minDays2=(s.minDays2!==undefined)?s.minDays2:(_tDays2||(tid===5?7:(tid===10?4:Math.ceil(minDays*0.5))));
+    var _elecDays22=_elecTotal2?(_elecTotal2-Math.ceil(_elecTotal2*0.6)):0;
+    var minDays2=(s.minDays2!==undefined)?s.minDays2:(_tDays2||(_elecDays22||(tid===10?4:Math.ceil(minDays*0.5))));
 
     /* 의존성 기반 최조시작일 (AS_DEP_LAG 방통 양생 반영) */
     var earliestStart=pStart;
