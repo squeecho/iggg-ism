@@ -3746,7 +3746,8 @@ var TASK_SHORT = {
   '기타공사':'기타','준공청소':'청소'
 };
 
-var GCAL_COLOR_IDS = ['1','2','3','4','5','6','7','8','9','10','11'];
+/* 1=Tomato, 2=Flamingo, 3=Tangerine, 9=Grape 제외 */
+var GCAL_COLOR_IDS = ['4','5','6','7','8','10','11'];
 
 function _gcalColorId(pn){
   var h=0;
@@ -4077,6 +4078,8 @@ function _gcalRunUploadBoth(){
 function _gcalUploadBoth(){
   if(!_gcalEnabled){ toast('구글 캘린더 연동 스위치를 켜주세요'); return; }
   if(!_gcalTokenClient){ toast('잠깐, 초기화 중이에요...'); setTimeout(_gcalUploadBoth, 800); return; }
+  /* 토큰이 이미 있으면 바로 실행, 없으면 silent 재인증 */
+  if(_gcalToken){ _gcalRunUploadBoth(); return; }
   _gcalPendingAction = 'uploadBoth';
   _gcalTokenClient.requestAccessToken({prompt:''});
 }
@@ -4607,6 +4610,7 @@ function _gcalDoUploadSimple(snap, onDone){
       _gcalUpdateLoading('완료!', 100);
       toast('📌 '+pn+' 간략 일정 추가됐어요 ✅');
     } else {
+      if(r.status===401){ _gcalToken=null; } /* 토큰 만료 → 다음 호출 시 재인증 */
       r.json().then(function(j){ console.error('[gcal simple]',(j&&j.error&&j.error.message)||r.status); }).catch(function(){});
       toast('⚠️ '+pn+' 업로드 실패 ('+r.status+')');
     }
@@ -4657,6 +4661,7 @@ function _gcalDoUpload(snap, onDone){
           console.warn('[gcal] '+r.status+' 재시도 '+retries+' ('+delay+'ms)');
           setTimeout(function(){ doPost(retries-1); }, delay);
         } else {
+          if(r.status===401){ _gcalToken=null; } /* 토큰 만료 → 다음 호출 시 재인증 */
           _evtFailed++;
           r.json().then(function(j){
             console.error('[gcal]',evt.summary,(j&&j.error&&j.error.message)||r.status);
