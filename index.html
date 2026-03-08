@@ -220,20 +220,22 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
   .ig-card-grid{grid-template-columns:repeat(3,1fr);}
 }
 /* ── 공종별 업체 관리 (편집탭) ── */
-.ctor-mgr-item{padding:10px 0;border-bottom:1px solid var(--bd);}
-.ctor-mgr-item:last-child{border-bottom:none;padding-bottom:0;}
-.ctor-mgr-hd{display:flex;align-items:center;gap:7px;margin-bottom:8px;}
-.ctor-mgr-trade{font-size:11px;font-weight:800;background:var(--al);color:var(--bar);border-radius:6px;padding:3px 9px;letter-spacing:-.2px;}
-.ctor-mgr-trade.off{background:var(--bg);color:var(--mu2);}
-.ctor-mgr-chips{display:flex;flex-wrap:wrap;gap:5px;min-height:24px;margin-bottom:6px;}
-.ctor-mgr-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 10px 5px 12px;border-radius:20px;background:var(--al);border:1.5px solid var(--bar);color:var(--bar);font-size:12px;font-weight:700;line-height:1;}
-.ctor-mgr-chip-del{background:none;border:none;color:var(--barh);font-size:15px;font-weight:900;cursor:pointer;padding:0;line-height:1;flex-shrink:0;transition:color .12s;}
-.ctor-mgr-chip-del:hover{color:var(--rd);}
-.ctor-mgr-empty{font-size:11px;color:var(--mu2);font-style:italic;line-height:24px;}
-.ctor-mgr-add-row{display:flex;gap:6px;}
-.ctor-mgr-fi{flex:1;min-width:0;border:1.5px solid var(--bd);border-radius:9px;padding:8px 12px;font-size:13px;font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);outline:none;transition:border-color .14s;}
+.ctor-mgr-item{background:var(--sf);border:1.5px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:8px;}
+.ctor-mgr-item:last-child{margin-bottom:0;}
+.ctor-mgr-item.off{opacity:.65;}
+.ctor-mgr-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.ctor-mgr-trade{font-size:12px;font-weight:900;background:var(--hd);color:var(--ht);border-radius:7px;padding:3px 10px;letter-spacing:-.3px;}
+.ctor-mgr-trade.off{background:var(--al);color:var(--mu2);}
+.ctor-mgr-status{font-size:10px;font-weight:700;color:var(--mu2);background:var(--al);border-radius:5px;padding:2px 7px;}
+.ctor-mgr-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;}
+.ctor-mgr-chip{display:inline-flex;align-items:center;gap:4px;padding:5px 8px 5px 11px;border-radius:20px;background:#f0fdf4;border:1.5px solid #86efac;color:#15803d;font-size:12px;font-weight:700;line-height:1;}
+.ctor-mgr-chip-del{background:none;border:none;color:#86efac;font-size:14px;font-weight:900;cursor:pointer;padding:0;line-height:1;flex-shrink:0;transition:color .12s;}
+.ctor-mgr-chip-del:hover{color:#dc2626;}
+.ctor-mgr-empty{font-size:11px;color:var(--mu2);font-style:italic;padding:4px 0 8px;}
+.ctor-mgr-add-row{display:flex;gap:6px;align-items:center;}
+.ctor-mgr-fi{flex:1;min-width:0;border:1.5px solid var(--bd);border-radius:9px;padding:7px 11px;font-size:13px;font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);outline:none;transition:border-color .14s;}
 .ctor-mgr-fi:focus{border-color:var(--bar);background:var(--sf);}
-.ctor-mgr-btn{background:var(--hd);color:var(--ht);border:none;border-radius:9px;font-size:12px;font-weight:700;padding:8px 14px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;flex-shrink:0;transition:opacity .14s;}
+.ctor-mgr-btn{background:var(--hd);color:var(--ht);border:none;border-radius:9px;font-size:12px;font-weight:700;padding:7px 13px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;flex-shrink:0;transition:opacity .14s;}
 .ctor-mgr-btn:hover{opacity:.8;}
 /* ── 편집탭 반응형 ── */
 /* 기본(모바일 1열 좁음 <540px): 달력 세로 */
@@ -922,10 +924,12 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 .as-info-banner{background:#1a2035;border-color:#3d5a8a;color:#93b4e8;}
 
 /* 업체 관리 */
-.ctor-mgr-chip{background:var(--al);border-color:var(--bar);color:var(--bar);}
-.ctor-mgr-fi{background:#19191600;color:var(--tx);}
-.ctor-mgr-fi:focus{background:var(--sf);}
-.ctor-mgr-btn{background:var(--sf);color:var(--tx);border:1.5px solid var(--bd);}
+.ctor-mgr-item{background:var(--bg);border-color:var(--bd);}
+.ctor-mgr-chip{background:#052e16;border-color:#166534;color:#4ade80;}
+.ctor-mgr-chip-del{color:#166534;}
+.ctor-mgr-fi{background:var(--sf);color:var(--tx);}
+.ctor-mgr-fi:focus{background:var(--bg);}
+.ctor-mgr-btn{background:var(--hd);color:var(--ht);}
 
 /* 레전드 */
 .ig-legend-chip{background:var(--sf);}
@@ -2454,13 +2458,13 @@ function calRender(){
   else if(dur)dur.style.display='none';
 }
 function autoTaskDates(){
-  /* asRunSchedule 과 동일한 dep-chain 방식으로 계산 (업체 슬롯 탐색 없음)
-     → 자동배치 실행 시 "변경없음" 결과가 되도록 로직을 일치시킴 */
+  /* asRunSchedule 과 동일한 dep-chain 방식으로 계산 (업체 슬롯 탐색 없음) */
   var pStart=S.sd, pEnd=S.ed;
   var total=dif(pStart,pEnd);
   if(total<=0)return;
 
   var endDates={};
+  var sdDates={};  /* AS_DEP_START 용 시작일 추적 */
   var taskOrder=[1,2,3,4,5,7,8,10,6,11,9,12,13,14];
 
   taskOrder.forEach(function(tid){
@@ -2468,7 +2472,10 @@ function autoTaskDates(){
     if(!task||!task.on)return;
 
     var propDays=AS_PCT_DUR[tid]?Math.round(total*AS_PCT_DUR[tid]):0;
-    var minDays=Math.max(AS_DEFAULT_DAYS[tid]||3,propDays||1);
+    /* 전기(5): 비례값의 60%가 1차, 고정값은 최솟값 보장용 */
+    var minDays=tid===5
+      ?Math.max(AS_DEFAULT_DAYS[5]||7, Math.ceil(propDays*0.6))
+      :Math.max(AS_DEFAULT_DAYS[tid]||3, propDays||1);
 
     /* 의존성 기반 최조시작일 */
     var earliestStart=pStart;
@@ -2483,6 +2490,18 @@ function autoTaskDates(){
     /* pct 비율 기반 최조시작일 */
     var pBased=addD(pStart,Math.round(total*(AS_PCT[tid]||0)));
     if(pBased>earliestStart)earliestStart=pBased;
+
+    /* AS_DEP_START: 시작일 기준 최대 lag 제약 (전기1차 = 목공 시작 후 2일 이내) */
+    if(AS_DEP_START[tid]){
+      Object.keys(AS_DEP_START[tid]).forEach(function(depTid){
+        var maxLag=AS_DEP_START[tid][depTid];
+        var depSd=sdDates[parseInt(depTid)]||null;
+        if(depSd){
+          var latestAllowed=addD(depSd,maxLag);
+          if(earliestStart>latestAllowed)earliestStart=latestAllowed;
+        }
+      });
+    }
 
     /* 가스(12): 주방집기입고일 다음날 우선 */
     if(tid===12){
@@ -2505,19 +2524,22 @@ function autoTaskDates(){
       if(ed>clampEnd)ed=clampEnd;
       if(ed<sd)ed=sd;
     } else {
-      /* 나머지: pEnd 초과 시 기간 유지로 클램프 */
       if(ed>pEnd)ed=pEnd;
     }
 
     task.sd=sd;
     task.ed=ed;
     endDates[tid]=ed;
+    sdDates[tid]=sd;
 
-    /* 2차 분할 날짜 (전기/공조 기본 split) */
+    /* 2차 분할 날짜 (전기/공조) */
     if(tid===5){
+      var elecTotal2=propDays||Math.round(total*AS_PCT_DUR[5]);
+      var days2=Math.max(1,elecTotal2-minDays);
       task.split=true;
       task.sd2=addD(pStart,Math.round(total*0.75));
-      task.ed2=addD(pStart,Math.min(total,Math.round(total*0.90)));
+      task.ed2=addD(task.sd2,days2-1);
+      if(task.ed2>pEnd)task.ed2=pEnd;
       if(!task.desc2)task.desc2='조명공사';
     }
     if(tid===10){
@@ -2766,10 +2788,10 @@ function rCtorMgr(){
     if(!task)return;
     var ctors=(task.contractors||[]).filter(Boolean);
     var tname=NAMES[tid]||('공종'+tid);
-    h+='<div class="ctor-mgr-item">';
+    h+='<div class="ctor-mgr-item'+(task.on?'':' off')+'">';
     h+='<div class="ctor-mgr-hd">';
     h+='<span class="ctor-mgr-trade'+(task.on?'':' off')+'">'+esc(tname)+'</span>';
-    if(!task.on)h+='<span style="font-size:10px;color:var(--mu2)">비활성</span>';
+    if(!task.on)h+='<span class="ctor-mgr-status">비활성</span>';
     h+='</div>';
     h+='<div class="ctor-mgr-chips">';
     if(ctors.length){
@@ -6107,7 +6129,7 @@ var AS_DEPS = {
   /* 기타(13): 의존성 없음 — 전체 공정 버퍼 구간, AS_PCT 비율로만 배치 */
   14:[12]   /* 준공청소 ← 가스 완료 후 */
 };
-var AS_DEFAULT_DAYS = {1:3,2:4,3:5,4:8,5:14,6:6,7:8,8:8,9:6,10:5,11:3,12:3,13:3,14:1};
+var AS_DEFAULT_DAYS = {1:3,2:4,3:5,4:8,5:7,6:6,7:8,8:8,9:6,10:5,11:3,12:3,13:3,14:1};
 /* 날짜 고정 공종: 업체 충돌 시 날짜 이동 안 함, 경고+대체업체 제안만 */
 var AS_FIXED = [1, 2, 3, 4, 5];
 /* ── 공사기간 대비 시작 위치 비율 ──
@@ -6140,7 +6162,7 @@ var AS_PCT_DUR = {
   2:0.09,  /* 철거 기간 */
   3:0.09,  /* 소방 기간 (기존0.12→0.09) */
   4:0.29,  /* 목공 기간 (기존0.32→0.29) */
-  5:0.20,  /* 전기1차 기간 (기존0.28→0.20, 핵심수정) */
+  5:0.20,  /* 전기1차 기간 (기존0.28→0.20) */
   6:0.14,  /* 도장 기간 (기존0.22→0.14, 핵심수정) */
   7:0.14,  /* 금속 기간 (기존0.20→0.14) */
   8:0.24,  /* 설비 기간 (기존0.25→0.24) */
