@@ -2365,115 +2365,79 @@ function calRender(){
   else if(dur)dur.style.display='none';
 }
 function autoTaskDates(){
-  var total=dif(S.sd,S.ed);
+  /* asRunSchedule 과 동일한 dep-chain 방식으로 계산 (업체 슬롯 탐색 없음)
+     → 자동배치 실행 시 "변경없음" 결과가 되도록 로직을 일치시킴 */
+  var pStart=S.sd, pEnd=S.ed;
+  var total=dif(pStart,pEnd);
   if(total<=0)return;
-  function s(r){return Math.round(total*r);}
-  function e(r){return Math.min(total,Math.round(total*r));}
 
-  /* ── 각 공종 시작/종료 비율은 AS_PCT(시작) + AS_PCT_DUR(기간)과 동기화 ── */
+  var endDates={};
+  var taskOrder=[1,2,3,4,5,7,8,10,6,11,9,12,13,14];
 
-  /* 가설(1): 0 ~ 0+0.07 */
-  var t1=S.tasks.find(function(x){return x.id===1;});
-  if(t1){t1.sd=S.sd;t1.ed=addD(S.sd,Math.max(2,e(0.07)));}
+  taskOrder.forEach(function(tid){
+    var task=S.tasks.find(function(x){return x.id===tid;});
+    if(!task||!task.on)return;
 
-  /* 철거(2): 0 ~ 0+0.09 */
-  var t2=S.tasks.find(function(x){return x.id===2;});
-  if(t2){t2.sd=S.sd;t2.ed=addD(S.sd,Math.max(1,e(0.09)));}
+    var propDays=AS_PCT_DUR[tid]?Math.round(total*AS_PCT_DUR[tid]):0;
+    var minDays=Math.max(AS_DEFAULT_DAYS[tid]||3,propDays||1);
 
-  /* 소방(3): 0.10 ~ 0.10+0.09 */
-  var t3=S.tasks.find(function(x){return x.id===3;});
-  if(t3){t3.sd=addD(S.sd,s(0.10));t3.ed=addD(S.sd,Math.max(s(0.10)+2,e(0.19)));}
+    /* 의존성 기반 최조시작일 */
+    var earliestStart=pStart;
+    (AS_DEPS[tid]||[]).forEach(function(depTid){
+      var depEnd=endDates[depTid]||null;
+      if(depEnd){
+        var lag=(AS_DEP_LAG&&AS_DEP_LAG[tid]&&AS_DEP_LAG[tid][depTid])||0;
+        var d=addD(depEnd,1+lag);
+        if(d>earliestStart)earliestStart=d;
+      }
+    });
+    /* pct 비율 기반 최조시작일 */
+    var pBased=addD(pStart,Math.round(total*(AS_PCT[tid]||0)));
+    if(pBased>earliestStart)earliestStart=pBased;
 
-  /* 목공(4): 0.07 ~ 0.07+0.29=0.36 */
-  var t4=S.tasks.find(function(x){return x.id===4;});
-  if(t4){t4.sd=addD(S.sd,s(0.07));t4.ed=addD(S.sd,e(0.36));}
+    /* 가스(12): 주방집기입고일 다음날 우선 */
+    if(tid===12){
+      var _n1=S.notes&&S.notes.find(function(x){return x.id===1;});
+      if(_n1&&_n1.dt&&_n1.dt>=pStart){
+        var kitNext=addD(_n1.dt,1);
+        if(kitNext>earliestStart)earliestStart=kitNext;
+      }
+    }
 
-  /* 전기(5) 1차: 0.08 ~ 0.08+0.20=0.28 (목공 시작과 근사) */
-  var t5=S.tasks.find(function(x){return x.id===5;});
-  if(t5&&t4){t5.sd=t4.sd;t5.ed=addD(S.sd,e(0.28));}
-  else if(t5){t5.sd=addD(S.sd,s(0.08));t5.ed=addD(S.sd,e(0.28));}
+    /* 준공청소(14): 마지막날 고정 */
+    if(tid===14){task.sd=pEnd;task.ed=pEnd;endDates[tid]=pEnd;return;}
 
-  /* 도장(6): 0.45 ~ 0.45+0.14=0.59 */
-  var t6=S.tasks.find(function(x){return x.id===6;});
-  if(t6){t6.sd=addD(S.sd,s(0.45));t6.ed=addD(S.sd,e(0.59));}
+    var sd=earliestStart;
+    var ed=addD(sd,minDays-1);
 
-  /* 금속(7): 0.26 ~ 0.26+0.14=0.40 ★ (목공 진행 중 병행) */
-  var t7=S.tasks.find(function(x){return x.id===7;});
-  if(t7){t7.sd=addD(S.sd,s(0.26));t7.ed=addD(S.sd,e(0.40));}
+    /* 기타(13): pEnd-1 이하로 클램프 */
+    if(tid===13){
+      var clampEnd=addD(pEnd,-1);
+      if(ed>clampEnd)ed=clampEnd;
+      if(ed<sd)ed=sd;
+    } else {
+      /* 나머지: pEnd 초과 시 기간 유지로 클램프 */
+      if(ed>pEnd)ed=pEnd;
+    }
 
-  /* 설비(8): 0.30 ~ 0.30+0.24=0.54 ★ (배관은 천장 오픈 중 선행) */
-  var t8=S.tasks.find(function(x){return x.id===8;});
-  if(t8){t8.sd=addD(S.sd,s(0.30));t8.ed=addD(S.sd,e(0.54));}
+    task.sd=sd;
+    task.ed=ed;
+    endDates[tid]=ed;
 
-  /* 공조(10) 1차: 0.22 ~ 0.22+0.10=0.32 ★ (덕트 배관 선행) */
-  var t10=S.tasks.find(function(x){return x.id===10;});
-  if(t10){t10.sd=addD(S.sd,s(0.22));t10.ed=addD(S.sd,e(0.32));}
-
-  /* 타일(9): 설비 완료+2일(방통양생) 또는 0.60 중 늦은 것 */
-  var t9=S.tasks.find(function(x){return x.id===9;});
-  var t9base=t8&&t8.ed?addD(t8.ed,2):addD(S.sd,s(0.60));
-  var t9pct=addD(S.sd,s(0.60));
-  var t9s=t9base>t9pct?t9base:t9pct;
-  if(t9){
-    t9.sd=t9s;
-    t9.ed=addD(S.sd,e(0.77));
-    if(t9.ed<=t9.sd)t9.ed=addD(t9.sd,Math.max(3,e(0.17)));
-    if(t9.ed>=S.ed){t9.ed=addD(S.ed,-2);}
-    if(t9.sd>=t9.ed){t9.sd=addD(t9.ed,-3);}
-  }
-
-  /* 필름(11): 0.42 ~ 0.42+0.10=0.52 (도장 완료 후) */
-  var t11=S.tasks.find(function(x){return x.id===11;});
-  if(t11){t11.sd=addD(S.sd,s(0.42));t11.ed=addD(S.sd,e(0.52));}
-
-  /* 가스(12): 0.82 ~ 0.82+0.09=0.91 (타일 완료 후) */
-  var t12=S.tasks.find(function(x){return x.id===12;});
-  if(t12){
-    var n1=S.notes.find(function(x){return x.id===1;});
-    var kitBase=n1&&n1.dt?n1.dt:(t9&&t9.on&&t9.ed?addD(t9.ed,2):'');
-    t12.sd=kitBase?addD(kitBase,1):addD(S.sd,s(0.82));
-    t12.ed=addD(t12.sd,Math.max(1,e(0.09)));
-    if(t12.ed>=S.ed)t12.ed=addD(S.ed,-1);
-  }
-
-  /* 기타(13): 0.76 ~ 종료-1일 */
-  var t13=S.tasks.find(function(x){return x.id===13;});
-  if(t13){t13.sd=addD(S.sd,s(0.76));t13.ed=addD(S.ed,-1);
-    if(t13.sd>=t13.ed)t13.sd=addD(S.ed,-3);}
-
-  /* ── 2차 분할 ── */
-  /* 전기(5) 2차: 0.75~0.90 (조명공사) */
-  if(t5){
-    t5.split=true;
-    t5.sd2=addD(S.sd,s(0.75));t5.ed2=addD(S.sd,e(0.90));
-    if(!t5.desc2)t5.desc2='조명공사';
-  }
-  /* 공조(10) 2차: 0.70~0.83 (마감·후드) */
-  if(t10){
-    t10.split=true;
-    t10.sd2=addD(S.sd,s(0.70));t10.ed2=addD(S.sd,e(0.83));
-    if(!t10.desc2)t10.desc2='HVAC 마감';
-  }
-  /* 도장(6) 2차 */
-  if(t6&&t6.split){t6.sd2=addD(S.ed,-5);t6.ed2=addD(S.ed,-3);}
-  /* 금속(7) 2차 */
-  if(t7&&t7.split){t7.sd2=addD(S.ed,-6);t7.ed2=addD(S.ed,-4);}
-  /* 설비(8) 2차 */
-  if(t8&&t8.split){t8.sd2=addD(S.ed,-5);t8.ed2=addD(S.ed,-3);}
-  /* 타일(9) 2차 */
-  if(t9&&t9.split){t9.sd2=addD(S.ed,-2);t9.ed2=addD(S.ed,-1);}
-  /* 소방(3) 2차 */
-  if(t3&&t3.split){t3.sd2=addD(S.ed,-2);t3.ed2=addD(S.ed,-1);}
-  /* 가스(12) 2차 */
-  var t12b=S.tasks.find(function(x){return x.id===12;});
-  if(t12b&&t12b.split&&t12b.ed){t12b.sd2=addD(t12b.ed,1);t12b.ed2=addD(t12b.ed,1);}
-  /* 기타(13) 2차 */
-  if(t13&&t13.split){t13.sd2=S.ed;t13.ed2=S.ed;}
-
-  /* 준공청소(14): 마지막날 고정 */
-  var t14=S.tasks.find(function(x){return x.id===14;});
-  if(t14){t14.on=true;t14.sd=S.ed;t14.ed=S.ed;
-    if(t14.split){t14.sd2=addD(S.ed,1);t14.ed2=addD(S.ed,1);}}
+    /* 2차 분할 날짜 (전기/공조 기본 split) */
+    if(tid===5){
+      task.split=true;
+      task.sd2=addD(pStart,Math.round(total*0.75));
+      task.ed2=addD(pStart,Math.min(total,Math.round(total*0.90)));
+      if(!task.desc2)task.desc2='조명공사';
+    }
+    if(tid===10){
+      task.split=true;
+      task.sd2=addD(pStart,Math.round(total*0.70));
+      task.ed2=addD(pStart,Math.min(total,Math.round(total*0.83)));
+      if(!task.desc2)task.desc2='HVAC 마감';
+    }
+  });
 }
 function calClick(el){
   if(IS_RO)return;
@@ -3692,7 +3656,7 @@ function initGoogleAuth(){
     _gcalCalNameSimple=localStorage.getItem('_gcalCalNameSimple')||'';
   }catch(e){}
   _gcalTokenClient=google.accounts.oauth2.initTokenClient({
-    client_id:'509649339630-bfj8s4t7bsfdoaqu4o7sr68gtgnbvq2m.apps.googleusercontent.com',
+    client_id:'1024187262215-kj0tssigukjv85310gkuich4jecrltrt.apps.googleusercontent.com',
     scope:'https://www.googleapis.com/auth/calendar',
     callback:function(resp){
       if(resp.error){
@@ -6115,6 +6079,28 @@ function closeAutoSchedModal(){
 /* ═══════════════════════════════════════════════════
    협력업체 일정체크 — 확정 현장과 현재 공종 날짜 충돌 확인
    ═══════════════════════════════════════════════════ */
+/* 로컬 + 클라우드 확정 현장을 하나로 합쳐서 반환 (현재 현장 제외) */
+function getAllConfirmedSites(){
+  var map={};
+  /* 1) 로컬 localStorage */
+  getRecent().filter(function(x){return x.confirmed&&x.snap&&x.pn!==S.pn;}).forEach(function(item){
+    try{var p=JSON.parse(item.snap);if(p&&p.pn)map[p.pn]=p;}catch(e){}
+  });
+  /* 2) Firebase 클라우드 현장 */
+  (_cloudSites||[]).filter(function(s){return s&&s.pn&&s.pn!==S.pn;}).forEach(function(s){
+    if(!map[s.pn])map[s.pn]=s;
+  });
+  return Object.values(map);
+}
+
+/* 확정 현장의 특정 공종에서 업체 목록 추출 (글로벌 스토어 포함) */
+function getSiteTaskCtors(task){
+  var ctors=(task.contractors||[]).filter(Boolean);
+  var gc=getGlobalCtors()[task.id];
+  if(gc&&gc.length){gc.forEach(function(c){if(c&&ctors.indexOf(c)<0)ctors.push(c);});}
+  return ctors;
+}
+
 function openCtorCheckModal(){
   var ov=document.getElementById('ctorCheckOv');
   ov.style.display='flex';
@@ -6185,20 +6171,17 @@ function _buildCtorCheck(){
     myRanges.push({tid:t.id,name:t.name,ctors:ctors,ranges:ranges});
   });
 
-  /* 확정 현장 목록 (현재 현장 제외) */
-  var confirmed=getRecent().filter(function(x){return x.confirmed&&x.snap&&x.pn!==S.pn;});
+  /* 확정 현장 목록 (현재 현장 제외, 로컬+클라우드 통합) */
+  var confirmed=getAllConfirmedSites();
 
   /* 충돌 탐색: 같은 업체명 + 날짜 겹침 */
   var conflicts=[]; /* {tid, taskName, ctor, myRange, sitePn, siteTid, siteName, siteRange} */
   myRanges.forEach(function(my){
     my.ctors.forEach(function(ctor){
-      confirmed.forEach(function(item){
-        var site;try{site=JSON.parse(item.snap);}catch(e){return;}
+      confirmed.forEach(function(site){
         (site.tasks||[]).forEach(function(st){
           if(!st.on||!st.sd||!st.ed)return;
-          var stCtors=(st.contractors||[]).filter(Boolean);
-          var sgc=getGlobalCtors()[st.id];
-          if(sgc&&sgc.length){sgc.forEach(function(c){if(c&&stCtors.indexOf(c)<0)stCtors.push(c);});}
+          var stCtors=getSiteTaskCtors(st);
           if(stCtors.indexOf(ctor)<0)return;
           /* 날짜 범위 수집 */
           var sRanges=[{sd:st.sd,ed:st.ed}];
@@ -6209,7 +6192,7 @@ function _buildCtorCheck(){
               if(mr.sd<=sr.ed&&mr.ed>=sr.sd){ /* 겹침 */
                 conflicts.push({
                   tid:my.tid,taskName:my.name,ctor:ctor,
-                  myRange:mr,sitePn:item.pn,siteTid:st.id,
+                  myRange:mr,sitePn:site.pn,siteTid:st.id,
                   siteName:st.name,siteRange:sr
                 });
               }
@@ -6930,15 +6913,12 @@ function asGetAllCtorNames(){
 function asCtorBusyInRange(ctorName, tid){
   var busy=[];
   function addIfCtor(task){
-    if((task.contractors||[]).indexOf(ctorName)<0) return;
+    if(getSiteTaskCtors(task).indexOf(ctorName)<0) return;
     if(task.sd&&task.ed) busy.push({sd:task.sd,ed:task.ed});
     if(task.split&&task.sd2&&task.ed2) busy.push({sd:task.sd2,ed:task.ed2});
     if(task.split3&&task.sd3&&task.ed3) busy.push({sd:task.sd3,ed:task.ed3});
   }
-  getRecent().filter(function(x){return x.confirmed&&x.snap&&x.pn!==S.pn;}).forEach(function(item){
-    try{var snap=JSON.parse(item.snap);var t=(snap.tasks||[]).find(function(t){return t.id===tid&&t.on;});if(t)addIfCtor(t);}catch(e){}
-  });
-  (_cloudSites||[]).filter(function(s){return s.pn!==S.pn;}).forEach(function(site){
+  getAllConfirmedSites().forEach(function(site){
     var t=(site.tasks||[]).find(function(t){return t.id===tid&&t.on;});if(t)addIfCtor(t);
   });
   return busy;
@@ -7010,19 +6990,10 @@ function asFindSlot(tid,ctor,minDays,startFrom,endAt){
     if(task.split&&task.sd2&&task.ed2)busy.push({sd:task.sd2,ed:task.ed2});
     if(task.split3&&task.sd3&&task.ed3)busy.push({sd:task.sd3,ed:task.ed3});
   }
-  getRecent().filter(function(x){return x.confirmed&&x.snap&&x.pn!==S.pn;}).forEach(function(item){
-    try{
-      var snap=JSON.parse(item.snap);
-      var t=(snap.tasks||[]).find(function(t){return t.id===tid&&t.on;});
-      if(!t)return;
-      if((t.contractors||[]).filter(Boolean).indexOf(ctor)<0)return;
-      addBusy(t);
-    }catch(e){}
-  });
-  (_cloudSites||[]).filter(function(s){return s.pn!==S.pn;}).forEach(function(site){
+  getAllConfirmedSites().forEach(function(site){
     var t=(site.tasks||[]).find(function(t){return t.id===tid&&t.on;});
     if(!t)return;
-    if((t.contractors||[]).filter(Boolean).indexOf(ctor)<0)return;
+    if(getSiteTaskCtors(t).indexOf(ctor)<0)return;
     addBusy(t);
   });
   var cur=startFrom;
