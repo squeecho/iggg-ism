@@ -163,6 +163,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 .ig-filter-chip.on{background:#1c3558;border-color:#5b82b8;color:#c8d8ee;}
 .as-ctor-chip.on{background:#1c3558;border-color:#5b82b8;color:#c8d8ee;}
 .as-cont-btn.on{background:#1c3558;border-color:#5b82b8;color:#c8d8ee;}
+.as-info-banner{background:#1a2035;border-color:#3d5a8a;color:#93b4e8;}
 
 /* 업체 관리 */
 .ctor-mgr-chip{background:var(--al);border-color:var(--bar);color:var(--bar);}
@@ -944,6 +945,10 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 }
 
 
+/* 통합탭 공종 아코디언 헤더 다크모드 */
+.ig-trade-hd{background:var(--hd);} /* --hd: dark bg for headers */
+.ig-trade-nm{color:var(--ht);}      /* --ht: header text (light in dark mode) */
+.ig-trade-chevron{color:rgba(255,255,255,.5);}
 /* 자동배치 결과 — 업체 추천 배너 */
 .as-recommend{display:flex;align-items:center;gap:8px;background:var(--al);border:1.5px solid var(--bar);border-radius:8px;padding:8px 10px;margin-top:6px;cursor:pointer;transition:background .12s;-webkit-tap-highlight-color:transparent;}
 .as-recommend:hover{background:#d0dff7;}
@@ -956,6 +961,9 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .as-recommend:hover{background:#1e3255;}
 .as-recommend-text{color:#7aa8d8;}
 .as-recommend-arrow{color:#7aa8d8;}
+/* 충돌 선택지 카드 다크모드 */
+.as-conflict-card{background:#1e1c18;border-color:#5b2222;}
+.as-conflict-hd{background:#2e1a1a;border-color:#5b2222;}
 }
 
 .as-stepper-lbl{font-size:10px;font-weight:700;color:var(--mu);letter-spacing:.5px;text-transform:uppercase;}
@@ -2912,11 +2920,11 @@ function rNE(){
       if(!n.dt){
         h+='<span style="font-size:12px;color:var(--gn);font-weight:700;font-family:DM Mono,monospace">'+(autoNd?dspK(autoNd):'미정')+'</span>';
         h+='<small style="font-size:10px;color:var(--mu);display:block;line-height:1.4">'+autoLogic+' 자동</small>';
-        h+='<small style="font-size:9px;color:#9ca3af;display:block;line-height:1.3">차트에서 drag로 수정가능</small>';
+        h+='<small style="font-size:9px;color:var(--mu2);display:block;line-height:1.3">차트에서 drag로 수정가능</small>';
       } else {
         h+='<div class="date-disp" style="font-size:12px;cursor:pointer" onclick="openNCal('+n.id+')">'+dspK(n.dt)+'</div>';
         h+='<small style="font-size:10px;color:var(--mu);display:block;margin-top:2px">수동 설정됨</small>';
-        h+='<small style="font-size:9px;color:#9ca3af;display:block">차트에서 drag로 수정가능</small>';
+        h+='<small style="font-size:9px;color:var(--mu2);display:block">차트에서 drag로 수정가능</small>';
       }
     } else if(n.id===1){
       var t9chk=S.tasks.find(function(x){return x.id===9;});
@@ -2924,11 +2932,11 @@ function rNE(){
       if(!n.dt){
         h+='<span style="font-size:12px;color:var(--gn);font-weight:700;font-family:DM Mono,monospace">'+(autoNd1?dspK(autoNd1):'미정')+'</span>';
         h+='<small style="font-size:10px;color:var(--mu);display:block;line-height:1.4">타일공사 종료+2일 자동</small>';
-        h+='<small style="font-size:9px;color:#9ca3af;display:block;line-height:1.3">차트에서 drag로 수정가능</small>';
+        h+='<small style="font-size:9px;color:var(--mu2);display:block;line-height:1.3">차트에서 drag로 수정가능</small>';
       } else {
         h+='<div class="date-disp" style="font-size:12px;cursor:pointer" onclick="openNCal('+n.id+')">'+dspK(n.dt)+'</div>';
         h+='<small style="font-size:10px;color:var(--mu);display:block;margin-top:2px">수동 설정됨</small>';
-        h+='<small style="font-size:9px;color:#9ca3af;display:block">차트에서 drag로 수정가능</small>';
+        h+='<small style="font-size:9px;color:var(--mu2);display:block">차트에서 drag로 수정가능</small>';
       }
     } else {
       h+='<div class="date-disp" style="font-size:12px;cursor:pointer" onclick="openNCal('+n.id+')">'+( n.dt?dspK(n.dt):'📅 날짜 선택')+'</div>';
@@ -6038,6 +6046,8 @@ var AS_DEPS = {
   14:[12]   /* 준공청소 ← 가스 완료 후 */
 };
 var AS_DEFAULT_DAYS = {1:3,2:4,3:5,4:8,5:14,6:6,7:8,8:8,9:6,10:5,11:3,12:3,13:3,14:1};
+/* 날짜 고정 공종: 업체 충돌 시 날짜 이동 안 함, 경고+대체업체 제안만 */
+var AS_FIXED = [1, 2, 3, 4, 5];
 /* ── 공사기간 대비 시작 위치 비율 ──
    5개 현장 정밀 실측 결과:
    진진옥덕은(34일): 금속32% 설비32% 공조41%
@@ -6083,6 +6093,8 @@ var AS_PCT_DUR = {
 var AS_DEP_LAG = {
   9: {8:2}  /* 타일(9)은 설비(8) 완료 후 최소 +2일 (방통 48h 양생) */
 };
+/* 종료일 기준이 아닌 시작일 기준 의존성: {tid: {depTid: maxLagDays}} */
+var AS_DEP_START = { 5: {2: 2} }; /* 전기1차: 목공 시작일로부터 최대 2일 이내 시작 */
 
 function asGetSettings(){
   try{
@@ -6312,7 +6324,7 @@ function _buildCtorCheck(){
       h+='<div style="margin-bottom:12px;border:1.5px solid var(--bd);border-radius:12px;overflow:hidden;">';
       h+='<div style="padding:10px 14px;background:var(--bg2,#f8fafc);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;">';
       h+='<span style="font-size:13px;font-weight:800;color:var(--tx);">'+esc(grp.taskName)+'</span>';
-      h+='<span style="font-size:11px;background:#fde8ff;color:#7c3aed;border-radius:8px;padding:2px 8px;font-weight:700;">👤 '+esc(grp.ctor)+'</span>';
+      h+='<span style="font-size:11px;background:var(--al);color:#7c3aed;border-radius:8px;padding:2px 8px;font-weight:700;">👤 '+esc(grp.ctor)+'</span>';
       h+='</div>';
       grp.items.forEach(function(cf){
         var myS=cf.myRange.sd.slice(5).replace('-','/'),myE=cf.myRange.ed.slice(5).replace('-','/');
@@ -6339,7 +6351,7 @@ function _buildCtorCheck(){
         h+='<div style="position:absolute;height:12px;left:'+myL+'%;width:'+myW+'%;background:#3b82f6;border-radius:6px;"></div>';
         h+='<div style="position:absolute;height:12px;left:'+ovL+'%;width:'+ovW+'%;background:rgba(251,146,60,.55);border-radius:0;"></div>';
         h+='</div>';
-        h+='<span style="font-size:10px;color:#374151;white-space:nowrap;min-width:88px;text-align:right;">'+myS+' ~ '+myE+'</span>';
+        h+='<span style="font-size:10px;color:var(--tx);white-space:nowrap;min-width:88px;text-align:right;">'+myS+' ~ '+myE+'</span>';
         h+='</div>';
 
         /* 확정 현장 행 */
@@ -6349,13 +6361,13 @@ function _buildCtorCheck(){
         h+='<div style="position:absolute;height:12px;left:'+stL+'%;width:'+stW+'%;background:#f87171;border-radius:6px;"></div>';
         h+='<div style="position:absolute;height:12px;left:'+ovL+'%;width:'+ovW+'%;background:rgba(251,146,60,.55);border-radius:0;"></div>';
         h+='</div>';
-        h+='<span style="font-size:10px;color:#374151;white-space:nowrap;min-width:88px;text-align:right;">'+stS+' ~ '+stE+'</span>';
+        h+='<span style="font-size:10px;color:var(--tx);white-space:nowrap;min-width:88px;text-align:right;">'+stS+' ~ '+stE+'</span>';
         h+='</div>';
 
         /* 겹침 뱃지 */
         var rowId='ccrow_'+cf.tid+'_'+cf.ctor.replace(/\W/g,'')+'_'+cf.sitePn.replace(/\W/g,'');
         h+='<div id="'+rowId+'" style="margin-top:8px;display:flex;align-items:center;justify-content:center;gap:8px;">';
-        h+='<span style="font-size:11px;background:#fff7ed;color:#c2410c;border:1.5px solid #f97316;border-radius:6px;padding:2px 9px;font-weight:800;">⚠️ 겹침 '+ovDays+'일 &nbsp;'+ovSd+' ~ '+ovEd+'</span>';
+        h+='<span style="font-size:11px;background:var(--hh);color:#c2410c;border:1.5px solid #f97316;border-radius:6px;padding:2px 9px;font-weight:800;">⚠️ 겹침 '+ovDays+'일 &nbsp;'+ovSd+' ~ '+ovEd+'</span>';
         h+='<button onclick="ctorCheckResolve('+cf.tid+',\''+ovE+'\',\''+rowId+'\',\''+addD(ovE,1)+'\')" style="font-size:11px;background:#dc2626;color:#fff;border:none;border-radius:6px;padding:3px 10px;font-weight:800;cursor:pointer;">겹침삭제</button>';
         h+='</div>';
         h+='</div>';
@@ -6739,6 +6751,21 @@ function asRunSchedule(){
     });
     var pBased=addD(pStart,Math.round(total*(AS_PCT[tid]||0)));
     if(pBased>earliestStart)earliestStart=pBased;
+    /* 시작일 기준 의존성: depTask 시작일 + maxLag 이내로 cap */
+    if(AS_DEP_START[tid]){
+      Object.keys(AS_DEP_START[tid]).forEach(function(depTid){
+        var maxLag=AS_DEP_START[tid][depTid];
+        /* 해당 dep 공종의 배치된 시작일 찾기 */
+        var depResult=result.find(function(r){return r.tid===parseInt(depTid);});
+        var depSd=depResult?depResult.sd:null;
+        if(!depSd){var dt=S.tasks.find(function(t){return t.id===parseInt(depTid)&&t.on;});if(dt&&dt.sd)depSd=dt.sd;}
+        if(depSd){
+          var latestAllowed=addD(depSd,maxLag);
+          /* earliestStart가 이미 latestAllowed 이하면 그대로, 초과하면 cap */
+          if(earliestStart>latestAllowed)earliestStart=latestAllowed;
+        }
+      });
+    }
 
     /* ── 가스(12): 주방집기입고일 다음날 우선 ── */
     if(tid===12){
@@ -6753,7 +6780,20 @@ function asRunSchedule(){
     var realCtors=selCtors.filter(function(c){return c!=='__new__';});
 
     var minDays3=(s.minDays3!==undefined)?s.minDays3:(tid===5?5:Math.ceil(minDays*0.4));
-    if(useSplit){
+    var isFixed=AS_FIXED.indexOf(tid)>=0;
+    if(isFixed){
+      /* 고정 공종: dep-chain 날짜 그대로, 업체 충돌 시 날짜 이동 안 함 */
+      var fixSd=earliestStart, fixEd=addD(earliestStart,minDays-1);
+      if(useSplit){
+        assigned={sd:fixSd,ed:fixEd};
+        var a2s=addD(fixEd,Math.ceil(minDays*0.3)+1);
+        assigned2={sd:a2s,ed:addD(a2s,minDays2-1)};
+      } else {
+        assigned={sd:fixSd,ed:fixEd};
+      }
+      /* 업체가 지정됐으면 그대로 사용 (충돌 있어도 날짜는 안 밀어) */
+      assignedCtor=realCtors.length?realCtors[0]:'기본';
+    } else if(useSplit){
       for(var i=0;i<realCtors.length;i++){
         var s1=asFindSlot(tid,realCtors[i],minDays,earliestStart,pEnd);
         if(s1){
@@ -6799,7 +6839,7 @@ function asRunSchedule(){
       }
     }
 
-    var needsExt=assigned&&tid!==13&&((useSplit&&assigned2?assigned2.ed:assigned.ed)>pEnd);
+    var needsExt=assigned&&!isFixed&&tid!==13&&((useSplit&&assigned2?assigned2.ed:assigned.ed)>pEnd);
     if(needsExt){
       var bestSlot=null,bestSlot2=null,bestCtor=null;
       realCtors.forEach(function(ctor){
@@ -6853,14 +6893,24 @@ function asRunSchedule(){
     }
 
     if(assignedCtor==='기본'&&realCtors.length>0){
-      /* 선택 업체 전체 충돌 → 선택하지 않은 등록업체 중 가용 탐색 */
       recommend=_findAvailCtor(realCtors);
     } else if(assignedCtor==='기본'&&realCtors.length===0&&masterCtors.length>0){
-      /* 업체 미선택 상태에서 기본배치 → 등록업체 중 가용 추천 */
       recommend=_findAvailCtor([]);
     } else if(assigned&&assignedCtor&&assignedCtor!=='기본'&&(extension&&extension>0)){
-      /* 선택업체로 배치됐지만 기간 초과 → 다른 업체가 기간 내 가능한지 */
       recommend=_findAvailCtor([assignedCtor]);
+    } else if(isFixed&&assigned&&assignedCtor&&assignedCtor!=='기본'){
+      /* 고정 공종: extension 없어도 충돌 있으면 대체 업체 탐색 */
+      recommend=_findAvailCtor([assignedCtor]);
+    }
+    /* 추천 업체의 가용 슬롯도 계산 (옵션 B용) */
+    var recommendSlot=null,recommendSlot2=null;
+    if(recommend){
+      if(useSplit){
+        var _rs1=asFindSlot(tid,recommend,minDays,earliestStart,searchEnd);
+        if(_rs1){var _rs2=asFindSlot(tid,recommend,minDays2,addD(_rs1.ed,1),searchEnd);if(_rs2){recommendSlot=_rs1;recommendSlot2=_rs2;}}
+      } else {
+        recommendSlot=asFindSlot(tid,recommend,minDays,earliestStart,searchEnd);
+      }
     }
     /* 변경 이유 수집 */
     var changeReasons=[];
@@ -6909,6 +6959,23 @@ function asRunSchedule(){
           label:realCtors.join('·')+' 일정 충돌',
           detail:realCtors.join(', ')+' 다른 현장과 기간 겹침'+origPeriodStr});
       }
+      /* ② 고정 공종 업체 충돌 경고 (날짜는 유지) */
+      if(isFixed&&assignedCtor&&assignedCtor!=='기본'){
+        var fixConflictSites=asGetConflictSites(tid,assignedCtor);
+        if(fixConflictSites.length){
+          var fixOvSites=[];
+          fixConflictSites.forEach(function(cs){
+            cs.ranges.forEach(function(rng){
+              if(assigned.sd<=rng.ed&&assigned.ed>=rng.sd)fixOvSites.push(cs.pn);
+            });
+          });
+          if(fixOvSites.length){
+            changeReasons.push({type:'conflict',
+              label:assignedCtor+' — 확정 현장과 일정 겹침',
+              detail:'날짜는 공정상 이동 불가 · '+[...new Set(fixOvSites)].join(', ')+' 현장과 겹쳐요. 업체 교체 또는 직접 조율 필요'});
+          }
+        }
+      }
       /* ③ 기간 단축 (시작일 동일, 종료일만 변경) */
       if(!changeReasons.length&&task.sd&&task.ed&&assigned.sd===task.sd&&assigned.ed!==task.ed){
         var origD=(dif(task.sd,task.ed)+1);var newD=(dif(assigned.sd,assigned.ed)+1);
@@ -6943,6 +7010,7 @@ function asRunSchedule(){
       sd3:assigned3?assigned3.sd:null,ed3:assigned3?assigned3.ed:null,
       useSplit:useSplit,useSplit3:useSplit3,extension:extension,ok:!!assigned,
       origSd:task.sd,origEd:task.ed,recommend:recommend,
+      recommendSlot:recommendSlot,recommendSlot2:recommendSlot2,
       requestedCtors:realCtors.slice(),masterCtors:(masterCtors||[]).slice(),
       changeReasons:changeReasons
     });
@@ -7055,6 +7123,68 @@ function asSwapCtor(tid, newCtor){
   asRunSchedule();
 }
 
+/* 충돌 해결 - 옵션1: 겹치는 만큼 일정 단축 */
+function asConflictTrim(tid){
+  var r=_asResult.find(function(x){return x.id===tid||x.tid===tid;});
+  if(!r)return;
+  var ctor=r.ctor||'기본';
+  var cSites=asGetConflictSites(tid,ctor);
+  /* 가장 이른 기확정 시작일 직전까지 줄이기 */
+  var newEd=r.ed;
+  cSites.forEach(function(cs){
+    cs.ranges.forEach(function(rng){
+      if(r.sd<=rng.ed&&r.ed>=rng.sd){
+        var cutTo=addD(rng.sd,-1);
+        if(cutTo<newEd)newEd=cutTo;
+      }
+    });
+  });
+  if(newEd===r.ed){toast('단축할 겹침 구간 없음');return;}
+  if(newEd<r.sd){toast('⚠️ 단축 불가 — 시작일보다 앞서요');return;}
+  /* _asResult 직접 수정 후 step2 재렌더 */
+  r.ed=newEd;
+  r.changeReasons=[{type:'reorder',label:'겹침 구간 단축',
+    detail:'기확정 현장 시작 전날('+newEd.slice(5).replace('-','/')+')까지 단축'}];
+  _asResult[_asResult.findIndex(function(x){return x.tid===tid;})]=r;
+  asShowStep2(_asResult,S.ed);
+  toast('✂️ '+r.tname+' 일정 단축 적용');
+}
+
+/* 충돌 해결 - 옵션2: 겹침 피해 이동 (비고정 공종만) */
+function asConflictShift(tid){
+  var r=_asResult.find(function(x){return x.tid===tid;});
+  if(!r)return;
+  var ctor=r.ctor||'기본';
+  var dur=dif(r.sd,r.ed);
+  /* 기확정 현장 점유 구간 수집 */
+  var cSites=asGetConflictSites(tid,ctor);
+  var busy=[];
+  cSites.forEach(function(cs){cs.ranges.forEach(function(rng){busy.push({sd:rng.sd,ed:rng.ed});});});
+  busy.sort(function(a,b){return a.sd<b.sd?-1:1;});
+  /* 가장 이른 기확정 시작 전에 들어갈 수 있는지 먼저 체크 */
+  var firstBusy=busy[0];
+  var earlyEnd=addD(firstBusy.sd,-1);
+  var earlyStart=addD(earlyEnd,-dur);
+  var task=S.tasks.find(function(t){return t.id===tid;});
+  var pStart=S.sd;
+  if(earlyStart>=pStart){
+    r.sd=earlyStart;r.ed=earlyEnd;
+    r.changeReasons=[{type:'reorder',label:'기확정 일정 앞으로 이동',
+      detail:'겹침 구간 전 '+earlyStart.slice(5).replace('-','/')+'~'+earlyEnd.slice(5).replace('-','/')+'로 이동'}];
+  } else {
+    /* 이후로 이동 */
+    var lastBusy=busy[busy.length-1];
+    var lateStart=addD(lastBusy.ed,1);
+    var lateEnd=addD(lateStart,dur);
+    r.sd=lateStart;r.ed=lateEnd;
+    r.changeReasons=[{type:'reorder',label:'기확정 일정 뒤로 이동',
+      detail:'겹침 구간 후 '+lateStart.slice(5).replace('-','/')+'~'+lateEnd.slice(5).replace('-','/')+'로 이동'}];
+  }
+  _asResult[_asResult.findIndex(function(x){return x.tid===tid;})]=r;
+  asShowStep2(_asResult,S.ed);
+  toast('↔️ '+r.tname+' 이동 적용');
+}
+
 function asFindSlot(tid,ctor,minDays,startFrom,endAt){
   /* '기본'(미지정)도 같은 tid 미지정 현장과 충돌 체크 */
   var busy=[];
@@ -7078,6 +7208,22 @@ function asFindSlot(tid,ctor,minDays,startFrom,endAt){
     cur=addD(conflict.ed,1);
   }
   return null;
+}
+
+/* 자동배치 결과용 — 이 공종/업체의 확정현장 점유구간 목록 반환 */
+function asGetConflictSites(tid, ctor){
+  var list=[];
+  getAllConfirmedSites().forEach(function(site){
+    var t=(site.tasks||[]).find(function(x){return x.id===tid&&x.on;});
+    if(!t)return;
+    if(getSiteTaskCtors(t).indexOf(ctor)<0)return;
+    var ranges=[];
+    if(t.sd&&t.ed)ranges.push({sd:t.sd,ed:t.ed});
+    if(t.split&&t.sd2&&t.ed2)ranges.push({sd:t.sd2,ed:t.ed2});
+    if(t.split3&&t.sd3&&t.ed3)ranges.push({sd:t.sd3,ed:t.ed3});
+    if(ranges.length)list.push({pn:site.pn,ranges:ranges});
+  });
+  return list;
 }
 
 /* 결과 미리보기 */
@@ -7123,8 +7269,8 @@ function asShowStep2(result,originalEnd){
           +'</div>';
       });
     }
-    if(!isDefault&&r.ctor)h+='<div class="as-result-ctor">\uD83D\uDC77 '+esc(r.ctor)+'</div>';
-    /* 기존 → 변경 날짜 */
+    if(!isDefault&&r.ctor)h+='<div class="as-result-ctor">👷 '+esc(r.ctor)+'</div>';
+    /* 날짜 표시 + 확정현장 충돌 타임라인 */
     if(r.sd&&r.ed){
       var sdT=r.sd.slice(5).replace('-','/'),edT=r.ed.slice(5).replace('-','/');
       var newDaysStr=(dif(r.sd,r.ed)+1)+'일';
@@ -7132,7 +7278,7 @@ function asShowStep2(result,originalEnd){
         var osdT=r.origSd.slice(5).replace('-','/'),oedT=r.origEd.slice(5).replace('-','/');
         var origDaysStr=(dif(r.origSd,r.origEd)+1)+'일';
         h+='<div class="as-result-period" style="color:var(--mu2);text-decoration:line-through;font-size:10px;">'+(r.useSplit?'1차 ':'')+osdT+'~'+oedT+' ('+origDaysStr+')</div>';
-        h+='<div class="as-result-period" style="font-weight:700;">'+(r.useSplit?'1차 ':'')+sdT+'~'+edT+' ('+newDaysStr+') <span style="color:#16a34a;font-size:10px;">\u2191변경</span></div>';
+        h+='<div class="as-result-period" style="font-weight:700;">'+(r.useSplit?'1차 ':'')+sdT+'~'+edT+' ('+newDaysStr+') <span style="color:#16a34a;font-size:10px;">↑변경</span></div>';
       } else {
         h+='<div class="as-result-period">'+(r.useSplit?'1차 ':'')+sdT+'~'+edT+' ('+newDaysStr+')</div>';
       }
@@ -7144,28 +7290,187 @@ function asShowStep2(result,originalEnd){
         var s3T=r.sd3.slice(5).replace('-','/'),e3T=r.ed3.slice(5).replace('-','/');
         h+='<div class="as-result-period">3차 '+s3T+'~'+e3T+' ('+(dif(r.sd3,r.ed3)+1)+'일)</div>';
       }
+      /* 확정현장 충돌 타임라인 */
+      var cSites=asGetConflictSites(r.tid, r.ctor||'기본');
+      /* 실제 겹침 여부 체크 */
+      var _myRangesNow=[{sd:r.sd,ed:r.ed}];
+      if(r.useSplit&&r.sd2&&r.ed2)_myRangesNow.push({sd:r.sd2,ed:r.ed2});
+      var _actualOverlaps=[];
+      cSites.forEach(function(cs){
+        cs.ranges.forEach(function(rng){
+          _myRangesNow.forEach(function(mr){
+            if(mr.sd<=rng.ed&&mr.ed>=rng.sd){
+              var ovS=mr.sd>rng.sd?mr.sd:rng.sd;
+              var ovE=mr.ed<rng.ed?mr.ed:rng.ed;
+              _actualOverlaps.push({pn:cs.pn,sd:ovS,ed:ovE});
+            }
+          });
+        });
+      });
+      /* 겹침이 있으면 → 3가지 선택지 액션 버튼 */
+      if(_actualOverlaps.length){
+        var _ovCtorLabel=r.ctor&&r.ctor!=='기본'?esc(r.ctor):'(미지정)';
+        var _ovSites=[...new Set(_actualOverlaps.map(function(o){return o.pn;}))];
+        var _isFixed=AS_FIXED.indexOf(r.tid)>=0;
+        var _ovDaysTotal=_actualOverlaps.reduce(function(s,o){return s+dif(o.sd,o.ed)+1;},0);
+        h+='<div style="margin:6px 0 4px;border:1.5px solid var(--rd);border-radius:10px;overflow:hidden;">';
+        /* 헤더 */
+        h+='<div style="padding:7px 10px;background:var(--sh);border-bottom:1px solid var(--rd);">'
+          +'<span style="font-size:11px;font-weight:800;color:var(--rd);">⚠️ '+_ovCtorLabel+' 일정 겹침</span>'
+          +'<span style="font-size:10px;color:var(--mu);margin-left:6px;">'+esc(_ovSites.join(', '))+' 확정 현장과 '+_ovDaysTotal+'일 겹쳐요</span>'
+          +'</div>';
+        /* 3가지 선택지 */
+        h+='<div style="display:flex;flex-direction:column;gap:0;">';
+        /* 선택지1: 겹치는 일정 단축 */
+        h+='<div onclick="asConflictTrim('+r.tid+')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--bd);background:var(--sf);-webkit-tap-highlight-color:transparent;">'
+          +'<span style="font-size:16px;flex-shrink:0;">✂️</span>'
+          +'<div style="flex:1;">'
+          +'<div style="font-size:11px;font-weight:800;color:var(--tx);">겹치는 일정 단축</div>'
+          +'<div style="font-size:10px;color:var(--mu);margin-top:1px;">기확정 시작 전날까지 줄이기 · 총 공사일수 감소</div>'
+          +'</div>'
+          +'<span style="font-size:11px;color:var(--mu);">›</span>'
+          +'</div>';
+        /* 선택지2: 이동 (고정공종은 비활성) */
+        if(_isFixed){
+          h+='<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--bd);background:var(--bg);opacity:.45;">'
+            +'<span style="font-size:16px;flex-shrink:0;">↔️</span>'
+            +'<div style="flex:1;">'
+            +'<div style="font-size:11px;font-weight:800;color:var(--tx);">일정 앞뒤로 이동</div>'
+            +'<div style="font-size:10px;color:var(--mu);margin-top:1px;">이 공종은 공정 순서상 이동 불가</div>'
+            +'</div>'
+            +'</div>';
+        } else {
+          h+='<div onclick="asConflictShift('+r.tid+')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--bd);background:var(--sf);-webkit-tap-highlight-color:transparent;">'
+            +'<span style="font-size:16px;flex-shrink:0;">↔️</span>'
+            +'<div style="flex:1;">'
+            +'<div style="font-size:11px;font-weight:800;color:var(--tx);">겹침 피해 이동</div>'
+            +'<div style="font-size:10px;color:var(--mu);margin-top:1px;">기확정 앞 또는 뒤로 이동 · 총 공사일수 유지</div>'
+            +'</div>'
+            +'<span style="font-size:11px;color:var(--mu);">›</span>'
+            +'</div>';
+        }
+        /* 선택지3: 업체 변경 (recommend 있을 때만 활성) */
+        if(r.recommend){
+          var _recName=esc(r.recommend);
+          var _safeRec=r.recommend.replace(/'/g,'&#39;');
+          h+='<div onclick="asSwapCtor('+r.tid+',\''+_safeRec+'\')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;background:var(--sf);-webkit-tap-highlight-color:transparent;">'
+            +'<span style="font-size:16px;flex-shrink:0;">👷</span>'
+            +'<div style="flex:1;">'
+            +'<div style="font-size:11px;font-weight:800;color:var(--tx);">공사 업체 변경</div>'
+            +'<div style="font-size:10px;color:var(--mu);margin-top:1px;"><b style="color:#16a34a;">'+_recName+'</b>으로 교체 시 이 기간 투입 가능</div>'
+            +'</div>'
+            +'<span style="font-size:11px;color:var(--mu);">›</span>'
+            +'</div>';
+        } else {
+          h+='<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);opacity:.45;">'
+            +'<span style="font-size:16px;flex-shrink:0;">👷</span>'
+            +'<div style="flex:1;">'
+            +'<div style="font-size:11px;font-weight:800;color:var(--tx);">공사 업체 변경</div>'
+            +'<div style="font-size:10px;color:var(--mu);margin-top:1px;">대체 가능한 등록 업체 없음</div>'
+            +'</div>'
+            +'</div>';
+        }
+        h+='</div></div>';
+      }
+      /* 확정 현장은 있지만 실제 겹침 없음 → 녹색 안내 */
+      if(cSites.length&&!_actualOverlaps.length){
+        h+='<div style="display:inline-flex;align-items:center;gap:4px;margin:4px 0 5px;padding:3px 9px;background:var(--cl-hl);border:1.5px solid var(--gn);border-radius:20px;font-size:10px;font-weight:800;color:var(--gn);">✅ 확정 현장과 일정 겹침 없음</div>';
+      }
+      if(cSites.length){
+        /* 전체 범위: 비포+에프터+확정현장 모두 포함 */
+        var hasOrigChange=r.origSd&&r.sd&&r.origSd!==r.sd;
+        var tMin=r.sd, tMax=r.ed;
+        if(hasOrigChange){if(r.origSd<tMin)tMin=r.origSd;if(r.origEd>tMax)tMax=r.origEd;}
+        if(r.useSplit&&r.sd2&&r.ed2){if(r.sd2<tMin)tMin=r.sd2;if(r.ed2>tMax)tMax=r.ed2;}
+        cSites.forEach(function(cs){cs.ranges.forEach(function(rng){if(rng.sd<tMin)tMin=rng.sd;if(rng.ed>tMax)tMax=rng.ed;});});
+        var span=dif(tMin,tMax)||1;
+        function rPct(d){return Math.max(0,Math.min(100,Math.round(dif(tMin,d)/span*100)));}
+        function rW(s,e){return Math.max(3,rPct(e)-rPct(s)+Math.round(100/span));}
+
+        /* 헬퍼: 레이블 행 렌더 */
+        function tlRow(label,labelColor,bars,dateStr,rowMb){
+          return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:'+(rowMb||3)+'px;">'
+            +'<span style="font-size:9px;font-weight:800;color:'+labelColor+';white-space:nowrap;min-width:50px;overflow:hidden;text-overflow:ellipsis;">'+label+'</span>'
+            +'<div style="flex:1;position:relative;height:11px;background:#e2e8f0;border-radius:5px;overflow:hidden;">'+bars+'</div>'
+            +'<span style="font-size:9px;color:#6b7280;white-space:nowrap;min-width:76px;text-align:right;">'+dateStr+'</span>'
+            +'</div>';
+        }
+
+        var afLabel=hasOrigChange?'변경 후':'현재';
+        h+='<div style="margin-top:8px;border:1.5px solid var(--bd);border-radius:10px;overflow:hidden;">';
+        /* 범례 헤더 */
+        h+='<div style="display:flex;align-items:center;gap:10px;padding:5px 10px;background:var(--bg2,#f8fafc);border-bottom:1px solid var(--bd);">'
+          +(hasOrigChange?'<span style="display:flex;align-items:center;gap:3px;font-size:9px;font-weight:700;color:#7c3aed;"><span style="display:inline-block;width:10px;height:6px;background:#ddd6fe;border-radius:2px;box-shadow:inset 0 0 0 1.5px #a78bfa;"></span>이전</span>':'')
+          +'<span style="display:flex;align-items:center;gap:3px;font-size:9px;font-weight:700;color:#1d4ed8;"><span style="display:inline-block;width:10px;height:6px;background:#3b82f6;border-radius:2px;"></span>'+afLabel+'</span>'
+          +'<span style="display:flex;align-items:center;gap:3px;font-size:9px;font-weight:700;color:#b91c1c;"><span style="display:inline-block;width:10px;height:6px;background:#f87171;border-radius:2px;"></span>기확정</span>'
+          +'<span style="display:flex;align-items:center;gap:3px;font-size:9px;font-weight:700;color:#c2410c;"><span style="display:inline-block;width:10px;height:6px;background:rgba(251,146,60,.75);border-radius:2px;"></span>겹침</span>'
+          +'</div>';
+        h+='<div style="padding:8px 10px;display:flex;flex-direction:column;gap:0;">';
+
+        /* ① 비포 행 (날짜 변경 있을 때만) */
+        if(hasOrigChange){
+          var origRanges=[{sd:r.origSd,ed:r.origEd}];
+          var bfBars='';
+          cSites.forEach(function(cs){
+            cs.ranges.forEach(function(rng){
+              origRanges.forEach(function(mr){
+                if(mr.sd<=rng.ed&&mr.ed>=rng.sd){
+                  var ovS=mr.sd>rng.sd?mr.sd:rng.sd, ovE=mr.ed<rng.ed?mr.ed:rng.ed;
+                  var ovL=rPct(ovS),ovW=rW(ovS,ovE);
+                  bfBars+='<div style="position:absolute;height:11px;left:'+ovL+'%;width:'+ovW+'%;background:rgba(251,146,60,.75);border-radius:2px;"></div>';
+                }
+              });
+            });
+          });
+          origRanges.forEach(function(mr){
+            var mL=rPct(mr.sd),mW=rW(mr.sd,mr.ed);
+            bfBars='<div style="position:absolute;height:11px;left:'+mL+'%;width:'+mW+'%;background:#ddd6fe;border-radius:4px;box-shadow:inset 0 0 0 1.5px #a78bfa;"></div>'+bfBars;
+          });
+          var bfDateStr=r.origSd.slice(5).replace('-','/')+'~'+r.origEd.slice(5).replace('-','/');
+          h+=tlRow('이전',  '#7c3aed', bfBars, bfDateStr, 5);
+        }
+
+        /* ② 에프터 행 */
+        var afRanges=[{sd:r.sd,ed:r.ed}];
+        if(r.useSplit&&r.sd2&&r.ed2)afRanges.push({sd:r.sd2,ed:r.ed2});
+        var afBars='';
+        cSites.forEach(function(cs){
+          cs.ranges.forEach(function(rng){
+            afRanges.forEach(function(mr){
+              if(mr.sd<=rng.ed&&mr.ed>=rng.sd){
+                var ovS=mr.sd>rng.sd?mr.sd:rng.sd, ovE=mr.ed<rng.ed?mr.ed:rng.ed;
+                var ovL=rPct(ovS),ovW=rW(ovS,ovE);
+                afBars+='<div style="position:absolute;height:11px;left:'+ovL+'%;width:'+ovW+'%;background:rgba(251,146,60,.75);border-radius:2px;"></div>';
+              }
+            });
+          });
+        });
+        afRanges.forEach(function(mr){
+          var mL=rPct(mr.sd),mW=rW(mr.sd,mr.ed);
+          afBars='<div style="position:absolute;height:11px;left:'+mL+'%;width:'+mW+'%;background:#3b82f6;border-radius:4px;"></div>'+afBars;
+        });
+        var afDateStr=r.sd.slice(5).replace('-','/')+'~'+r.ed.slice(5).replace('-','/');
+        h+=tlRow(afLabel, '#1d4ed8', afBars, afDateStr, 7);
+
+        /* ③ 확정 현장 행들 */
+        cSites.forEach(function(cs){
+          var siteBars='';
+          cs.ranges.forEach(function(rng){
+            var sL=rPct(rng.sd),sW=rW(rng.sd,rng.ed);
+            siteBars+='<div style="position:absolute;height:11px;left:'+sL+'%;width:'+sW+'%;background:#f87171;border-radius:4px;"></div>';
+          });
+          var firstRng=cs.ranges[0];
+          var sDateStr=firstRng.sd.slice(5).replace('-','/')+'~'+firstRng.ed.slice(5).replace('-','/');
+          /* 현장명 레이블을 바 위에 표기 */
+          var sitePnLbl=esc(cs.pn.length>12?cs.pn.slice(0,12)+'…':cs.pn);
+          h+='<div style="font-size:9px;font-weight:800;color:#b91c1c;margin-bottom:2px;margin-top:4px;padding-left:56px;">'+sitePnLbl+'</div>';
+          h+=tlRow('기확정', '#b91c1c', siteBars, sDateStr, 3);
+        });
+        h+='</div></div>';
+      }
     }
     if(hasExt)h+='<div class="as-result-ovr">\u26A0\uFE0F 기간 +'+r.extension+'일 초과</div>';
     /* 선택 업체 충돌 → 다른 업체 추천 */
-    if(r.recommend){
-      var safeName=r.recommend.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      var conflictCtors=(r.requestedCtors&&r.requestedCtors.length)?r.requestedCtors.join(', '):'선택 업체';
-      var safeRecommend=r.recommend.replace(/'/g,'&#39;');
-      h+='<div class="as-recommend" onclick="asSwapCtor('+r.tid+',\''+safeRecommend+'\')">'
-        +'<div style="flex:1;display:flex;flex-direction:column;gap:4px;">'
-        +'<div style="display:flex;align-items:center;gap:5px;">'
-        +'<span style="font-size:9px;font-weight:800;color:#fff;background:#ef4444;border-radius:4px;padding:1px 5px;flex-shrink:0;">업체 변경 제안</span>'
-        +'<span style="font-size:11px;font-weight:700;color:var(--bar);"><b>'+safeName+'</b>으로 교체하면 기간 내 배치 가능해요</span>'
-        +'</div>'
-        +'<div style="font-size:10px;line-height:1.5;">'
-        +'<span style="color:#ef4444;font-weight:600;">✕ 충돌 : '+conflictCtors+'</span>'
-        +'<span style="color:var(--mu2);margin:0 4px;">→</span>'
-        +'<span style="color:#16a34a;font-weight:600;">✓ 가능 : '+safeName+'</span>'
-        +'</div>'
-        +'</div>'
-        +'<span style="font-size:12px;font-weight:700;color:var(--bar);flex-shrink:0;">교체 →</span>'
-        +'</div>';
-    }
     h+='</div>'; /* as-result-content 닫기 */
     h+='</div></div>';
   });
@@ -7228,9 +7533,11 @@ function asApplyResult(){
     S.ed=addD(S.ed,maxExt);
     var fe=document.getElementById('fend');if(fe)fe.value=S.ed;
   }
+  var changedCount=0;
   syncPeriod();calInit();rChart();sync();rEdit();autoSave();
+  _asResult.forEach(function(r){if(!_asIgnored[r.tid]&&r.origSd&&r.sd&&(r.sd!==r.origSd||r.ed!==r.origEd))changedCount++;});
   closeAutoSchedModal();
-  toast('\u2705 통합공정 반영 완료!'+(maxExt>0?' (+'+maxExt+'일 연장)':''));
+  toast('✅ 공정표 반영 완료! '+(changedCount>0?changedCount+'개 공종 날짜 변경':'날짜 변경 없음 (이미 최적)')+(maxExt>0?' (+'+maxExt+'일 연장)':''));
 }
 
 </script>
