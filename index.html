@@ -17,8 +17,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<style>
-:root{--bg:#f2f0eb;--sf:#fff;--bd:#e0dbd2;--bmd:#ccc7bc;--tx:#18170f;--mu:#7a7870;--mu2:#b5b0a8;
+<style>:root{--bg:#f2f0eb;--sf:#fff;--bd:#e0dbd2;--bmd:#ccc7bc;--tx:#18170f;--mu:#7a7870;--mu2:#b5b0a8;
 --bar:#cbd5e1;--barh:#94a3b8;--al:#eef2fd;
 --sc:rgba(255,60,60,.07);--sh:#fde8e8;--ac:rgba(60,100,255,.07);--ah:#e4eaff;
 --hc:rgba(255,140,0,.10);--hh:#fff3cd;--cl-hl:#dcfce7;
@@ -37,208 +36,7 @@
 [data-force-light] .pnchip,[data-force-light] .cd,[data-force-light] .ig-trade,
 [data-force-light] .ig-cal-day,[data-force-light] .tabs,
 [data-force-light] .ctor-mgr-chip,[data-force-light] .ctor-mgr-fi{background:revert!important;}
-@media(prefers-color-scheme:dark){
-:root{
---bg:#141412;--sf:#1e1e1b;--bd:#2e2d29;--bmd:#3a3935;
---tx:#f0ede6;--mu:#9e9c94;--mu2:#7e7c77;
---bar:#6e96cc;--barh:#8ab0de;--al:#1c2640;
---sc:rgba(255,80,80,.12);--sh:#3a1a1a;--ac:rgba(80,120,255,.12);--ah:#1a2040;
---hc:rgba(255,160,0,.12);--hh:#2e2200;--cl-hl:#0f2d1a;
---hd:#0e0e0c;--ht:#e8e5de;--rd:#f87171;--gn:#4ade80;--am:#fbbf24;
-}
-/* ── 다크모드 전역 하드코딩 보정 ── */
 
-/* 기본 요소 */
-.pnchip{background:var(--sf);}
-.pnchip-nm{color:var(--tx);}
-.pnchip.archived{background:var(--bg);}
-.pnchip.active{background:#1c3558;border-color:#2e5080;}
-.pnchip-confirm:hover{border-color:var(--barh);color:var(--tx);}
-
-/* 드롭다운 */
-.pn-drop{background:var(--sf);border-color:var(--bar);}
-.pn-drop-head{background:var(--bg);}
-.pn-item:hover{background:var(--al);}
-
-/* 탭 */
-.tabs{background:#111110;}
-.tab{color:var(--mu);}
-.tab.on{background:#16a34a;color:#fff;}
-
-/* 아카이브 */
-.archive-header{background:#1a1916;border-color:var(--bd);}
-.archive-header:hover{background:#222018;}
-
-/* 카드·패널 */
-.cd{background:var(--sf);}
-.ig-site-pill{background:var(--sf);}
-.ig-trade{background:var(--sf);}
-
-/* 입력 */
-.fi{background:#191916;color:var(--tx);border-color:var(--bd);}
-.fi:focus{background:var(--sf);border-color:var(--bar);}
-input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);}
-.ni{background:#191916;color:var(--tx);border-color:var(--bd);}
-.ni:focus{background:var(--sf);}
-.date-disp{background:var(--sf);color:var(--tx);}
-.date-disp:hover{background:var(--al);border-color:var(--bar);}
-.ig-date-input{background:var(--sf);color:var(--tx);border-color:var(--bd);}
-.ig-ctor-new-fi{background:#19191600;}
-.ig-ctor-new-fi:focus{background:var(--sf);}
-
-/* 버튼 */
-.btn{background:var(--sf);color:var(--tx);border-color:var(--bd);}
-.bb{background:var(--bar);border-color:var(--bar);}
-.bur.on{color:var(--tx);}
-.ig-ctor-edit-btn{background:#0f2d1a;border-color:#4ade80;color:#86efac;}
-.ig-ctor-edit-btn.empty{background:var(--bg);border-color:var(--bd);color:var(--mu);}
-.ig-ctor-edit-btn.empty:hover{background:var(--sf);border-color:var(--barh);}
-
-/* 날짜 선택 달력 */
-.cal-wrap{background:var(--sf);}
-.cal-nav{background:var(--bg);border-bottom:1px solid var(--bd);}
-.cal-nav-btn{color:var(--tx);}
-.cal-nav-btn:hover{background:var(--al);color:var(--bar);}
-.cal-hint{background:var(--al);color:var(--bar);}
-.cal-dow{background:var(--bg);color:var(--mu);}
-.cal-grid-cell{background:var(--sf);}
-.cal-grid-cell.today{background:var(--al);}
-.cal-dur{background:var(--al);color:var(--tx);border-top:1px solid var(--bd);}
-.cal-mpick{background:var(--sf);}
-.cal-mpick-m:hover{background:var(--al);color:var(--bar);}
-
-/* 통합탭 달력 */
-.ig-cal-day{background:var(--sf);}
-.ig-cal-day.empty{background:var(--bg);}
-.ig-cal-dow-cell{background:var(--bg);color:var(--mu);}
-
-/* tcal 모달 */
-.tcal-box{background:var(--sf);}
-.tcal-hint{background:var(--al);color:var(--bar);}
-.tcal-result{background:var(--al);color:var(--bar);}
-.tcal-day:not(.empty):hover .tcal-dn{background:var(--al);}
-
-/* 모달 박스들 */
-.master-modal{background:var(--sf);}
-.master-modal-bg{background:rgba(0,0,0,.8);}
-.ig-ctor-modal-box{background:var(--sf);}
-.ig-date-modal-box{background:var(--sf);}
-.ig-barpick-sheet{background:var(--sf);}
-.ig-barpick-box{background:var(--sf);}
-.mo{background:var(--sf);}
-
-/* 모달 내 토글 */
-.ig-ctor-toggle-row{border-color:var(--bd);}
-.ig-ctor-toggle-row.on{background:#0f2d1a;border-color:#4ade80;}
-.ig-ctor-toggle-chk{background:var(--bg);border-color:var(--bd);}
-.ig-ctor-del-btn:hover{color:#f87171;background:#3a1a1a;}
-.ig-barpick-sheet-item:active{background:var(--al);}
-.ig-barpick-cell:not(.empty):hover{background:var(--al);}
-.ig-barpick-sel-box.active{border-color:var(--bar);background:var(--al);}
-
-/* 정보 배너 / 경고 */
-.ig-setup{background:#2a2200;border-color:#a16207;color:#fde68a;}
-.rob{background:#2e2200;border-bottom:2px solid #a16207;color:#fde68a;}
-.as-result-ovr{background:#2e2200;color:#fbbf24;}
-.as-ext-banner{background:#2e2200;border-color:#a16207;color:#fde68a;}
-.ig-overlap-warn{background:#2a1500;border-color:#a16207;color:#fde68a;}
-.ig-overlap-badge{background:#2e2200;color:#fbbf24;border-color:#a16207;}
-
-/* DB / 날짜 배지 */
-.db{background:var(--al);border-color:var(--bar);color:var(--bar);}
-
-/* 테이블 */
-.nt th{background:var(--bg);color:var(--mu);}
-.st2 th{background:var(--bg);color:var(--mu);}
-.d1{background:#1a1a17;color:var(--mu2);}
-.d2{background:#1e1e1b;color:var(--tx);}
-.d3{background:#1c1c19;color:var(--mu);}
-
-/* 차트 셀 */
-.sc-card{background:var(--sf);border-color:var(--bd);}
-.cw{background:var(--sf);}
-.sw{background:var(--sf);}
-
-/* 필터칩 */
-.ig-filter-chip.on{background:#1c3558;border-color:#5b82b8;color:#c8d8ee;}
-.as-ctor-chip.on{background:#1c3558;border-color:#5b82b8;color:#c8d8ee;}
-.as-cont-btn.on{background:#1c3558;border-color:#5b82b8;color:#c8d8ee;}
-.as-info-banner{background:#1a2035;border-color:#3d5a8a;color:#93b4e8;}
-
-/* 업체 관리 */
-.ctor-mgr-chip{background:var(--al);border-color:var(--bar);color:var(--bar);}
-.ctor-mgr-fi{background:#19191600;color:var(--tx);}
-.ctor-mgr-fi:focus{background:var(--sf);}
-.ctor-mgr-btn{background:var(--sf);color:var(--tx);border:1.5px solid var(--bd);}
-
-/* 레전드 */
-.ig-legend-chip{background:var(--sf);}
-
-/* 업체 뱃지 */
-.ig-ctor-badge.unassigned{background:var(--al);color:var(--mu);}
-
-/* ────────────────────────────────────────────
-   다크모드 누락 보정 (하드코딩 라이트 색상)
-   ──────────────────────────────────────────── */
-
-/* ① 간트 차트 헤더 배경 */
-.hpm{background:#1e1d19;}
-.hm2{background:#252320;color:var(--mu);}
-.hd2{background:#1e1d19;color:var(--mu);border-right-color:rgba(255,255,255,.06)!important;}
-.hd2.sun{background:#2c1a1a;color:#f08080;}
-.hd2.sat{background:#141e2e;color:#7aa0d4;}
-.hd2.hol{background:#2a2000;color:#fbbf24;}
-.hd2.today-hl{background:#1c3558!important;color:#93c5fd!important;}
-.hw{background:#252320;color:var(--mu);}
-.hw.sun{background:#2c1a1a;color:#f08080;}
-.hw.sat{background:#141e2e;color:#7aa0d4;}
-.hw.hol{background:#2a2000;color:#fbbf24;}
-
-/* ② NO·공종 고정 헤더 (JS inline style 덮어쓰기) */
-.hw.sc.s1,.hw.sc.s2{background:#252320!important;color:var(--mu)!important;}
-
-/* ③ 섹션 헤더 */
-.sh2{background:#1e1d19!important;border-bottom-color:var(--bd)!important;}
-.sh2t{color:var(--mu2)!important;}
-
-/* ④ 차트 컨테이너 테두리 */
-.cw{border-color:var(--bd)!important;}
-
-/* ⑤ 바 라벨 텍스트 (기존 #111 → 흰색) */
-.bt{color:#e8e5de!important;}
-
-/* ⑥ 테이블 행 셀 텍스트 대비 */
-.d1{color:var(--mu2)!important;}
-.d3{color:var(--mu)!important;}
-.ia .d1,.ia .d2,.ia .d3{color:var(--mu2)!important;}
-
-/* ⑦ 간트 셀 구분선 */
-.gt th,.gt td{border-right-color:rgba(255,255,255,.05)!important;border-bottom-color:var(--bd)!important;}
-.dg{border-right-color:rgba(255,255,255,.06)!important;}
-
-/* ⑧ 공종 활성 배지 .ab */
-.ab{background:#14532d!important;color:#86efac!important;}
-
-/* ⑨ 업체 배지 .ig-ctor-badge */
-.ig-ctor-badge{background:#14532d!important;color:#86efac!important;}
-
-/* ⑩ 클라우드 칩 */
-.pnchip.cloud .pnchip-footer{border-color:#1e3a5f!important;background:#0c1929!important;}
-.pnchip.cloud .pnchip-nm{color:#93c5fd!important;}
-.pnchip.cloud .pnchip-row,.pnchip.cloud .pnchip-period{color:#6daad6!important;}
-
-/* ⑪ 아카이브 헤더 */
-.archive-header-title{color:var(--mu)!important;}
-.archive-header-count{color:var(--mu)!important;background:#2a2925!important;}
-.pnchip.archived .pnchip-nm{color:var(--mu)!important;}
-
-/* ⑫ bur 버튼 (Undo/Redo) on 상태 텍스트 */
-.bur.on{color:var(--tx)!important;}
-
-/* ⑬ 달력 범위 선택 */
-.ig-barpick-cell.in-range{background:#192e48!important;color:var(--tx)!important;}
-.ig-barpick-cell.range-start,.ig-barpick-cell.range-end{background:#2d5a8e!important;color:#fff!important;}
-}
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);}
 .tb{background:var(--hd);color:var(--ht);padding:0 14px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:500;height:52px;}
@@ -935,14 +733,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .as-ctor-section-lbl{font-size:9px;font-weight:700;color:var(--mu2);letter-spacing:.7px;text-transform:uppercase;margin:8px 0 5px;display:flex;align-items:center;gap:5px;}
 .as-ctor-section-lbl::before{content:'';flex:1;height:1px;background:var(--bd);}
 .as-ctor-section-lbl::after{content:'';flex:1;height:1px;background:var(--bd);}
-@media(prefers-color-scheme:dark){
-.as-ctor-chip.avail{border-color:#4ade80;color:#4ade80;}
-.as-ctor-chip.avail.on{background:#166534;border-color:#4ade80;color:#fff;}
-.as-avail-badge.ok{background:#14532d;color:#86efac;}
-.as-avail-badge.busy{background:#3a1a1a;color:#f87171;}
-.as-ctor-chip.on .as-avail-badge.ok{background:rgba(255,255,255,.15);color:#86efac;}
-.as-ctor-chip.on .as-avail-badge.busy{background:rgba(255,80,80,.2);color:#f87171;}
-}
+
 
 
 /* 통합탭 공종 아코디언 헤더 다크모드 */
@@ -956,15 +747,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .as-recommend-text{flex:1;font-size:11px;font-weight:700;color:var(--bar);line-height:1.4;}
 .as-recommend-text b{font-weight:900;}
 .as-recommend-arrow{font-size:12px;color:var(--bar);flex-shrink:0;}
-@media(prefers-color-scheme:dark){
-.as-recommend{background:#1a2840;border-color:#3d6496;}
-.as-recommend:hover{background:#1e3255;}
-.as-recommend-text{color:#7aa8d8;}
-.as-recommend-arrow{color:#7aa8d8;}
-/* 충돌 선택지 카드 다크모드 */
-.as-conflict-card{background:#1e1c18;border-color:#5b2222;}
-.as-conflict-hd{background:#2e1a1a;border-color:#5b2222;}
-}
+
 
 .as-stepper-lbl{font-size:10px;font-weight:700;color:var(--mu);letter-spacing:.5px;text-transform:uppercase;}
 .as-stepper{display:flex;align-items:center;border:1.5px solid var(--bd);border-radius:10px;overflow:hidden;background:var(--sf);height:44px;width:100%;}
@@ -995,6 +778,288 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .as-info-banner{background:var(--al);border:1.5px solid #c7d5f8;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#1e3a8a;line-height:1.6;}
 .as-reset-btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:8px;border:1.5px solid var(--bar);background:transparent;color:var(--bar);font-size:11px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:all .14s;}
 .as-reset-btn:hover{background:var(--al);}
+@media(prefers-color-scheme:dark){
+
+.as-ctor-chip.avail{border-color:#4ade80;color:#4ade80;}
+.as-ctor-chip.avail.on{background:#166534;border-color:#4ade80;color:#fff;}
+.as-avail-badge.ok{background:#14532d;color:#86efac;}
+.as-avail-badge.busy{background:#3a1a1a;color:#f87171;}
+.as-ctor-chip.on .as-avail-badge.ok{background:rgba(255,255,255,.15);color:#86efac;}
+.as-ctor-chip.on .as-avail-badge.busy{background:rgba(255,80,80,.2);color:#f87171;}
+
+.as-recommend{background:#1a2840;border-color:#3d6496;}
+.as-recommend:hover{background:#1e3255;}
+.as-recommend-text{color:#7aa8d8;}
+.as-recommend-arrow{color:#7aa8d8;}
+/* 충돌 선택지 카드 다크모드 */
+.as-conflict-card{background:#1e1c18;border-color:#5b2222;}
+.as-conflict-hd{background:#2e1a1a;border-color:#5b2222;}
+
+:root{
+--bg:#141412;--sf:#1e1e1b;--bd:#2e2d29;--bmd:#3a3935;
+--tx:#f0ede6;--mu:#9e9c94;--mu2:#7e7c77;
+--bar:#6e96cc;--barh:#8ab0de;--al:#1c2640;
+--sc:rgba(255,80,80,.12);--sh:#3a1a1a;--ac:rgba(80,120,255,.12);--ah:#1a2040;
+--hc:rgba(255,160,0,.12);--hh:#2e2200;--cl-hl:#0f2d1a;
+--hd:#0e0e0c;--ht:#e8e5de;--rd:#f87171;--gn:#4ade80;--am:#fbbf24;
+}
+/* ── 다크모드 전역 하드코딩 보정 ── */
+
+/* 기본 요소 */
+.pnchip{background:var(--sf);}
+.pnchip-nm{color:var(--tx);}
+.pnchip.archived{background:var(--bg);}
+.pnchip.active{background:#1c3558;border-color:#2e5080;}
+.pnchip-confirm:hover{border-color:var(--barh);color:var(--tx);}
+
+/* 드롭다운 */
+.pn-drop{background:var(--sf);border-color:var(--bar);}
+.pn-drop-head{background:var(--bg);}
+.pn-item:hover{background:var(--al);}
+
+/* 탭 */
+.tabs{background:#111110;}
+.tab{color:var(--mu);}
+.tab.on{background:#16a34a;color:#fff;}
+
+/* 아카이브 */
+.archive-header{background:#1a1916;border-color:var(--bd);}
+.archive-header:hover{background:#222018;}
+
+/* 카드·패널 */
+.cd{background:var(--sf);}
+.ig-site-pill{background:var(--sf);}
+.ig-trade{background:var(--sf);}
+
+/* 입력 */
+.fi{background:#191916;color:var(--tx);border-color:var(--bd);}
+.fi:focus{background:var(--sf);border-color:var(--bar);}
+input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);}
+.ni{background:#191916;color:var(--tx);border-color:var(--bd);}
+.ni:focus{background:var(--sf);}
+.date-disp{background:var(--sf);color:var(--tx);}
+.date-disp:hover{background:var(--al);border-color:var(--bar);}
+.ig-date-input{background:var(--sf);color:var(--tx);border-color:var(--bd);}
+.ig-ctor-new-fi{background:#19191600;}
+.ig-ctor-new-fi:focus{background:var(--sf);}
+
+/* 버튼 */
+.btn{background:var(--sf);color:var(--tx);border-color:var(--bd);}
+.bb{background:var(--bar);border-color:var(--bar);}
+.bur.on{color:var(--tx);}
+.ig-ctor-edit-btn{background:#0f2d1a;border-color:#4ade80;color:#86efac;}
+.ig-ctor-edit-btn.empty{background:var(--bg);border-color:var(--bd);color:var(--mu);}
+.ig-ctor-edit-btn.empty:hover{background:var(--sf);border-color:var(--barh);}
+
+/* 날짜 선택 달력 */
+.cal-wrap{background:var(--sf);}
+.cal-nav{background:var(--bg);border-bottom:1px solid var(--bd);}
+.cal-nav-btn{color:var(--tx);}
+.cal-nav-btn:hover{background:var(--al);color:var(--bar);}
+.cal-hint{background:var(--al);color:var(--bar);}
+.cal-dow{background:var(--bg);color:var(--mu);}
+.cal-grid-cell{background:var(--sf);}
+.cal-grid-cell.today{background:var(--al);}
+.cal-dur{background:var(--al);color:var(--tx);border-top:1px solid var(--bd);}
+.cal-mpick{background:var(--sf);}
+.cal-mpick-m:hover{background:var(--al);color:var(--bar);}
+
+/* 통합탭 달력 */
+.ig-cal-day{background:var(--sf);}
+.ig-cal-day.empty{background:var(--bg);}
+.ig-cal-dow-cell{background:var(--bg);color:var(--mu);}
+
+/* tcal 모달 */
+.tcal-box{background:var(--sf);}
+.tcal-hint{background:var(--al);color:var(--bar);}
+.tcal-result{background:var(--al);color:var(--bar);}
+.tcal-day:not(.empty):hover .tcal-dn{background:var(--al);}
+
+/* 모달 박스들 */
+.master-modal{background:var(--sf);}
+.master-modal-bg{background:rgba(0,0,0,.8);}
+.ig-ctor-modal-box{background:var(--sf);}
+.ig-date-modal-box{background:var(--sf);}
+.ig-barpick-sheet{background:var(--sf);}
+.ig-barpick-box{background:var(--sf);}
+.mo{background:var(--sf);}
+
+/* 모달 내 토글 */
+.ig-ctor-toggle-row{border-color:var(--bd);}
+.ig-ctor-toggle-row.on{background:#0f2d1a;border-color:#4ade80;}
+.ig-ctor-toggle-chk{background:var(--bg);border-color:var(--bd);}
+.ig-ctor-del-btn:hover{color:#f87171;background:#3a1a1a;}
+.ig-barpick-sheet-item:active{background:var(--al);}
+.ig-barpick-cell:not(.empty):hover{background:var(--al);}
+.ig-barpick-sel-box.active{border-color:var(--bar);background:var(--al);}
+
+/* 정보 배너 / 경고 */
+.ig-setup{background:#2a2200;border-color:#a16207;color:#fde68a;}
+.rob{background:#2e2200;border-bottom:2px solid #a16207;color:#fde68a;}
+.as-result-ovr{background:#2e2200;color:#fbbf24;}
+.as-ext-banner{background:#2e2200;border-color:#a16207;color:#fde68a;}
+.ig-overlap-warn{background:#2a1500;border-color:#a16207;color:#fde68a;}
+.ig-overlap-badge{background:#2e2200;color:#fbbf24;border-color:#a16207;}
+
+/* DB / 날짜 배지 */
+.db{background:var(--al);border-color:var(--bar);color:var(--bar);}
+
+/* 테이블 */
+.nt th{background:var(--bg);color:var(--mu);}
+.st2 th{background:var(--bg);color:var(--mu);}
+.d1{background:#1a1a17;color:var(--mu2);}
+.d2{background:#1e1e1b;color:var(--tx);}
+.d3{background:#1c1c19;color:var(--mu);}
+
+/* 차트 셀 */
+.sc-card{background:var(--sf);border-color:var(--bd);}
+.cw{background:var(--sf);}
+.sw{background:var(--sf);}
+
+/* 필터칩 */
+.as-ctor-chip.on{background:#1c3558;border-color:#5b82b8;color:#c8d8ee;}
+.as-cont-btn.on{background:#1c3558;border-color:#5b82b8;color:#c8d8ee;}
+.as-info-banner{background:#1a2035;border-color:#3d5a8a;color:#93b4e8;}
+
+/* 업체 관리 */
+.ctor-mgr-chip{background:var(--al);border-color:var(--bar);color:var(--bar);}
+.ctor-mgr-fi{background:#19191600;color:var(--tx);}
+.ctor-mgr-fi:focus{background:var(--sf);}
+.ctor-mgr-btn{background:var(--sf);color:var(--tx);border:1.5px solid var(--bd);}
+
+/* 레전드 */
+.ig-legend-chip{background:var(--sf);}
+
+/* 업체 뱃지 */
+.ig-ctor-badge.unassigned{background:var(--al);color:var(--mu);}
+
+/* ────────────────────────────────────────────
+   다크모드 누락 보정 (하드코딩 라이트 색상)
+   ──────────────────────────────────────────── */
+
+/* ① 간트 차트 헤더 배경 */
+.hpm{background:#1e1d19;}
+.hm2{background:#252320;color:var(--mu);}
+.hd2{background:#1e1d19;color:var(--mu);border-right-color:rgba(255,255,255,.06)!important;}
+.hd2.sun{background:#2c1a1a;color:#f08080;}
+.hd2.sat{background:#141e2e;color:#7aa0d4;}
+.hd2.hol{background:#2a2000;color:#fbbf24;}
+.hd2.today-hl{background:#1c3558!important;color:#93c5fd!important;}
+.hw{background:#252320;color:var(--mu);}
+.hw.sun{background:#2c1a1a;color:#f08080;}
+.hw.sat{background:#141e2e;color:#7aa0d4;}
+.hw.hol{background:#2a2000;color:#fbbf24;}
+
+/* ② NO·공종 고정 헤더 (JS inline style 덮어쓰기) */
+.hw.sc.s1,.hw.sc.s2{background:#252320!important;color:var(--mu)!important;}
+
+/* ③ 섹션 헤더 */
+.sh2{background:#1e1d19!important;border-bottom-color:var(--bd)!important;}
+.sh2t{color:var(--mu2)!important;}
+
+/* ④ 차트 컨테이너 테두리 */
+.cw{border-color:var(--bd)!important;}
+
+/* ⑤ 바 라벨 텍스트 (기존 #111 → 흰색) */
+.bt{color:#e8e5de!important;}
+
+/* ⑥ 테이블 행 셀 텍스트 대비 */
+.d1{color:var(--mu2)!important;}
+.d3{color:var(--mu)!important;}
+.ia .d1,.ia .d2,.ia .d3{color:var(--mu2)!important;}
+
+/* ⑦ 간트 셀 구분선 */
+.gt th,.gt td{border-right-color:rgba(255,255,255,.05)!important;border-bottom-color:var(--bd)!important;}
+.dg{border-right-color:rgba(255,255,255,.06)!important;}
+
+/* ⑧ 공종 활성 배지 .ab */
+.ab{background:#14532d!important;color:#86efac!important;}
+
+/* ⑨ 업체 배지 .ig-ctor-badge */
+.ig-ctor-badge{background:#14532d!important;color:#86efac!important;}
+
+/* ⑩ 클라우드 칩 */
+.pnchip.cloud .pnchip-footer{border-color:#1e3a5f!important;background:#0c1929!important;}
+.pnchip.cloud .pnchip-nm{color:#93c5fd!important;}
+.pnchip.cloud .pnchip-row,.pnchip.cloud .pnchip-period{color:#6daad6!important;}
+
+/* ⑪ 아카이브 헤더 */
+.archive-header-title{color:var(--mu)!important;}
+.archive-header-count{color:var(--mu)!important;background:#2a2925!important;}
+.pnchip.archived .pnchip-nm{color:var(--mu)!important;}
+
+/* ⑫ bur 버튼 (Undo/Redo) on 상태 텍스트 */
+.bur.on{color:var(--tx)!important;}
+
+/* ⑬ 달력 범위 선택 */
+.ig-barpick-cell.in-range{background:#192e48!important;color:var(--tx)!important;}
+.ig-barpick-cell.range-start,.ig-barpick-cell.range-end{background:#2d5a8e!important;color:#fff!important;}
+
+/* ── 추가 다크 보정 (CSS 순서 이슈 해결) ── */
+.ig-site-pill{background:var(--sf)!important;border-color:var(--bd)!important;}
+.ig-ctor-toggle-chk{background:var(--bg)!important;border-color:var(--bd)!important;color:transparent!important;}
+.ig-ctor-toggle-row.on .ig-ctor-toggle-chk{background:#16a34a!important;border-color:#16a34a!important;color:#fff!important;}
+.ig-ctor-toggle-row{background:var(--bg)!important;border-color:var(--bd)!important;}
+.ig-ctor-toggle-row.on{background:#0f2d1a!important;border-color:#4ade80!important;}
+.ig-ctor-toggle-nm{color:var(--tx)!important;}
+.ctor-mgr-trade{background:var(--al)!important;color:var(--bar)!important;}
+.ctor-mgr-fi{background:var(--bg)!important;border-color:var(--bd)!important;}
+.ig-ctor-names.empty{color:var(--mu2)!important;}
+.ig-ctor-names{color:#4ade80!important;}
+.ig-ctor-nm{color:#4ade80!important;}
+.ig-ctor-nm.unassigned{color:var(--mu)!important;}
+.ig-ctor-del-btn:hover{color:#f87171!important;background:#3a1a1a!important;}
+.ig-ctor-new-add{background:var(--bar)!important;color:#fff!important;}
+.ig-overlap-warn{background:#2a1500!important;border-color:#a16207!important;color:#fde68a!important;}
+.ig-overlap-warn-row{color:#fbbf24!important;}
+.ig-overlap-badge{background:#2e2200!important;color:#fbbf24!important;border-color:#a16207!important;}
+/* ── 추가 다크 보정 ── */
+/* CSS variables-based rules (auto-adapt) */
+.ig-trade-hd{background:var(--hd);}
+.ig-trade-nm{color:var(--ht);}
+.ig-trade-chevron{color:rgba(255,255,255,.5);}
+
+/* 통합탭 공종 필터 pill 활성/비활성 */
+.ig-filter-chip{background:var(--bg)!important;border-color:var(--bd)!important;color:var(--mu)!important;opacity:.6;}
+.ig-filter-chip.on{background:#0f2d1a!important;border-color:#4ade80!important;color:#86efac!important;opacity:1;box-shadow:0 0 0 1px #4ade80;}
+.ig-filter-chip-dot{background:var(--mu)!important;}
+.ig-filter-chip.on .ig-filter-chip-dot{background:#4ade80!important;}
+
+/* 편집탭 업체관리 */
+.ctor-mgr-trade.off{color:var(--mu2)!important;}
+.ctor-mgr-fi{background:var(--bg)!important;border-color:var(--bd)!important;color:var(--tx)!important;}
+.ctor-mgr-empty{color:var(--mu2)!important;}
+
+/* ig-site-pill 흰 배경 제거 */
+.ig-site-pill{background:var(--sf)!important;border-color:var(--bd)!important;}
+.ig-site-pill-sub{color:var(--mu)!important;}
+
+/* 통합탭 업체 섹션 */
+.ig-ctor-nm{color:#4ade80!important;}
+.ig-ctor-nm.unassigned{color:var(--mu)!important;}
+.ig-ctor-names{color:#4ade80!important;}
+.ig-ctor-names.empty{color:var(--mu2)!important;}
+.ig-ctor-toggle-row{background:var(--bg)!important;border-color:var(--bd)!important;}
+.ig-ctor-toggle-row.on{background:#0f2d1a!important;border-color:#4ade80!important;}
+.ig-ctor-toggle-chk{background:var(--bg)!important;border-color:var(--bd)!important;color:transparent!important;}
+.ig-ctor-toggle-row.on .ig-ctor-toggle-chk{background:#16a34a!important;border-color:#16a34a!important;color:#fff!important;}
+.ig-ctor-new-add{background:var(--bar)!important;color:#fff!important;}
+.ig-ctor-del-btn:hover{color:#f87171!important;background:#3a1a1a!important;}
+
+/* 자동배치 배지 */
+.as-avail-badge.ok{background:#14532d!important;color:#86efac!important;}
+.as-avail-badge.busy{background:#3a1a1a!important;color:#f87171!important;}
+
+/* 충돌/경고 배너 */
+.ig-overlap-warn{background:#2a1500!important;border-color:#a16207!important;color:#fde68a!important;}
+.ig-overlap-warn-row{color:#fbbf24!important;}
+.ig-overlap-badge{background:#2e2200!important;color:#fbbf24!important;border-color:#a16207!important;}
+.ig-setup{background:#2a2200!important;border-color:#a16207!important;color:#fde68a!important;}
+
+/* 바픽 시트 */
+.ig-barpick-sheet-item:active{background:var(--al)!important;}
+
+}
 </style>
 </head>
 <body>
@@ -3472,6 +3537,9 @@ async function _loadCtorsFromCloud(){
       try{localStorage.setItem(GLOBAL_CTORS_KEY,mergedStr);}catch(e){}
       /* 병합 결과가 로컬보다 크면 클라우드도 갱신 */
       if(JSON.stringify(remote)!==mergedStr)_saveCtorsToCloud(merged);
+      /* ★ 태스크 데이터 + UI 갱신 */
+      try{mergeGlobalCtorsToTasks();}catch(e){}
+      try{rCtorMgr();}catch(e){}
     }
   }catch(e){console.warn('업체 클라우드 로드 실패:',e);}
 }
