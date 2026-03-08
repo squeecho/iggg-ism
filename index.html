@@ -997,8 +997,9 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
     <span class="tb-label">CONSTRUCTION SCHEDULE</span>
     <span class="tb-site" id="tpn">(현장명 미입력)</span>
   </div>
-
-  
+  <div id="tbGcalBtns" style="display:none;align-items:center;gap:6px;flex-shrink:0;">
+    <button id="tbUploadBothBtn" onclick="_gcalRunUploadBoth()" style="font-size:10px;padding:4px 12px;border-radius:6px;border:none;background:rgba(99,102,241,.25);color:#a5b4fc;cursor:pointer;white-space:nowrap;font-weight:800;">📅 캘린더 동기화</button>
+  </div>
 </div>
 <div class="tabs" id="tabs">
   <div class="tab on" id="te" onclick="sw('e')">편집</div>
@@ -1078,16 +1079,16 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
       </label>
     </div>
     <div style="margin-top:8px;">
-      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-bottom:6px;">캘린더별 업로드 · 아래 버튼 사용</div>
+      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-bottom:6px;display:none;"></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <!-- 상세 동기화 -->
+        <!-- 상세 동기화 경로 -->
         <div style="display:flex;align-items:center;gap:4px;background:rgba(22,163,74,.06);border:1.5px solid rgba(22,163,74,.3);border-radius:10px;padding:4px 6px 4px 4px;">
-          <button id="gcalUploadNowBtn" onclick="_gcalUploadNow('detail')" style="display:none;font-size:11px;padding:5px 13px;border-radius:7px;border:none;background:rgba(22,163,74,.18);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.3px;">📋 상세 동기화</button>
+          <button id="gcalUploadNowBtn" onclick="_gcalChangeCalendar('detail')" style="display:none;font-size:11px;padding:5px 13px;border-radius:7px;border:none;background:rgba(22,163,74,.18);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.3px;">📋 상세 동기화 경로</button>
           <button id="gcalCalDetailBtn" onclick="_gcalChangeCalendar('detail')" title="캘린더 변경" style="display:none;font-size:9px;padding:2px 7px;border-radius:6px;border:1px solid rgba(22,163,74,.3);background:transparent;color:#4ade80;cursor:pointer;white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;"></button>
         </div>
-        <!-- 간략 동기화 -->
+        <!-- 간략 동기화 경로 -->
         <div style="display:flex;align-items:center;gap:4px;background:rgba(2,132,199,.06);border:1.5px solid rgba(2,132,199,.3);border-radius:10px;padding:4px 6px 4px 4px;">
-          <button id="gcalUploadSimpleBtn" onclick="_gcalUploadNow('simple')" style="display:none;font-size:11px;padding:5px 13px;border-radius:7px;border:none;background:rgba(2,132,199,.18);color:#0284c7;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.3px;">📌 간략 동기화</button>
+          <button id="gcalUploadSimpleBtn" onclick="_gcalChangeCalendar('simple')" style="display:none;font-size:11px;padding:5px 13px;border-radius:7px;border:none;background:rgba(2,132,199,.18);color:#0284c7;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.3px;">📌 간략 동기화 경로</button>
           <button id="gcalCalSimpleBtn" onclick="_gcalChangeCalendar('simple')" title="캘린더 변경" style="display:none;font-size:9px;padding:2px 7px;border-radius:6px;border:1px solid rgba(2,132,199,.3);background:transparent;color:#38bdf8;cursor:pointer;white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;"></button>
         </div>
         <button id="gcalDeleteAllBtn" onclick="_gcalDeleteAllEvents()" style="display:none;font-size:10px;padding:5px 11px;border-radius:8px;border:1px solid #ef4444;background:rgba(239,68,68,.07);color:#ef4444;cursor:pointer;white-space:nowrap;font-weight:700;">🗑 전체 삭제</button>
@@ -1598,10 +1599,11 @@ function deleteRecent(pn,ev){
   if(ev)ev.stopPropagation();
   var arr=getRecent();
   var item=arr.find(function(x){return x.pn===pn;});
-  /* 확정 현장은 삭제 불가 — 먼저 확정 해제 필요 */
+  /* 확정 현장이었으면 Firebase + 캘린더에서도 삭제 */
   if(item&&item.confirmed){
-    toast('🔒 확정 현장은 삭제할 수 없어요. 먼저 확정을 해제해주세요.');
-    return;
+    deleteFromCloud(pn);
+    /* 현장 삭제 → 삭제 대기 목록에 추가 (업로드 시 캘린더에서 제거됨) */
+    _gcalAddPendingDelete(pn);
   }
   var idx=arr.findIndex(function(x){return x.pn===pn;});
   var next=arr[idx+1]||arr[idx-1]||null; /* 다음 항목 또는 이전 항목 */
@@ -3720,6 +3722,8 @@ function _gcalSyncUI(){
     if(csBtn){ csBtn.style.display='block'; csBtn.textContent=(_gcalCalNameSimple||'캘린더 선택 ▾'); }
     var delBtn=document.getElementById('gcalDeleteAllBtn');
     if(delBtn)delBtn.style.display=(typeof _masterMode!=='undefined'&&_masterMode)?'block':'none';
+    var tbBtns=document.getElementById('tbGcalBtns');
+    if(tbBtns)tbBtns.style.display='flex';
   } else {
     wrap.style.background='#d1d5db';
     if(thumb)thumb.style.left='2px';
@@ -3735,6 +3739,8 @@ function _gcalSyncUI(){
     if(csBtn)csBtn.style.display='none';
     var delBtn=document.getElementById('gcalDeleteAllBtn');
     if(delBtn)delBtn.style.display='none';
+    var tbBtns=document.getElementById('tbGcalBtns');
+    if(tbBtns)tbBtns.style.display='none';
   }
 }
 
@@ -4453,10 +4459,7 @@ function _gcalDoUploadSimple(snap, onDone){
     tasks.forEach(function(t){
       if(!sd || t.sd < sd) sd = t.sd;
       if(!ed || t.ed > ed) ed = t.ed;
-      if(t.split3 && t.sd3 && t.ed3){
-        events.push({summary:t.name+' [3차]'+(t.desc3?' ('+t.desc3+')':''),start:{date:t.sd3},end:{date:addD(t.ed3,1)},description:'3차시공'});
-      }
-    if(t.split && t.sd2 && t.ed2){
+      if(t.split && t.sd2 && t.ed2){
         if(t.sd2 < sd) sd = t.sd2;
         if(t.ed2 > ed) ed = t.ed2;
       }
