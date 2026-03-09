@@ -6306,10 +6306,10 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
   }
   var secC = section.cloneNode(true);
   secC.querySelectorAll('.no-print').forEach(function(e){e.remove();});
-  /* 달력 셀 내 바(절대위치) 위치 고정: 부모 relative 보장 */
+  /* 달력 셀 내 바(절대위치) 위치 고정: 부모 relative + overflow hidden 보장 */
   secC.querySelectorAll('.ig-cal-day').forEach(function(cell){
     cell.style.position = 'relative';
-    cell.style.overflow = 'visible';
+    cell.style.overflow = 'hidden';
   });
   wrapper.appendChild(secC);
   document.body.appendChild(wrapper);
@@ -6348,8 +6348,10 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
           '--al:#eef2fd!important;--sc:rgba(255,60,60,.07)!important;--sh:#fde8e8!important;',
           '--ac:rgba(60,100,255,.07)!important;--ah:#e4eaff!important;',
           '--hc:rgba(255,140,0,.10)!important;--hh:#fff3cd!important;}',
-          '.ig-cal-day{position:relative!important;overflow:visible!important;}',
-          '.ig-cal-bar{display:block!important;}'
+          /* 바 flex 유지 — display:block 강제 금지 */
+          '.ig-cal-day{position:relative!important;overflow:hidden!important;}',
+          '.ig-cal-bars{position:absolute!important;top:22px!important;left:0!important;right:0!important;}',
+          '.ig-cal-bar{display:flex!important;align-items:center!important;}'
         ].join('');
         doc.head.appendChild(s);
       }
