@@ -5444,6 +5444,10 @@ function rIntegrated() {
   /* 공종 필터 패널 */
   var collapsed = igGetCollapsed();
   /* 이 달에 표시될 공종 목록을 미리 수집 */
+  var _vy=_igY,_vm=_igM+1; if(_vm>11){_vm=0;_vy++;}
+  var _vnmS=_vy+'-'+zz(_vm+1)+'-01';
+  var _vnmE=_vy+'-'+zz(_vm+1)+'-'+zz(new Date(_vy,_vm+1,0).getDate());
+
   var visibleTids = IG_TASK_ORDER.filter(function(tid) {
     var activeSites = _cloudSites.filter(function(site) {
       return site.tasks && site.tasks.some(function(t){ return t.id===tid && t.on; });
@@ -5454,6 +5458,10 @@ function rIntegrated() {
       if (!task || !task.sd || !task.ed) return false;
       if (task.ed >= ymStart && task.sd <= ymEnd) return true;
       if (task.split && task.sd2 && task.ed2 && task.ed2 >= ymStart && task.sd2 <= ymEnd) return true;
+      if (task.split3 && task.sd3 && task.ed3 && task.ed3 >= ymStart && task.sd3 <= ymEnd) return true;
+      if (task.ed >= _vnmS && task.sd <= _vnmE) return true;
+      if (task.split && task.sd2 && task.ed2 && task.ed2 >= _vnmS && task.sd2 <= _vnmE) return true;
+      if (task.split3 && task.sd3 && task.ed3 && task.ed3 >= _vnmS && task.sd3 <= _vnmE) return true;
       return false;
     });
   });
@@ -5488,22 +5496,29 @@ function rIntegrated() {
     if (!activeSites.length) return;
 
     /* 해당 월에 이 공종의 일정이 아예 없으면 카드 자체 숨김 */
+    /* 다음달 범위 계산 */
+    var _ny=_igY,_nm=_igM+1; if(_nm>11){_nm=0;_ny++;}
+    var nmStart2=_ny+'-'+zz(_nm+1)+'-01';
+    var nmEnd2=_ny+'-'+zz(_nm+1)+'-'+zz(new Date(_ny,_nm+1,0).getDate());
+
+    function _taskInRange(task, s, e) {
+      if (!task||!task.sd||!task.ed) return false;
+      if (task.ed>=s && task.sd<=e) return true;
+      if (task.split&&task.sd2&&task.ed2&&task.ed2>=s&&task.sd2<=e) return true;
+      if (task.split3&&task.sd3&&task.ed3&&task.ed3>=s&&task.sd3<=e) return true;
+      return false;
+    }
+
     var hasThisMonth = activeSites.some(function(site) {
       var task = site.tasks.find(function(t){ return t.id===tid && t.on; });
-      if (!task || !task.sd || !task.ed) return false;
-      if (task.ed >= ymStart && task.sd <= ymEnd) return true;
-      if (task.split && task.sd2 && task.ed2 && task.ed2 >= ymStart && task.sd2 <= ymEnd) return true;
-      return false;
+      return _taskInRange(task, ymStart, ymEnd) || _taskInRange(task, nmStart2, nmEnd2);
     });
     if (!hasThisMonth) return;
 
-    /* 해당 달 기준으로 siteList 필터 (달력 바 표시할 것들만) */
+    /* 현재달 OR 다음달에 일정 있는 현장 모두 포함 */
     var monthSiteList = activeSites.filter(function(site) {
       var task = site.tasks.find(function(t){ return t.id===tid && t.on; });
-      if (!task || !task.sd || !task.ed) return false;
-      if (task.ed >= ymStart && task.sd <= ymEnd) return true;
-      if (task.split && task.sd2 && task.ed2 && task.ed2 >= ymStart && task.sd2 <= ymEnd) return true;
-      return false;
+      return _taskInRange(task, ymStart, ymEnd) || _taskInRange(task, nmStart2, nmEnd2);
     });
 
     /* 업체별 그룹 (해당 달 기준) — 첫 번째 업체(주 배정)만 기준으로 사용 */
