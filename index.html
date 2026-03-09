@@ -1406,7 +1406,9 @@ function per(){
     if(t.split&&t.ed2&&t.ed2>endDs)endDs=t.ed2;
     if(t.split3&&t.ed3&&t.ed3>endDs)endDs=t.ed3;
   });
-  return S.sd+' ~ '+(endDs||S.ed)+'  (총 '+tot()+'일)';
+  var finalEnd=endDs||S.ed;
+  var n=finalEnd?dif(S.sd,finalEnd)+1:1;
+  return S.sd+' ~ '+finalEnd+'  (총 '+(n<1?1:n)+'일)';
 }
 function zz(n){return String(n).padStart(2,'0');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -1458,7 +1460,7 @@ function defaultState(){
       {id:7, name:'금속공사',   desc:'Metal Work',      sd:addD(td,8),  ed:addD(td,14), on:true, canSplit:true, split:false,sd2:'',ed2:'',split3:false,sd3:'',ed3:'',contractors:['','','']},
       {id:8, name:'설비공사',   desc:'Plumbing',        sd:addD(td,7),  ed:addD(td,14), on:true, canSplit:true, split:false,sd2:'',ed2:'',split3:false,sd3:'',ed3:'',contractors:['','','']},
       {id:9, name:'타일공사',   desc:'Tiling',          sd:addD(td,17), ed:addD(td,21), on:true, canSplit:true, split:false,sd2:'',ed2:'',split3:false,sd3:'',ed3:'',contractors:['','','']},
-      {id:10,name:'공조공사',   desc:'HVAC',            sd:addD(td,7),  ed:addD(td,11), on:true, canSplit:true, split:true, sd2:addD(td,19),ed2:addD(td,22),split3:false,sd3:'',ed3:'',desc2:'HVAC 마감',contractors:['','','']},
+      {id:10,name:'공조공사',   desc:'HVAC',            sd:addD(td,7),  ed:addD(td,11), on:true, canSplit:true, split:true, sd2:addD(td,19),ed2:addD(td,20),split3:false,sd3:'',ed3:'',desc2:'HVAC 마감',contractors:['','','']},
       {id:11,name:'필름공사',   desc:'Film',            sd:addD(td,11), ed:addD(td,16), on:false,canSplit:true, split:false,sd2:'',ed2:'',split3:false,sd3:'',ed3:'',contractors:['','','']},
       {id:13,name:'기타공사',   desc:'잔마무리 등',     sd:addD(td,22), ed:addD(te,-1), on:true, canSplit:true, split:false,sd2:'',ed2:'',split3:false,sd3:'',ed3:'',contractors:['','','']},
       {id:12,name:'가스공사',   desc:'Gas',             sd:addD(td,23), ed:addD(td,26), on:true, canSplit:true, split:false,sd2:'',ed2:'',split3:false,sd3:'',ed3:'',contractors:['','','']},
@@ -2553,10 +2555,33 @@ function autoTaskDates(){
     if(tid===10){
       task.split=true;
       task.sd2=addD(pStart,Math.round(total*0.70));
-      task.ed2=addD(pStart,Math.min(total,Math.round(total*0.83)));
+      task.ed2=addD(task.sd2,1);/* 공조 2차: 1~2일이면 충분 */
       if(!task.desc2)task.desc2='HVAC 마감';
     }
   });
+
+  /* ── 후처리: 전기2차(조명) / 공조2차(덕트마감) 는 타일 완료 후 시작 ──
+     타일공사 진행 중 분진·작업자로 조명·덕트마감 설치 불가 */
+  var _tileT=S.tasks.find(function(x){return x.id===9&&x.on;});
+  if(_tileT&&_tileT.ed){
+    var _minAfterTile=addD(_tileT.ed,1);
+    /* 전기 2차 */
+    var _elecT=S.tasks.find(function(x){return x.id===5&&x.on;});
+    if(_elecT&&_elecT.split&&_elecT.sd2&&_elecT.sd2<_minAfterTile){
+      var _e2dur=dif(_elecT.sd2,_elecT.ed2);
+      _elecT.sd2=_minAfterTile;
+      _elecT.ed2=addD(_minAfterTile,Math.max(0,_e2dur));
+      if(_elecT.ed2>pEnd)_elecT.ed2=pEnd;
+    }
+    /* 공조 2차 */
+    var _hvacT=S.tasks.find(function(x){return x.id===10&&x.on;});
+    if(_hvacT&&_hvacT.split&&_hvacT.sd2&&_hvacT.sd2<_minAfterTile){
+      var _h2dur=dif(_hvacT.sd2,_hvacT.ed2);
+      _hvacT.sd2=_minAfterTile;
+      _hvacT.ed2=addD(_minAfterTile,Math.max(0,_h2dur));
+      if(_hvacT.ed2>pEnd)_hvacT.ed2=pEnd;
+    }
+  }
 }
 function calClick(el){
   if(IS_RO)return;
@@ -6137,7 +6162,7 @@ var AS_DEPS = {
   /* 기타(13): 의존성 없음 — 전체 공정 버퍼 구간, AS_PCT 비율로만 배치 */
   14:[12]   /* 준공청소 ← 가스 완료 후 */
 };
-var AS_DEFAULT_DAYS = {1:3,2:4,3:5,4:8,5:7,6:6,7:8,8:8,9:6,10:5,11:3,12:3,13:3,14:1};
+var AS_DEFAULT_DAYS = {1:3,2:4,3:5,4:8,5:7,6:6,7:5,8:4,9:6,10:5,11:3,12:3,13:3,14:1};
 /* 날짜 고정 공종: 업체 충돌 시 날짜 이동 안 함, 경고+대체업체 제안만 */
 var AS_FIXED = [1, 2, 3, 4, 5];
 /* ── 공사기간 대비 시작 위치 비율 ──
@@ -6153,8 +6178,8 @@ var AS_PCT = {
   3:0.10,  /* 소방:   철거 후 바로 */
   4:0.07,  /* 목공:   초반 */
   5:0.08,  /* 전기1차: 목공과 동시 */
-  6:0.45,  /* 도장:   목공 완료 후 */
-  7:0.26,  /* 금속:   목공 진행 중(50~65%) — 실측 중앙값 ~29% ★보정 */
+  6:0.41,  /* 도장:   목공 완료 후 (기존0.45→0.41) */
+  7:0.19,  /* 금속:   목공 진행 중 (기존0.26→0.19) */
   8:0.30,  /* 설비:   목공 진행 중(60~80%) — 실측 중앙값 ~33% ★보정 */
   9:0.60,  /* 타일:   설비 완료+양생 후 */
   10:0.22, /* 공조:   철거 직후 배관 선행 — 실측 최빈값 ~20% ★보정 */
@@ -6171,9 +6196,9 @@ var AS_PCT_DUR = {
   3:0.09,  /* 소방 기간 (기존0.12→0.09) */
   4:0.29,  /* 목공 기간 (기존0.32→0.29) */
   5:0.20,  /* 전기1차 기간 (기존0.28→0.20) */
-  6:0.14,  /* 도장 기간 (기존0.22→0.14, 핵심수정) */
-  7:0.14,  /* 금속 기간 (기존0.20→0.14) */
-  8:0.24,  /* 설비 기간 (기존0.25→0.24) */
+  6:0.22,  /* 도장 기간 (기존0.14→0.22) */
+  7:0.19,  /* 금속 기간 (기존0.14→0.19) */
+  8:0.13,  /* 설비 기간 (기존0.24→0.13, 3~4일이면 충분) */
   9:0.17,  /* 타일 기간 (기존0.21→0.17) */
   10:0.10, /* 공조1차 기간 (기존0.15→0.10) */
   11:0.10, /* 필름 기간 (기존0.18→0.10, 핵심수정) */
@@ -6199,7 +6224,7 @@ function asGetSettings(){
     /* 공조공사(10): 23개 현장 74% 분할시공 → 기본 분할 ON */
     if(!s[10])s[10]={};
     if(s[10].useSplit===undefined)s[10].useSplit=true;
-    if(s[10].minDays2===undefined)s[10].minDays2=4;
+    if(s[10].minDays2===undefined)s[10].minDays2=2;
     return s;
   }catch(e){return{5:{useSplit:true,minDays2:7,useSplit3:false},10:{useSplit:true,minDays2:4}};}
 }
@@ -6592,7 +6617,7 @@ function asShowStep1(){
     var useSplit=(s.useSplit!==undefined)?s.useSplit:defaultSplit;
     var useSplit3=(s.useSplit3!==undefined)?s.useSplit3:false;
     var _elecDays2=_elecTotalDef?(_elecTotalDef-Math.ceil(_elecTotalDef*0.6)):0;
-    var minDays2=(s.minDays2!==undefined)?s.minDays2:(_elecDays2||(t.id===10?4:Math.ceil(_defDays*0.5)));
+    var minDays2=(s.minDays2!==undefined)?s.minDays2:(_elecDays2||(t.id===10?2:Math.ceil(_defDays*0.5)));
     var minDays3=(s.minDays3!==undefined)?s.minDays3:(t.id===5?5:Math.ceil((AS_DEFAULT_DAYS[t.id]||5)*0.4));
     /* asOn 기본값: task.on */
     var asOn=(s.asOn!==undefined)?s.asOn:t.on;
@@ -6841,7 +6866,7 @@ function asRunSchedule(){
     var useSplit3=(s.useSplit3!==undefined)?s.useSplit3:false;
     var _tDays2=(task.split&&task.sd2&&task.ed2&&task.ed2>=task.sd2)?(dif(task.sd2,task.ed2)+1):0;
     var _elecDays22=_elecTotal2?(_elecTotal2-Math.ceil(_elecTotal2*0.6)):0;
-    var minDays2=(s.minDays2!==undefined)?s.minDays2:(_tDays2||(_elecDays22||(tid===10?4:Math.ceil(minDays*0.5))));
+    var minDays2=(s.minDays2!==undefined)?s.minDays2:(_tDays2||(_elecDays22||(tid===10?2:Math.ceil(minDays*0.5))));
 
     /* 의존성 기반 최조시작일 (AS_DEP_LAG 방통 양생 반영) */
     var earliestStart=pStart;
@@ -7135,6 +7160,28 @@ function asRunSchedule(){
     });
   }
   _asResult=result;
+
+  /* ── 후처리: 전기2차(조명) / 공조2차(덕트마감) 는 타일 완료 후 시작 ──
+     타일공사 진행 중 분진·작업자로 조명·덕트마감 설치 불가 */
+  var _tileR=result.find(function(r){return r.tid===9&&r.sd&&r.ed;});
+  if(_tileR){
+    var _minAfterTileR=addD(_tileR.ed,1);
+    /* 전기 2차 */
+    var _elecR=result.find(function(r){return r.tid===5&&r.useSplit&&r.sd2;});
+    if(_elecR&&_elecR.sd2<_minAfterTileR){
+      var _e2d=dif(_elecR.sd2,_elecR.ed2);
+      _elecR.sd2=_minAfterTileR;
+      _elecR.ed2=addD(_minAfterTileR,Math.max(0,_e2d));
+    }
+    /* 공조 2차 */
+    var _hvacR=result.find(function(r){return r.tid===10&&r.useSplit&&r.sd2;});
+    if(_hvacR&&_hvacR.sd2<_minAfterTileR){
+      var _h2d=dif(_hvacR.sd2,_hvacR.ed2);
+      _hvacR.sd2=_minAfterTileR;
+      _hvacR.ed2=addD(_minAfterTileR,Math.max(0,_h2d));
+    }
+  }
+
   asShowStep2(result,pEnd);
 }
 
