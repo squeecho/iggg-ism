@@ -293,7 +293,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-cal-dow-cell{text-align:center;font-size:9px;font-weight:700;color:var(--mu);padding:4px 0;background:var(--al);}
 .ig-cal-dow-cell.sun{color:#c53030;}.ig-cal-dow-cell.sat{color:#2045a8;}
 .ig-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--bd);border-radius:0 0 6px 6px;overflow:hidden;}
-.ig-cal-day{position:relative;display:flex;flex-direction:column;align-items:stretch;padding:2px 0 4px;border-right:1px solid var(--bd);border-bottom:1px solid var(--bd);height:72px;overflow:visible;}
+.ig-cal-day{position:relative;display:flex;flex-direction:column;align-items:stretch;padding:2px 0 4px;border-right:1px solid var(--bd);border-bottom:1px solid var(--bd);height:58px;overflow:visible;}
 .ig-cal-day:nth-child(7n){border-right:none;}
 .ig-cal-day.empty{background:var(--al);opacity:.4;}
 .ig-cal-dn{font-size:10px;font-family:'DM Mono',monospace;color:var(--tx);line-height:1.6;z-index:1;text-align:center;flex-shrink:0;}
@@ -5302,6 +5302,10 @@ function rIntegrated() {
   /* 해당 월에 일정이 있는 현장 계산 */
   var ymStart = _igY + '-' + zz(_igM+1) + '-01';
   var ymEnd   = _igY + '-' + zz(_igM+1) + '-' + zz(new Date(_igY, _igM+1, 0).getDate());
+  /* 다음달 범위 (항상 이번달+다음달 표시용) */
+  var _nmY2 = _igY, _nmM2 = _igM + 1; if (_nmM2 > 11) { _nmM2 = 0; _nmY2++; }
+  var nmStart2 = _nmY2 + '-' + zz(_nmM2+1) + '-01';
+  var nmEnd2   = _nmY2 + '-' + zz(_nmM2+1) + '-' + zz(new Date(_nmY2, _nmM2+1, 0).getDate());
 
   function siteHasTaskInMonth(site) {
     return (site.tasks||[]).some(function(t){
@@ -5383,7 +5387,7 @@ function rIntegrated() {
   function makeCalHtml(siteList, curTid) {
     var ny = _igY, nm = _igM + 1;
     if (nm > 11) { nm = 0; ny++; }
-    var showNext = hasTaskInNextMonth(siteList, ny, nm);
+    var showNext = true; /* 항상 이번달+다음달 표시 */
 
     var MNlabel = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     var h = '<div class="ig-cal-wrap">';
@@ -5495,6 +5499,11 @@ function rIntegrated() {
       if (!task || !task.sd || !task.ed) return false;
       if (task.ed >= ymStart && task.sd <= ymEnd) return true;
       if (task.split && task.sd2 && task.ed2 && task.ed2 >= ymStart && task.sd2 <= ymEnd) return true;
+      if (task.split3 && task.sd3 && task.ed3 && task.ed3 >= ymStart && task.sd3 <= ymEnd) return true;
+      /* 다음달도 포함 */
+      if (task.ed >= nmStart2 && task.sd <= nmEnd2) return true;
+      if (task.split && task.sd2 && task.ed2 && task.ed2 >= nmStart2 && task.sd2 <= nmEnd2) return true;
+      if (task.split3 && task.sd3 && task.ed3 && task.ed3 >= nmStart2 && task.sd3 <= nmEnd2) return true;
       return false;
     });
     if (!hasThisMonth) return;
@@ -5505,6 +5514,11 @@ function rIntegrated() {
       if (!task || !task.sd || !task.ed) return false;
       if (task.ed >= ymStart && task.sd <= ymEnd) return true;
       if (task.split && task.sd2 && task.ed2 && task.ed2 >= ymStart && task.sd2 <= ymEnd) return true;
+      if (task.split3 && task.sd3 && task.ed3 && task.ed3 >= ymStart && task.sd3 <= ymEnd) return true;
+      /* 다음달도 포함 */
+      if (task.ed >= nmStart2 && task.sd <= nmEnd2) return true;
+      if (task.split && task.sd2 && task.ed2 && task.ed2 >= nmStart2 && task.sd2 <= nmEnd2) return true;
+      if (task.split3 && task.sd3 && task.ed3 && task.ed3 >= nmStart2 && task.sd3 <= nmEnd2) return true;
       return false;
     });
 
