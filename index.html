@@ -311,6 +311,14 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-ctor-nm.unassigned{color:var(--mu);}
 .ig-ctor-badge{background:#dcfce7;color:#15803d;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;font-family:'DM Mono',monospace;}
 .ig-ctor-badge.unassigned{background:var(--al);color:var(--mu);}
+/* 현장별 분리 행 */
+.ig-site-rows{display:flex;flex-direction:column;gap:0;}
+.ig-site-row{border-top:1px solid var(--bd);padding:10px 0 6px;}
+.ig-site-row:first-child{border-top:none;padding-top:0;}
+.ig-site-row-hd{display:flex;align-items:center;gap:7px;margin-bottom:8px;flex-wrap:wrap;}
+.ig-site-row-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.ig-site-row-nm{font-size:13px;font-weight:800;color:var(--tx);}
+.ig-site-row-period{font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;margin-left:auto;}
 
 /* 범례 — 컴팩트 칩 그리드 */
 .ig-legend{display:flex;flex-direction:column;gap:0;padding:0;}
@@ -2803,12 +2811,12 @@ function toggleCtorMgr(){
 }
 function _restoreCtorMgrState(){
   try{
-    var open=localStorage.getItem('_ctorMgrOpen')==='1';
+    var saved=localStorage.getItem('_ctorMgrOpen');
+    var open=(saved===null)?true:(saved==='1');
     var body=document.getElementById('ctorMgrBody');
     var arrow=document.getElementById('ctorMgrArrow');
     if(body){body.style.display=open?'block':'none';}
-    if(arrow){arrow.style.transform=open?'rotate(90deg)':'rotate(0deg)';}
-  }catch(e){}
+    if(arrow){arrow.style.transform=open?'rotate(90deg)':'rotate(0deg)';}  }catch(e){}
 }
 
 function rCtorMgr(){
@@ -5400,7 +5408,38 @@ function rIntegrated() {
         + (displayName ? '<span class="'+nmClass+'">'+icon+' '+displayName+'</span>' : '')
         + '<span class="'+bdgClass+' no-print">'+siteList.length+'개 현장</span>'
         + '</div>';
-      s += makeCalWithSaveBtn(siteList, tid, tname, safeCtorName);
+
+      /* ── 현장별 분리 뷰 (각 현장을 개별 행으로 명확하게 구분) ── */
+      s += '<div class="ig-site-rows">';
+      siteList.forEach(function(entry) {
+        var color = (window._igSiteColors && window._igSiteColors[entry.site.pn]) || '#888';
+        var task  = entry.task;
+        var sd = task.sd||'', ed = task.ed||'';
+        var durDays = (sd && ed) ? dif(sd,ed)+1 : 0;
+        var periodText = '';
+        if (sd && ed) {
+          var sdM=parseInt(sd.slice(5,7)),sdD=parseInt(sd.slice(8,10));
+          var edM=parseInt(ed.slice(5,7)),edD=parseInt(ed.slice(8,10));
+          periodText = sdM+'/'+sdD+'~'+edM+'/'+edD+(durDays?' ('+durDays+'일)':'');
+          if (task.split&&task.sd2&&task.ed2) {
+            var s2M=parseInt(task.sd2.slice(5,7)),s2D=parseInt(task.sd2.slice(8,10));
+            var e2M=parseInt(task.ed2.slice(5,7)),e2D=parseInt(task.ed2.slice(8,10));
+            periodText += '  '+s2M+'/'+s2D+'~'+e2M+'/'+e2D;
+          }
+        } else { periodText='기간 미설정'; }
+        var authorStr = entry.site.author||entry.site._author||'';
+        var authorLabel = authorStr ? ' <span style="font-size:10px;color:var(--mu);font-weight:400;">· '+esc(authorStr)+'</span>' : '';
+        s += '<div class="ig-site-row">';
+        s += '<div class="ig-site-row-hd">'
+          + '<span class="ig-site-row-dot" style="background:'+color+'"></span>'
+          + '<span class="ig-site-row-nm" onclick="igOpenCtorModal(\''+esc(entry.site.pn)+'\','+tid+')" title="업체 배정" style="cursor:pointer;">'+esc(entry.site.pn)+authorLabel+'</span>'
+          + '<span class="ig-site-row-period">'+periodText+'</span>'
+          + '</div>';
+        s += makeCalHtml([entry], tid);
+        s += '</div>';
+      });
+      s += '</div>'; /* ig-site-rows */
+
       /* 겹침 경고 배너 */
       var _ov = igDetectOverlaps(siteList);
       if (_ov.length) {
@@ -5414,20 +5453,16 @@ function rIntegrated() {
         });
         s += '</div></div>';
       }
-      /* 하단: 좌(현장칩) 2 : 우(이미지저장) 1 */
-      s += '<div style="display:grid;grid-template-columns:2fr 1fr;align-items:end;gap:8px;padding:8px 10px 10px;">';
-      s += '<div class="ig-legend"><div class="ig-legend-chips" style="padding:0;">';
-      siteList.forEach(function(entry) { s += makeEntryHtml(entry, tid); });
-      s += '</div></div>';
-      s += '<div class="no-print" style="display:flex;justify-content:flex-end;">'
+      /* 이미지 저장 버튼 */
+      s += '<div class="no-print" style="display:flex;justify-content:flex-end;padding:4px 10px 10px;">'
         + '<button class="ig-ctor-save-btn" onclick="doIGCtorImg(this,\''+tname+'\',\''+safeCtorName+'\')">'
         + '이미지 저장'
         + '</button></div>';
-      s += '</div>'; /* 2:1 grid */
       s += '</div>'; /* ig-ctor-section 닫기 */
 
       return s;
     }
+
 
     groupNames.forEach(function(ctorName) {
       html += renderCtorSection(ctorName, groups[ctorName], false);
@@ -5711,25 +5746,12 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
   document.body.appendChild(clone);
 
   toast('이미지 생성 중...');
-  await new Promise(function(r){ setTimeout(r, 180); });
-
-  /* 19:9 비율 초과 시 달력 셀 높이 줄여서 맞춤 */
-  var maxH = Math.floor(clone.offsetWidth * 9 / 19);
-  var curH = clone.scrollHeight;
-  if (curH > maxH) {
-    var calCells = clone.querySelectorAll('.ig-cal-day');
-    var ratio = maxH / curH;
-    var newCellH = Math.max(20, Math.floor(72 * ratio));
-    calCells.forEach(function(cell) {
-      cell.style.height = newCellH + 'px';
-      cell.style.minHeight = '0';
-    });
-    await new Promise(function(r){ setTimeout(r, 80); });
-  }
+  await new Promise(function(r){ setTimeout(r, 200); });
 
   try {
-    var scale = Math.max(4, window.devicePixelRatio * 2 || 4);
-    var captureH = Math.min(clone.scrollHeight, maxH);
+    var scale = Math.max(3, window.devicePixelRatio * 2 || 3);
+    var captureW = clone.offsetWidth;
+    var captureH = clone.scrollHeight;   /* 전체 높이 — 자르지 않음 */
     var canvas = await html2canvas(clone, {
       scale: scale,
       useCORS: true,
@@ -5738,9 +5760,11 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
       logging: false,
       scrollX: 0,
       scrollY: 0,
-      width: clone.offsetWidth,
+      x: 0,
+      y: 0,
+      width: captureW,
       height: captureH,
-      windowWidth: clone.offsetWidth,
+      windowWidth: captureW,
       windowHeight: captureH
     });
     var a = document.createElement('a');
