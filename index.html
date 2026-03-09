@@ -2844,7 +2844,7 @@ function toggleCtorMgr(){
 function _restoreCtorMgrState(){
   try{
     var saved=localStorage.getItem('_ctorMgrOpen');
-    var open=(saved===null)?true:(saved==='1');
+    var open=(saved===null)?false:(saved==='1');
     var body=document.getElementById('ctorMgrBody');
     var arrow=document.getElementById('ctorMgrArrow');
     if(body){body.style.display=open?'block':'none';}
@@ -2859,7 +2859,10 @@ function rCtorMgr(){
   _CTOR_DISPLAY_ORDER.forEach(function(tid){
     var task=(S.tasks||[]).find(function(t){return t.id===tid;});
     if(!task)return;
+    /* task.contractors + globalCtors 합산 (새 환경에서도 표시) */
     var ctors=(task.contractors||[]).filter(Boolean);
+    var gc=getGlobalCtors();
+    (gc[tid]||[]).forEach(function(c){ if(c&&ctors.indexOf(c)<0) ctors.push(c); });
     var tname=NAMES[tid]||('공종'+tid);
     h+='<div class="ctor-mgr-item'+(task.on?'':' off')+'">';
     h+='<div class="ctor-mgr-hd">';
@@ -2874,10 +2877,10 @@ function rCtorMgr(){
         var safe=cn.replace(/\\/g,'\\\\').replace(/'/g,'&#39;');
         var isFirst=idx===0,isLast=idx===sorted.length-1;
         var rankBadge=sorted.length>1?'<span style="font-size:10px;color:#15803d;font-weight:800;margin-right:4px;">'+(idx+1)+'순위</span>':'';
-        var upBtn=sorted.length>1?'<button style="border:none;background:none;font-size:11px;cursor:pointer;padding:0 2px;color:var(--mu);line-height:1;" '+(isFirst?'disabled style="opacity:.25;"':'')
-          +' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',-1)">▲</button>':'';
-        var dnBtn=sorted.length>1?'<button style="border:none;background:none;font-size:11px;cursor:pointer;padding:0 2px;color:var(--mu);line-height:1;" '+(isLast?'disabled style="opacity:.25;"':'')
-          +' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',1)">▼</button>':'';
+        var _upStyle='border:none;background:none;font-size:11px;cursor:pointer;padding:0 2px;color:var(--mu);line-height:1;'+(isFirst?'opacity:.25;':'');
+        var _dnStyle='border:none;background:none;font-size:11px;cursor:pointer;padding:0 2px;color:var(--mu);line-height:1;'+(isLast?'opacity:.25;':'');
+        var upBtn=sorted.length>1?'<button style="'+_upStyle+'" '+(isFirst?'disabled':'')+' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',-1)">▲</button>':'';
+        var dnBtn=sorted.length>1?'<button style="'+_dnStyle+'" '+(isLast?'disabled':'')+' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',1)">▼</button>':'';
         h+='<div class="ctor-mgr-chip" style="'+(isFirst&&sorted.length>1?'border-color:#22c55e;background:#f0fdf4;':'')+'">'
           +rankBadge+esc(cn)
           +upBtn+dnBtn
