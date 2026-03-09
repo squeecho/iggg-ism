@@ -2844,7 +2844,7 @@ function toggleCtorMgr(){
 function _restoreCtorMgrState(){
   try{
     var saved=localStorage.getItem('_ctorMgrOpen');
-    var open=(saved===null)?false:(saved==='1');
+    var open=(saved===null)?true:(saved==='1');
     var body=document.getElementById('ctorMgrBody');
     var arrow=document.getElementById('ctorMgrArrow');
     if(body){body.style.display=open?'block':'none';}
@@ -2860,9 +2860,6 @@ function rCtorMgr(){
     var task=(S.tasks||[]).find(function(t){return t.id===tid;});
     if(!task)return;
     var ctors=(task.contractors||[]).filter(Boolean);
-    /* 글로벌 스토어에 있는 업체도 표시 (다기기·신규환경 대응) */
-    var _gc=getGlobalCtors();
-    if(_gc&&_gc[tid]){_gc[tid].forEach(function(c){if(c&&ctors.indexOf(c)<0)ctors.push(c);});}
     var tname=NAMES[tid]||('공종'+tid);
     h+='<div class="ctor-mgr-item'+(task.on?'':' off')+'">';
     h+='<div class="ctor-mgr-hd">';
@@ -6904,7 +6901,7 @@ function asShowStep1(){
       sortedCtors.forEach(function(cn, idx){
         var on=selCtors.indexOf(cn)>=0;
         var safe=cn.replace(/\\/g,'\\\\').replace(/'/g,'&#39;');
-        var avail=asCtorAvailLabel(cn,t.id);
+        var avail=asCtorAvailLabel(cn,t.id,(_masterTask&&_masterTask.sd)||null,(_masterTask&&_masterTask.ed)||null);
         var badge='<span class="as-avail-badge '+avail+'">'+(avail==='busy'?'⚠ 겹침':'✓ 가능')+'</span>';
         var isFirst=(idx===0);
         var isLast=(idx===sortedCtors.length-1);
@@ -7490,11 +7487,14 @@ function asCtorBusyInRange(ctorName, tid){
 }
 
 /* ── 업체 가용 여부: 이 공종 / 이 기간 내 겹치는지 ── */
-function asCtorAvailLabel(ctorName, tid){
-  if(!S.sd||!S.ed) return 'ok';
+/* taskSd, taskEd: 공종의 실제 배치 날짜 (없으면 프로젝트 전체 기간으로 폴백) */
+function asCtorAvailLabel(ctorName, tid, taskSd, taskEd){
+  var chkSd = taskSd || S.sd;
+  var chkEd = taskEd || S.ed;
+  if(!chkSd||!chkEd) return 'ok';
   var busy=asCtorBusyInRange(ctorName, tid);
   if(!busy.length) return 'ok';
-  var conflict=busy.find(function(b){return b.sd<=S.ed&&b.ed>=S.sd;});
+  var conflict=busy.find(function(b){return b.sd<=chkEd&&b.ed>=chkSd;});
   return conflict?'busy':'ok';
 }
 
