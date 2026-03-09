@@ -312,6 +312,32 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-cal-bar.rng-se{border-radius:3px;margin:0 2px;width:calc(100% - 4px);}
 .ig-cal-next-month{border-top:1px dashed var(--bd);}
 
+/* 외부일정 바 */
+.ig-cal-bar.ext-bar{background:repeating-linear-gradient(45deg,#94a3b8 0px,#94a3b8 3px,#e2e8f0 3px,#e2e8f0 7px)!important;box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.22);}
+.ig-cal-bar-label.ext-label{color:#1e293b;text-shadow:none;font-weight:700;}
+/* 외부일정 모달 */
+.ext-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;}
+.ext-modal{background:var(--bg);border-radius:12px;padding:22px 20px 18px;width:320px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:14px;}
+.ext-modal-title{font-size:14px;font-weight:900;color:var(--tx);}
+.ext-modal-field{display:flex;flex-direction:column;gap:4px;}
+.ext-modal-label{font-size:11px;font-weight:700;color:var(--mu);}
+.ext-modal-input{background:var(--al);border:1.5px solid var(--bd);border-radius:7px;padding:7px 10px;font-size:13px;color:var(--tx);outline:none;font-family:inherit;}
+.ext-modal-input:focus{border-color:#3b82f6;}
+.ext-modal-btns{display:flex;gap:8px;justify-content:flex-end;}
+.ext-modal-cancel{padding:7px 14px;border-radius:7px;border:1.5px solid var(--bd);background:transparent;color:var(--mu);font-size:12px;font-weight:700;cursor:pointer;}
+.ext-modal-save{padding:7px 14px;border-radius:7px;border:none;background:#3b82f6;color:#fff;font-size:12px;font-weight:700;cursor:pointer;}
+/* 외부일정 리스트 */
+.ext-list{display:flex;flex-direction:column;gap:4px;margin-top:2px;}
+.ext-item{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--al);border-radius:6px;border:1px dashed var(--bd);}
+.ext-item-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;background:repeating-linear-gradient(45deg,#94a3b8 0px,#94a3b8 2px,#e2e8f0 2px,#e2e8f0 5px);}
+.ext-item-label{font-size:11px;font-weight:800;color:var(--tx);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ext-item-period{font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;white-space:nowrap;}
+.ext-item-del{font-size:13px;color:#ef4444;cursor:pointer;padding:0 3px;flex-shrink:0;line-height:1;font-weight:900;background:none;border:none;}
+.ext-add-btn{font-size:11px;font-weight:700;padding:4px 10px;border-radius:6px;border:1.5px dashed #94a3b8;background:transparent;color:#64748b;cursor:pointer;white-space:nowrap;}
+.ext-add-btn:hover{border-color:#3b82f6;color:#3b82f6;}
+/* 외부일정 겹침 */
+.ext-overlap-badge{background:#fef2f2;color:#dc2626;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;border:1px solid #fca5a5;}
+
 /* 업체별 섹션 */
 .ig-ctor-section{border-top:1px solid var(--bd);padding:12px 14px 10px;min-width:0;}
 .ig-ctor-hd{display:flex;align-items:center;gap:7px;margin-bottom:10px;flex-wrap:wrap;}
@@ -950,6 +976,10 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 .as-ext-banner{background:#2e2200;border-color:#a16207;color:#fde68a;}
 .ig-overlap-warn{background:#2a1500;border-color:#a16207;color:#fde68a;}
 .ig-overlap-badge{background:#2e2200;color:#fbbf24;border-color:#a16207;}
+.ext-overlap-badge{background:#2d0000!important;color:#fca5a5!important;border-color:#7f1d1d!important;}
+.ext-modal{background:var(--bg)!important;}
+.ext-item{background:var(--al)!important;}
+.ig-cal-bar.ext-bar{background:repeating-linear-gradient(45deg,#475569 0px,#475569 3px,#334155 3px,#334155 7px)!important;}
 
 /* DB / 날짜 배지 */
 .db{background:var(--al);border-color:var(--bar);color:var(--bar);}
@@ -2733,7 +2763,10 @@ function sw(m){
   }
   if(m==='c') swChart();
   if(m==='e'){ rEdit(); loadCloudSites(true).then(rCloudChips); }
-  if(m==='i'){loadCloudSites(true).then(rIntegrated);}
+  if(m==='i'){
+    _loadExtScheduleFromCloud().catch(function(){});
+    loadCloudSites(true).then(rIntegrated);
+  }
 }
 
 /* 차트탭 전환: Firebase 최신 데이터로 S 동기화 후 렌더 */
@@ -4962,6 +4995,7 @@ function initFirebase() {
     setTimeout(function(){
       _loadCtorsFromCloud().catch(function(){});
       _loadPrioFromCloud().catch(function(){});
+      _loadExtScheduleFromCloud().catch(function(){});
     }, 0);
   } catch(e) { console.warn('Firebase init error:', e); }
 }
@@ -5260,6 +5294,11 @@ function igMove(n) {
 function rIntegrated() {
   var el = document.getElementById('igWrap');
   if (!el) return;
+  /* 외부일정 최신화 후 렌더 */
+  if (_fbReady && _db && _extScheduleCache === null) {
+    _loadExtScheduleFromCloud().then(function(){ renderIG(); }).catch(function(){ renderIG(); });
+    return;
+  }
 
   var MN = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   var DW = ['일','월','화','수','목','금','토'];
@@ -5318,7 +5357,7 @@ function rIntegrated() {
   }
 
   /* 달력 단일 월 렌더 (내부 헬퍼) */
-  function renderOneMonth(y, m, siteList, showDow, curTid) {
+  function renderOneMonth(y, m, siteList, showDow, curTid, extList) {
     var startDow = new Date(y, m, 1).getDay();
     var dim = new Date(y, m + 1, 0).getDate();
     var h = '';
@@ -5363,6 +5402,27 @@ function rIntegrated() {
             + '</div>';
         });
       });
+      /* 외부일정 바 (빗금 스타일) */
+      if (extList) {
+        extList.forEach(function(ext) {
+          if (!ext.sd || !ext.ed) return;
+          if (ds < ext.sd || ds > ext.ed) return;
+          var mFirst = y + '-' + zz(m+1) + '-01';
+          var mLast  = y + '-' + zz(m+1) + '-' + zz(dim);
+          var isS = (ds === ext.sd) || (ds === mFirst && ext.sd < mFirst);
+          var isE = (ds === ext.ed) || (ds === mLast  && ext.ed > mLast);
+          var isRowStart = (dw === 0);
+          var showLabel = (ds === ext.sd) || (ds === mFirst && ext.sd < mFirst) || (isRowStart && ds > ext.sd && ds < ext.ed);
+          var bc = 'ig-cal-bar ext-bar ';
+          if (isS && isE) bc += 'rng-se';
+          else if (isS)   bc += 'rng-s';
+          else if (isE)   bc += 'rng-e';
+          else             bc += 'rng-m';
+          bars += '<div class="'+bc+'">'
+            + (showLabel ? '<span class="ig-cal-bar-label ext-label">'+esc(ext.label||'외부')+'</span>' : '')
+            + '</div>';
+        });
+      }
       h += '<div class="'+cls+'"><span class="ig-cal-dn">'+d2+'</span>'
          + (bars ? '<div class="ig-cal-bars">'+bars+'</div>' : '')
          + '</div>';
@@ -5384,7 +5444,7 @@ function rIntegrated() {
   }
 
   /* 달력 렌더 (현재 달 + 필요시 다음 달) */
-  function makeCalHtml(siteList, curTid) {
+  function makeCalHtml(siteList, curTid, extList) {
     var ny = _igY, nm = _igM + 1;
     if (nm > 11) { nm = 0; ny++; }
     var showNext = true; /* 항상 이번달+다음달 표시 */
@@ -5392,11 +5452,11 @@ function rIntegrated() {
     var MNlabel = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
     var h = '<div class="ig-cal-wrap">';
     h += '<div class="ig-month-label">' + _igY + '. ' + MNlabel[_igM] + '</div>';
-    h += renderOneMonth(_igY, _igM, siteList, true, curTid);
+    h += renderOneMonth(_igY, _igM, siteList, true, curTid, extList);
     if (showNext) {
       h += '<div class="ig-cal-next-month">';
       h += '<div class="ig-month-label" style="margin-top:4px">' + ny + '. ' + MNlabel[nm] + '</div>';
-      h += renderOneMonth(ny, nm, siteList, false, curTid);
+      h += renderOneMonth(ny, nm, siteList, false, curTid, extList);
       h += '</div>';
     }
     h += '</div>';
@@ -5579,16 +5639,43 @@ function rIntegrated() {
       var icon = isUnassigned ? '○' : '●';
       var displayName = isUnassigned ? '' : esc(ctorName);
 
+      /* 외부 일정 로드 */
+      var extList = isUnassigned ? [] : (getExtSchedule()[ctorName] || []);
+
+      /* 외부일정 겹침: 외부일정 vs 우리 현장 */
+      var extOverlaps = [];
+      if (!isUnassigned && extList.length) {
+        siteList.forEach(function(entry) {
+          var task = entry.task;
+          var siteRanges = [{sd:task.sd, ed:task.ed}];
+          if (task.split && task.sd2 && task.ed2) siteRanges.push({sd:task.sd2, ed:task.ed2});
+          if (task.split3 && task.sd3 && task.ed3) siteRanges.push({sd:task.sd3, ed:task.ed3});
+          extList.forEach(function(ext) {
+            if (!ext.sd || !ext.ed) return;
+            siteRanges.forEach(function(rng) {
+              if (!rng.sd || !rng.ed) return;
+              if (rng.sd <= ext.ed && ext.sd <= rng.ed) {
+                var oSd = rng.sd > ext.sd ? rng.sd : ext.sd;
+                var oEd = rng.ed < ext.ed ? rng.ed : ext.ed;
+                extOverlaps.push({site: entry.site.pn, ext: ext.label||'외부일정', sd: oSd, ed: oEd});
+              }
+            });
+          });
+        });
+      }
+
       var s = '<div class="ig-ctor-section">';
       s += '<div class="ig-ctor-hd">'
         + (displayName ? '<span class="'+nmClass+'">'+icon+' '+displayName+'</span>' : '')
         + '<span class="'+bdgClass+' no-print">'+siteList.length+'개 현장</span>'
+        + (extOverlaps.length ? '<span class="ext-overlap-badge no-print">⚠️ 외부일정 겹침</span>' : '')
+        + (!isUnassigned ? '<button class="ext-add-btn no-print" onclick="igShowExtModal(\''+safeCtorName+'\','+tid+')">+ 외부일정</button>' : '')
         + '</div>';
 
-      /* 모든 현장을 하나의 달력에 합쳐서 표시 (컬러 바로 구분) */
-      s += makeCalHtml(siteList, tid);
+      /* 모든 현장을 하나의 달력에 합쳐서 표시 (외부일정 바 포함) */
+      s += makeCalHtml(siteList, tid, extList);
 
-      /* 겹침 경고 배너 */
+      /* 우리 현장 간 겹침 경고 */
       var _ov = igDetectOverlaps(siteList);
       if (_ov.length) {
         s += '<div class="ig-overlap-warn no-print"><span class="ig-overlap-warn-icon">⚠️</span><div class="ig-overlap-warn-list">일정이 겹치는 현장이 있어요';
@@ -5600,6 +5687,37 @@ function rIntegrated() {
             + '&nbsp;&nbsp;' + oSdStr + (isSameDay ? '' : ' ~ ' + oEdStr) + '</span>';
         });
         s += '</div></div>';
+      }
+
+      /* 외부일정 vs 현장 겹침 경고 */
+      if (extOverlaps.length) {
+        s += '<div class="ig-overlap-warn no-print" style="border-color:#fca5a5;background:#fff1f2;color:#991b1b;"><span class="ig-overlap-warn-icon">⚠️</span><div class="ig-overlap-warn-list">외부일정과 겹치는 현장이 있어요';
+        extOverlaps.forEach(function(o) {
+          var oSdStr = o.sd.slice(5).replace('-','/');
+          var oEdStr = o.ed.slice(5).replace('-','/');
+          var isSameDay = o.sd === o.ed;
+          s += '<span class="ig-overlap-warn-row">· ' + esc(o.site) + ' × ' + esc(o.ext)
+            + '&nbsp;&nbsp;' + oSdStr + (isSameDay ? '' : ' ~ ' + oEdStr) + '</span>';
+        });
+        s += '</div></div>';
+      }
+
+      /* 외부일정 리스트 */
+      if (!isUnassigned && extList.length) {
+        s += '<div class="ext-list no-print">';
+        extList.forEach(function(ext) {
+          var sdStr = ext.sd ? ext.sd.slice(5).replace('-','/') : '';
+          var edStr = ext.ed ? ext.ed.slice(5).replace('-','/') : '';
+          var durDays = (ext.sd && ext.ed) ? dif(ext.sd, ext.ed)+1 : 0;
+          var period = sdStr && edStr ? sdStr+(sdStr===edStr?'':' ~ '+edStr)+(durDays?' ('+durDays+'일)':'') : '';
+          s += '<div class="ext-item">'
+            + '<div class="ext-item-dot"></div>'
+            + '<span class="ext-item-label">'+esc(ext.label||'외부일정')+'</span>'
+            + (period ? '<span class="ext-item-period">'+period+'</span>' : '')
+            + '<button class="ext-item-del" onclick="igDeleteExt(\''+safeCtorName+'\',\''+esc(ext.id||'')+'\')">✕</button>'
+            + '</div>';
+        });
+        s += '</div>';
       }
 
       /* 하단: 범례(현장칩) + 이미지저장 버튼 */
@@ -5635,6 +5753,92 @@ function rIntegrated() {
 }
 
 var _igSaveTimers = {};
+
+/* ── 외부일정 저장소 (Firebase global/ext_schedule) ── */
+var _extScheduleCache = null; /* 메모리 캐시 */
+
+function getExtSchedule() {
+  return _extScheduleCache || {};
+}
+async function _saveExtScheduleToCloud(data) {
+  _extScheduleCache = data;
+  if (!_fbReady || !_db) return;
+  try {
+    await _db.collection('global').doc('ext_schedule').set({data: JSON.stringify(data), _updatedAt: Date.now()});
+  } catch(e) { console.warn('외부일정 클라우드 저장 실패:', e); }
+}
+async function _loadExtScheduleFromCloud() {
+  if (!_fbReady || !_db) return;
+  try {
+    var doc = await _db.collection('global').doc('ext_schedule').get();
+    if (!doc.exists) { _extScheduleCache = {}; return; }
+    _extScheduleCache = JSON.parse(doc.data().data || '{}');
+  } catch(e) { console.warn('외부일정 클라우드 로드 실패:', e); _extScheduleCache = {}; }
+}
+function saveExtSchedule(data) {
+  _saveExtScheduleToCloud(data);
+}
+function igDeleteExt(ctorName, extId) {
+  var data = Object.assign({}, getExtSchedule());
+  if (data[ctorName]) {
+    data[ctorName] = data[ctorName].filter(function(e){ return e.id !== extId; });
+    if (!data[ctorName].length) delete data[ctorName];
+  }
+  saveExtSchedule(data);
+  renderIG();
+}
+function igShowExtModal(ctorName, tid) {
+  /* 기존 모달 제거 */
+  var old = document.getElementById('ext-modal-bg');
+  if (old) old.remove();
+
+  var bg = document.createElement('div');
+  bg.className = 'ext-modal-bg';
+  bg.id = 'ext-modal-bg';
+  bg.innerHTML = '<div class="ext-modal" onclick="event.stopPropagation()">'
+    + '<div class="ext-modal-title">🗓️ ' + esc(ctorName) + ' 외부 일정 추가</div>'
+    + '<div class="ext-modal-field">'
+    + '<label class="ext-modal-label">작업명</label>'
+    + '<input id="ext-m-label" class="ext-modal-input" type="text" placeholder="예) 다른 현장, 개인작업…" maxlength="30">'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;">'
+    + '<div class="ext-modal-field" style="flex:1;">'
+    + '<label class="ext-modal-label">시작일</label>'
+    + '<input id="ext-m-sd" class="ext-modal-input" type="date">'
+    + '</div>'
+    + '<div class="ext-modal-field" style="flex:1;">'
+    + '<label class="ext-modal-label">종료일</label>'
+    + '<input id="ext-m-ed" class="ext-modal-input" type="date">'
+    + '</div>'
+    + '</div>'
+    + '<div class="ext-modal-btns">'
+    + '<button class="ext-modal-cancel" onclick="document.getElementById(\'ext-modal-bg\').remove()">취소</button>'
+    + '<button class="ext-modal-save" onclick="igSaveExtModal(\''+esc(ctorName).replace(/'/g,"\\'")+'\',' +tid+')">저장</button>'
+    + '</div>'
+    + '</div>';
+  bg.addEventListener('click', function(){ bg.remove(); });
+  document.body.appendChild(bg);
+  setTimeout(function(){ var el=document.getElementById('ext-m-label'); if(el) el.focus(); }, 50);
+}
+function igSaveExtModal(ctorName, tid) {
+  var label = (document.getElementById('ext-m-label')||{}).value || '';
+  var sd    = (document.getElementById('ext-m-sd')||{}).value || '';
+  var ed    = (document.getElementById('ext-m-ed')||{}).value || '';
+  if (!sd || !ed) { alert('시작일과 종료일을 입력해주세요.'); return; }
+  if (sd > ed) { alert('시작일이 종료일보다 늦을 수 없어요.'); return; }
+  var data = getExtSchedule();
+  if (!data[ctorName]) data[ctorName] = [];
+  data[ctorName].push({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+    label: label || '외부일정',
+    sd: sd,
+    ed: ed
+  });
+  saveExtSchedule(data);
+  var bg = document.getElementById('ext-modal-bg');
+  if (bg) bg.remove();
+  renderIG();
+}
 
 /* ── 겹침 감지: [{site, task}] 배열에서 겹치는 쌍 반환 ── */
 function igDetectOverlaps(siteList) {
@@ -7659,6 +7863,13 @@ function asCtorBusyInRange(ctorName, tid){
   getAllConfirmedSites().forEach(function(site){
     var t=(site.tasks||[]).find(function(t){return t.id===tid&&t.on;});if(t)addIfCtor(t);
   });
+  /* 외부일정도 바쁜 기간으로 포함 */
+  var extData = getExtSchedule();
+  if (extData[ctorName]) {
+    extData[ctorName].forEach(function(ext){
+      if(ext.sd&&ext.ed) busy.push({sd:ext.sd, ed:ext.ed, isExt:true, label:ext.label});
+    });
+  }
   return busy;
 }
 
