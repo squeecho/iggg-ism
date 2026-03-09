@@ -6268,9 +6268,9 @@ function igRemoveCtor(){}
 /* 이미지 저장 (업체별, 고해상도) */
 async function doIGCtorImg(btn, tradeName, ctorName) {
   if (typeof html2canvas === 'undefined') { toast('라이브러리 로딩 중...'); return; }
-  /* 버튼의 상위 .ig-ctor-section을 탐색 */
+
   var section = btn.closest ? btn.closest('.ig-ctor-section') : null;
-  if (!section) { /* closest 미지원 fallback */
+  if (!section) {
     var el = btn;
     while(el && !el.classList.contains('ig-ctor-section')) el = el.parentElement;
     section = el;
@@ -6279,31 +6279,52 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
   if (!section) { toast('섹션을 찾을 수 없어요'); return; }
 
   var tradeHd = trade ? trade.querySelector('.ig-trade-hd') : null;
-  var containerW = section.getBoundingClientRect().width || 360;
 
-  /* 오프스크린 클론 */
-  var clone = document.createElement('div');
-  clone.style.cssText = 'position:fixed;left:-9999px;top:0;width:'+Math.floor(containerW)+'px;background:#fff;border-radius:0;font-family:Noto Sans KR,sans-serif;--bg:#f2f0eb;--sf:#fff;--bd:#e0dbd2;--bmd:#ccc7bc;--tx:#18170f;--mu:#7a7870;--mu2:#b5b0a8;--bar:#cbd5e1;--barh:#94a3b8;--al:#eef2fd;--sc:rgba(255,60,60,.07);--sh:#fde8e8;--ac:rgba(60,100,255,.07);--ah:#e4eaff;--hc:rgba(255,140,0,.10);--hh:#fff3cd;color:#18170f;';
+  /* 오프스크린 래퍼 — 실제 DOM 구조 그대로 복사해 레이아웃 유지 */
+  var wrapper = document.createElement('div');
+  var containerW = section.getBoundingClientRect().width || 360;
+  wrapper.style.cssText = [
+    'position:fixed', 'left:-9999px', 'top:0',
+    'width:'+Math.ceil(containerW)+'px',
+    'background:#ffffff',
+    'font-family:Noto Sans KR,sans-serif',
+    /* CSS 변수 라이트모드 고정 */
+    '--bg:#f2f0eb','--sf:#fff','--bd:#e0dbd2','--bmd:#ccc7bc',
+    '--tx:#18170f','--mu:#7a7870','--mu2:#b5b0a8',
+    '--bar:#cbd5e1','--barh:#94a3b8',
+    '--al:#eef2fd',
+    '--sc:rgba(255,60,60,.07)','--sh:#fde8e8',
+    '--ac:rgba(60,100,255,.07)','--ah:#e4eaff',
+    '--hc:rgba(255,140,0,.10)','--hh:#fff3cd',
+    'color:#18170f'
+  ].join(';') + ';';
 
   if (tradeHd) {
     var hdC = tradeHd.cloneNode(true);
     hdC.querySelectorAll('.no-print').forEach(function(e){e.remove();});
-    clone.appendChild(hdC);
+    wrapper.appendChild(hdC);
   }
   var secC = section.cloneNode(true);
   secC.querySelectorAll('.no-print').forEach(function(e){e.remove();});
-  clone.appendChild(secC);
-  document.body.appendChild(clone);
+  /* 달력 셀 내 바(절대위치) 위치 고정: 부모 relative 보장 */
+  secC.querySelectorAll('.ig-cal-day').forEach(function(cell){
+    cell.style.position = 'relative';
+    cell.style.overflow = 'visible';
+  });
+  wrapper.appendChild(secC);
+  document.body.appendChild(wrapper);
 
   toast('이미지 생성 중...');
-  await new Promise(function(r){ setTimeout(r, 200); });
+  /* 렌더 안정화 대기 */
+  await new Promise(function(r){ setTimeout(r, 350); });
 
   try {
-    var scale = Math.max(3, window.devicePixelRatio * 2 || 3);
-    var captureW = clone.offsetWidth;
-    var captureH = clone.scrollHeight;   /* 전체 높이 — 자르지 않음 */
-    var canvas = await html2canvas(clone, {
-      scale: scale,
+    var captureW = wrapper.offsetWidth;
+    var captureH = wrapper.scrollHeight;
+    var SCALE = 4;   /* 고해상도 */
+
+    var canvas = await html2canvas(wrapper, {
+      scale: SCALE,
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
@@ -6315,8 +6336,25 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
       width: captureW,
       height: captureH,
       windowWidth: captureW,
-      windowHeight: captureH
+      windowHeight: captureH + 200,
+      onclone: function(doc) {
+        /* 클론 문서에서 no-print 제거 + CSS 변수 재주입 */
+        doc.querySelectorAll('.no-print').forEach(function(e){ e.style.display='none'; });
+        var s = doc.createElement('style');
+        s.textContent = [
+          ':root,*{--bg:#f2f0eb!important;--sf:#fff!important;--bd:#e0dbd2!important;',
+          '--bmd:#ccc7bc!important;--tx:#18170f!important;--mu:#7a7870!important;',
+          '--mu2:#b5b0a8!important;--bar:#cbd5e1!important;--barh:#94a3b8!important;',
+          '--al:#eef2fd!important;--sc:rgba(255,60,60,.07)!important;--sh:#fde8e8!important;',
+          '--ac:rgba(60,100,255,.07)!important;--ah:#e4eaff!important;',
+          '--hc:rgba(255,140,0,.10)!important;--hh:#fff3cd!important;}',
+          '.ig-cal-day{position:relative!important;overflow:visible!important;}',
+          '.ig-cal-bar{display:block!important;}'
+        ].join('');
+        doc.head.appendChild(s);
+      }
     });
+
     var a = document.createElement('a');
     var d = today().replace(/-/g,'').substring(2);
     a.download = d + ' 이견공간일정(' + tradeName + '-' + ctorName + ').png';
@@ -6329,7 +6367,7 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
     console.error(e);
     toast('이미지 저장 실패: ' + e.message);
   } finally {
-    document.body.removeChild(clone);
+    document.body.removeChild(wrapper);
   }
 }
 
