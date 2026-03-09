@@ -3608,6 +3608,7 @@ async function _loadCtorsFromCloud(){
       /* ★ 태스크 데이터 + UI 갱신 */
       try{mergeGlobalCtorsToTasks();}catch(e){}
       try{rCtorMgr();}catch(e){}
+      try{rEdit();}catch(e){}
     }
   }catch(e){console.warn('업체 클라우드 로드 실패:',e);}
 }
@@ -4999,6 +5000,8 @@ document.addEventListener('DOMContentLoaded', function(){
       body.style.display = '';
       el.innerHTML = '<div style="font-size:11px;color:var(--mu);padding:4px 0">☁️ 불러오는 중...</div>';
     }
+    /* 업체 목록 + 현장 칩 동시 로드 */
+    _loadCtorsFromCloud().catch(function(){});
     loadCloudSites().then(rCloudChips);
   }, 400);
   document.addEventListener('click', function(e){
