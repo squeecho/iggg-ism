@@ -2844,7 +2844,7 @@ function toggleCtorMgr(){
 function _restoreCtorMgrState(){
   try{
     var saved=localStorage.getItem('_ctorMgrOpen');
-    var open=(saved===null)?true:(saved==='1');
+    var open=(saved===null)?false:(saved==='1');
     var body=document.getElementById('ctorMgrBody');
     var arrow=document.getElementById('ctorMgrArrow');
     if(body){body.style.display=open?'block':'none';}
@@ -2860,6 +2860,9 @@ function rCtorMgr(){
     var task=(S.tasks||[]).find(function(t){return t.id===tid;});
     if(!task)return;
     var ctors=(task.contractors||[]).filter(Boolean);
+    /* 글로벌 스토어에 있는 업체도 표시 (다기기·신규환경 대응) */
+    var _gc=getGlobalCtors();
+    if(_gc&&_gc[tid]){_gc[tid].forEach(function(c){if(c&&ctors.indexOf(c)<0)ctors.push(c);});}
     var tname=NAMES[tid]||('공종'+tid);
     h+='<div class="ctor-mgr-item'+(task.on?'':' off')+'">';
     h+='<div class="ctor-mgr-hd">';
