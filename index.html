@@ -715,6 +715,16 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .as-section-lbl{font-size:9px;font-weight:700;color:var(--mu2);letter-spacing:1px;text-transform:uppercase;margin-bottom:5px;}
 .as-ctor-chips{display:flex;flex-wrap:wrap;gap:5px;min-height:28px;}
 .as-ctor-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;border:1.5px solid var(--bd);background:var(--sf);font-size:12px;font-weight:600;color:var(--tx);cursor:pointer;transition:all .12s;user-select:none;-webkit-tap-highlight-color:transparent;}
+/* 우선순위 리스트 */
+.as-ctor-priority-list{display:flex;flex-direction:column;gap:6px;}
+.as-ctor-priority-row{display:flex;align-items:center;gap:8px;}
+.as-ctor-priority-left{display:flex;flex-direction:column;gap:1px;flex-shrink:0;}
+.as-priority-btn{background:none;border:1.5px solid var(--bd);border-radius:5px;width:22px;height:20px;font-size:9px;line-height:1;cursor:pointer;color:var(--mu);display:flex;align-items:center;justify-content:center;padding:0;transition:background .12s;}
+.as-priority-btn:hover{background:var(--bd);color:var(--tx);}
+.as-priority-btn-ph{width:22px;height:20px;display:block;}
+.as-priority-badge{font-size:9px;font-weight:800;background:var(--al);color:#2563eb;border-radius:8px;padding:1px 5px;flex-shrink:0;margin-right:2px;}
+.as-ctor-priority-row .as-ctor-chip{flex:1;}
+.as-priority-auto-label{font-size:10px;color:#15803d;font-weight:700;flex-shrink:0;white-space:nowrap;}
 .as-ctor-chip:hover{border-color:var(--barh);}
 .as-ctor-chip.on{background:#1e293b;border-color:#1e293b;color:#fff;}
 .as-ctor-chip-del{font-size:14px;line-height:1;opacity:.5;margin-left:1px;flex-shrink:0;}
@@ -3613,12 +3623,8 @@ async function _loadCtorsFromCloud(){
   }catch(e){console.warn('업체 클라우드 로드 실패:',e);}
 }
 function mergeGlobalCtorsToTasks(){
-  var gc=getGlobalCtors();
-  (S.tasks||[]).forEach(function(t){
-    var gList=(gc[t.id]||[]).filter(Boolean);
-    if(!t.contractors)t.contractors=[];
-    gList.forEach(function(c){if(t.contractors.indexOf(c)<0)t.contractors.push(c);});
-  });
+  /* ★ 글로벌 업체는 편집탭 드롭다운 표시용 — task.contractors는 건드리지 않음
+     (오염 방지: 이미 배정된 task에 모든 글로벌 업체가 추가되는 버그 예방) */
 }
 function _migrateCtorsToGlobal(){
   if(localStorage.getItem('ig_ctor_migrated_v1'))return;
@@ -4909,7 +4915,15 @@ async function saveToCloud(siteSnap) {
   if (!_fbReady || !_db) return;
   try {
     var key = sanitizeKey(siteSnap.pn);
-    await _db.collection('sites').doc(key).set(Object.assign({}, siteSnap, {_updatedAt: Date.now(), _author: getDeviceName(), author: siteSnap.author || getDeviceName()}));
+    /* ★ 저장 전 업체 정규화: task.contractors는 최대 1개(주 배정)만 유지
+       mergeGlobalCtorsToTasks()로 오염된 여분 업체 제거 */
+    var cleanSnap = JSON.parse(JSON.stringify(siteSnap));
+    (cleanSnap.tasks||[]).forEach(function(t){
+      if(!t.contractors||!t.contractors.length) return;
+      var valid = t.contractors.filter(function(c){ return c && c.trim(); });
+      t.contractors = valid.length ? [valid[0]] : [];
+    });
+    await _db.collection('sites').doc(key).set(Object.assign({}, cleanSnap, {_updatedAt: Date.now(), _author: getDeviceName(), author: siteSnap.author || getDeviceName()}));
   } catch(e) { console.warn('Cloud save failed:', e); }
 }
 
@@ -4926,6 +4940,14 @@ async function loadCloudSites() {
   try {
     var snap = await _db.collection('sites').get();
     _cloudSites = snap.docs.map(function(d){ return d.data(); }).filter(function(s){ return s.pn; });
+    /* ★ 로드 시 업체 정규화: task.contractors 첫 번째만 유지 (기존 오염 데이터 정리) */
+    _cloudSites.forEach(function(site){
+      (site.tasks||[]).forEach(function(t){
+        if(!t.contractors||!t.contractors.length) return;
+        var valid = t.contractors.filter(function(c){ return c && c.trim(); });
+        if(valid.length > 1) t.contractors = [valid[0]];
+      });
+    });
     _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 */
     _restoreMyCloudSites();   /* 캐시 지워도 내 기기 현장 복구 */
   } catch(e) { console.warn('Cloud load failed:', e); _cloudSites = []; }
@@ -5360,19 +5382,19 @@ function rIntegrated() {
       return false;
     });
 
-    /* 업체별 그룹 (해당 달 기준) */
+    /* 업체별 그룹 (해당 달 기준) — 첫 번째 업체(주 배정)만 기준으로 사용 */
     var groups = {};
     var unassigned = [];
     monthSiteList.forEach(function(site) {
       var task = site.tasks.find(function(t){ return t.id===tid; });
       if (!task) return;
+      /* 첫 번째 유효 업체만 = 주 배정 업체 (나머지는 글로벌 스토어에서 오염된 값일 수 있음) */
       var ctors = (task.contractors||[]).filter(function(c){ return c && c.trim(); });
-      if (ctors.length) {
-        ctors.forEach(function(ct) {
-          if (!groups[ct]) groups[ct] = [];
-          if (!groups[ct].find(function(e){ return e.site.pn === site.pn; }))
-            groups[ct].push({site:site, task:task});
-        });
+      var primaryCtor = ctors[0] || null;
+      if (primaryCtor) {
+        if (!groups[primaryCtor]) groups[primaryCtor] = [];
+        if (!groups[primaryCtor].find(function(e){ return e.site.pn === site.pn; }))
+          groups[primaryCtor].push({site:site, task:task});
       } else {
         unassigned.push({site:site, task:task});
       }
@@ -6300,21 +6322,81 @@ function asGetSettings(){
 function asSaveSettings(obj){
   try{localStorage.setItem(AS_SETTINGS_KEY,JSON.stringify(obj));}catch(e){}
 }
+
+/* ── 업체 우선순위 관리 ── */
+var CP_PRIORITY_KEY = 'ig_ctor_priority_v1';
+function cpGetPriority(){
+  try{ return JSON.parse(localStorage.getItem(CP_PRIORITY_KEY)||'{}'); }catch(e){ return {}; }
+}
+function cpSavePriority(obj){
+  try{ localStorage.setItem(CP_PRIORITY_KEY, JSON.stringify(obj)); }catch(e){}
+}
+/* tid별 업체 목록을 우선순위 순으로 정렬 */
+function cpSorted(tid, ctors){
+  var prio = cpGetPriority()[tid] || [];
+  var result = ctors.slice();
+  result.sort(function(a, b){
+    var ia = prio.indexOf(a);
+    var ib = prio.indexOf(b);
+    if(ia === -1) ia = 9999;
+    if(ib === -1) ib = 9999;
+    return ia - ib;
+  });
+  return result;
+}
+/* ▲/▼ 버튼으로 우선순위 이동 후 모달 re-render */
+function cpMove(tid, name, dir){
+  var prio = cpGetPriority();
+  if(!prio[tid]) prio[tid] = [];
+  var task = (S.tasks||[]).find(function(t){ return t.id === tid; });
+  var ctors = task ? (task.contractors||[]).filter(Boolean) : [];
+  /* 현재 우선순위 순으로 전체 목록 확보 */
+  var sorted = cpSorted(tid, ctors);
+  var idx = sorted.indexOf(name);
+  var newIdx = idx + dir;
+  if(newIdx < 0 || newIdx >= sorted.length) return;
+  sorted.splice(idx, 1);
+  sorted.splice(newIdx, 0, name);
+  prio[tid] = sorted;
+  cpSavePriority(prio);
+
+  /* 1순위 업체를 자동으로 AS 선택값에 반영 */
+  var asSettings = asGetSettings();
+  if(!asSettings[tid]) asSettings[tid] = {};
+  asSettings[tid].contractors = [sorted[0]];
+  asSaveSettings(asSettings);
+
+  /* 현재 스크롤 위치 보존하며 re-render */
+  var body = document.getElementById('asModalBody');
+  var scrollY = body ? body.scrollTop : 0;
+  asShowStep1();
+  setTimeout(function(){
+    if(body) body.scrollTop = scrollY;
+    var target = document.getElementById('asRow_'+tid);
+    if(target) target.scrollIntoView({block:'nearest', behavior:'smooth'});
+  }, 60);
+}
 function openAutoSchedModal(){
   if(IS_RO){toast('읽기 전용 현장은 수정할 수 없어요');return;}
   if(!S.pn){toast('현장을 먼저 선택해주세요');return;}
   if(!S.sd||!S.ed){toast('공사기간을 먼저 설정해주세요');return;}
   _asResult=null;
   _asIgnored={};
-  /* ★ S.tasks 업체 → AS_SETTINGS 초기값 동기화 */
+  /* ★ S.tasks 업체 → AS_SETTINGS 초기값 동기화 + 자동선택 */
   var asSettings = asGetSettings();
   (S.tasks||[]).forEach(function(t){
     if(!t.id) return;
     var ctors = (t.contractors||[]).filter(Boolean);
     if(!asSettings[t.id]) asSettings[t.id] = {};
-    /* AS 선택값이 없을 때만 task.contractors로 채움 */
-    if(!asSettings[t.id].contractors || !asSettings[t.id].contractors.length){
-      if(ctors.length) asSettings[t.id].contractors = ctors.slice();
+    /* 업체 1개 → 무조건 자동선택 */
+    if(ctors.length === 1){
+      asSettings[t.id].contractors = [ctors[0]];
+    } else if(ctors.length > 1){
+      /* 2개 이상 → 우선순위 1순위를 항상 자동선택 */
+      var sorted = cpSorted(t.id, ctors);
+      asSettings[t.id].contractors = [sorted[0]];
+    } else {
+      /* 업체 없음: 기존 선택 유지 */
     }
     /* asOn: 항상 차트 task.on 기준으로 초기화 (캐시 무시) */
     asSettings[t.id].asOn = !!t.on;
@@ -6712,23 +6794,44 @@ function asShowStep1(){
 
     h+='<div class="as-trade-body">';
 
-    /* ① 업체 선택 — 이 공종 등록 업체만 */
+    /* ① 업체 선택 — 우선순위 포함 */
     h+='<div class="as-section"><div class="as-section-lbl">담당 업체</div>';
-    h+='<div class="as-ctor-chips">';
     var _masterTask=(S.tasks||[]).find(function(x){return x.id===t.id;});
     var masterCtors=(_masterTask&&_masterTask.contractors||[]).filter(Boolean);
     if(masterCtors.length){
-      masterCtors.forEach(function(cn){
+      var sortedCtors=cpSorted(t.id, masterCtors);
+      h+='<div class="as-ctor-priority-list">';
+      sortedCtors.forEach(function(cn, idx){
         var on=selCtors.indexOf(cn)>=0;
         var safe=cn.replace(/\\/g,'\\\\').replace(/'/g,'&#39;');
         var avail=asCtorAvailLabel(cn,t.id);
         var badge='<span class="as-avail-badge '+avail+'">'+(avail==='busy'?'⚠ 겹침':'✓ 가능')+'</span>';
-        h+='<div class="as-ctor-chip'+(on?' on':'')+(avail==='ok'?' avail':'')+'" onclick="asToggleCtor('+t.id+',this,\''+safe+'\')" data-name="'+esc(cn)+'">'+esc(cn)+badge+'</div>';
+        var isFirst=(idx===0);
+        var isLast=(idx===sortedCtors.length-1);
+        var priorityBadge=sortedCtors.length>1
+          ?'<span class="as-priority-badge">'+(idx+1)+'순위</span>'
+          :'';
+        var moveUp=(!isFirst&&sortedCtors.length>1)
+          ?'<button class="as-priority-btn" onclick="event.stopPropagation();cpMove('+t.id+',\''+safe+'\',-1)" title="우선순위 올리기">▲</button>'
+          :'<span class="as-priority-btn-ph"></span>';
+        var moveDown=(!isLast&&sortedCtors.length>1)
+          ?'<button class="as-priority-btn" onclick="event.stopPropagation();cpMove('+t.id+',\''+safe+'\',1)" title="우선순위 내리기">▼</button>'
+          :'<span class="as-priority-btn-ph"></span>';
+        h+='<div class="as-ctor-priority-row'+(on?' on':'')+'">'
+          +'<div class="as-ctor-priority-left">'
+          +moveUp+moveDown
+          +'</div>'
+          +'<div class="as-ctor-chip'+(on?' on':'')+(avail==='ok'?' avail':'')+'" onclick="asToggleCtor('+t.id+',this,\''+safe+'\')" data-name="'+esc(cn)+'">'
+          +priorityBadge+esc(cn)+badge
+          +'</div>'
+          +(isFirst&&sortedCtors.length>1?'<span class="as-priority-auto-label">자동선택</span>':'')
+          +'</div>';
       });
+      h+='</div>';
     } else {
       h+='<span style="font-size:11px;color:var(--mu2);line-height:28px">편집탭에서 업체를 먼저 등록하세요</span>';
     }
-    h+='</div></div>';
+    h+='</div>';
 
     /* ② 공사일수 스테퍼 */
     h+='<div class="as-section"><div class="as-section-lbl">최소 공사일수</div>';
