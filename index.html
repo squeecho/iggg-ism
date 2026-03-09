@@ -5923,7 +5923,21 @@ function igAllCtorNames(tid) {
   } catch(e) {}
   /* ④ 이번 모달 세션에서 새로 입력된 업체도 포함 */
   (window._igNewCtors||[]).forEach(function(c){ if(c) names[c]=true; });
-  return Object.keys(names).sort();
+
+  /* ⑤ 편집탭 우선순위 순서로 정렬 (미등록 업체는 뒤에 알파벳순) */
+  var allNames = Object.keys(names);
+  try {
+    var prio = (cpGetPriority()[tid] || []).filter(function(c){ return c && c.trim(); });
+    var prioSet = {};
+    prio.forEach(function(c, i){ prioSet[c] = i; });
+    allNames.sort(function(a, b){
+      var ai = (prioSet[a] !== undefined) ? prioSet[a] : 9999;
+      var bi = (prioSet[b] !== undefined) ? prioSet[b] : 9999;
+      if (ai !== bi) return ai - bi;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+  } catch(e) { allNames.sort(); }
+  return allNames;
 }
 
 /* 구 함수 호환 유지 (igShowCtorInput, igRemoveCtor 등은 새 모달로 대체됨) */
