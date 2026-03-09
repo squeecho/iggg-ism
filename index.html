@@ -227,10 +227,18 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ctor-mgr-trade{font-size:12px;font-weight:900;background:var(--hd);color:var(--ht);border-radius:7px;padding:3px 10px;letter-spacing:-.3px;}
 .ctor-mgr-trade.off{background:var(--al);color:var(--mu2);}
 .ctor-mgr-status{font-size:10px;font-weight:700;color:var(--mu2);background:var(--al);border-radius:5px;padding:2px 7px;}
-.ctor-mgr-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;}
-.ctor-mgr-chip{display:inline-flex;align-items:center;gap:4px;padding:5px 8px 5px 11px;border-radius:20px;background:#f0fdf4;border:1.5px solid #86efac;color:#15803d;font-size:12px;font-weight:700;line-height:1;}
-.ctor-mgr-chip-del{background:none;border:none;color:#86efac;font-size:14px;font-weight:900;cursor:pointer;padding:0;line-height:1;flex-shrink:0;transition:color .12s;}
-.ctor-mgr-chip-del:hover{color:#dc2626;}
+.ctor-mgr-chips{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;}
+.ctor-mgr-chip{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:var(--sf);border:1.5px solid var(--bd);transition:box-shadow .15s,border-color .15s;}
+.ctor-mgr-chip.is-first{border-color:#86efac;background:#f0fdf4;}
+.ctor-mgr-chip.drag-over{border-color:#6366f1;background:#eef2ff;box-shadow:0 0 0 2px #a5b4fc;}
+.ctor-mgr-chip.dragging{opacity:.4;}
+.ctor-mgr-drag-handle{cursor:grab;color:var(--mu2);font-size:15px;flex-shrink:0;user-select:none;padding:0 2px;line-height:1;}
+.ctor-mgr-drag-handle:active{cursor:grabbing;}
+.ctor-mgr-rank{font-size:10px;font-weight:800;flex-shrink:0;min-width:28px;}
+.ctor-mgr-name{flex:1;font-size:13px;font-weight:600;color:var(--tx);}
+.ctor-mgr-chip.is-first .ctor-mgr-name{color:#15803d;}
+.ctor-mgr-chip-del{background:none;border:none;color:var(--mu2);font-size:16px;font-weight:400;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;transition:color .12s;opacity:.5;}
+.ctor-mgr-chip-del:hover{color:#dc2626;opacity:1;}
 .ctor-mgr-empty{font-size:11px;color:var(--mu2);font-style:italic;padding:4px 0 8px;}
 .ctor-mgr-add-row{display:flex;gap:6px;align-items:center;}
 .ctor-mgr-fi{flex:1;min-width:0;border:1.5px solid var(--bd);border-radius:9px;padding:7px 11px;font-size:13px;font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);outline:none;transition:border-color .14s;}
@@ -965,8 +973,11 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 
 /* 업체 관리 */
 .ctor-mgr-item{background:var(--bg);border-color:var(--bd);}
-.ctor-mgr-chip{background:#052e16;border-color:#166534;color:#4ade80;}
-.ctor-mgr-chip-del{color:#166534;}
+.ctor-mgr-chip{background:var(--sf);border-color:var(--bd);}
+.ctor-mgr-chip.is-first{background:#052e16;border-color:#166534;}
+.ctor-mgr-chip.drag-over{border-color:#818cf8;background:#1e1b4b;}
+.ctor-mgr-chip.is-first .ctor-mgr-name{color:#4ade80;}
+.ctor-mgr-chip-del{color:var(--mu2);}
 .ctor-mgr-fi{background:var(--sf);color:var(--tx);}
 .ctor-mgr-fi:focus{background:var(--bg);}
 .ctor-mgr-btn{background:var(--hd);color:var(--ht);}
@@ -2874,22 +2885,23 @@ function rCtorMgr(){
       var sorted=cpSorted(tid,ctors);
       sorted.forEach(function(cn,idx){
         var safe=cn.replace(/\\/g,'\\\\').replace(/'/g,'&#39;');
-        var isFirst=idx===0,isLast=idx===sorted.length-1;
-        var chipBorderStyle=isFirst&&sorted.length>1?'border-color:#22c55e;background:#f0fdf4;':'';
-        var rankColor=isFirst?'#15803d':'#6b7280';
-        var rankLabel=sorted.length>1?'<span style="font-size:10px;font-weight:700;color:'+rankColor+';margin-right:5px;white-space:nowrap;">'+(idx+1)+'순위</span>':'';
-        /* ▲▼ 버튼 — 크게, 터치 영역 확보 */
-        var _upSt='min-width:28px;min-height:28px;border:1px solid #d1d5db;border-radius:6px;background:'+(isFirst?'#f3f4f6':'#fff')+';font-size:13px;cursor:'+(isFirst?'default':'pointer')+';padding:0 6px;color:'+(isFirst?'#d1d5db':'#374151')+';line-height:1;margin-right:3px;';
-        var _dnSt='min-width:28px;min-height:28px;border:1px solid #d1d5db;border-radius:6px;background:'+(isLast?'#f3f4f6':'#fff')+';font-size:13px;cursor:'+(isLast?'default':'pointer')+';padding:0 6px;color:'+(isLast?'#d1d5db':'#374151')+';line-height:1;';
-        var upBtn=sorted.length>1?'<button style="'+_upSt+'" '+(isFirst?'disabled':'')+' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',-1)" title="위로">▲</button>':'';
-        var dnBtn=sorted.length>1?'<button style="'+_dnSt+'" '+(isLast?'disabled':'')+' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',1)" title="아래로">▼</button>':'';
-        /* 삭제버튼 — 오른쪽 끝에 확실히 분리 (margin-left:auto) */
-        var delBtn='<button class="ctor-mgr-chip-del" style="margin-left:auto;min-width:28px;min-height:28px;" onclick="ctorMgrDelete('+tid+',\''+safe+'\')" title="삭제">×</button>';
-        h+='<div class="ctor-mgr-chip" style="'+chipBorderStyle+'display:flex;align-items:center;gap:2px;padding:6px 8px;">'
-          +rankLabel
-          +'<span style="flex:1;font-size:13px;font-weight:500;">'+esc(cn)+'</span>'
-          +upBtn+dnBtn
-          +delBtn
+        var isFirst=idx===0;
+        var multi=sorted.length>1;
+        var rankColor=isFirst&&multi?'color:#15803d;':'color:var(--mu2);';
+        var rankTxt=multi?(idx+1)+'순위':'';
+        h+='<div class="ctor-mgr-chip'+(isFirst&&multi?' is-first':'')+'"'
+          +' draggable="true"'
+          +' data-tid="'+tid+'" data-name="'+safe+'"'
+          +' ondragstart="_cmDragStart(event)"'
+          +' ondragover="_cmDragOver(event)"'
+          +' ondragleave="_cmDragLeave(event)"'
+          +' ondrop="_cmDrop(event,'+tid+')"'
+          +' ondragend="_cmDragEnd(event)"'
+          +'>'
+          +'<span class="ctor-mgr-drag-handle" title="드래그로 순서 변경">⠿</span>'
+          +'<span class="ctor-mgr-rank" style="'+rankColor+'">'+rankTxt+'</span>'
+          +'<span class="ctor-mgr-name">'+esc(cn)+'</span>'
+          +'<button class="ctor-mgr-chip-del" onclick="ctorMgrDelete('+tid+',\''+safe+'\')" title="삭제">×</button>'
           +'</div>';
       });
     } else {
@@ -2930,6 +2942,53 @@ function ctorMgrAdd(tid){
   /* 입력란 포커스 복구 */
   setTimeout(function(){var f2=document.getElementById('ctorFi_'+tid);if(f2)f2.focus();},50);
   toast('"'+val+'" 추가됨');
+}
+
+/* ── 공종별 업체 드래그 정렬 ── */
+var _cmDragging = null; /* {tid, name} */
+function _cmDragStart(e){
+  var el=e.currentTarget;
+  _cmDragging={tid:+el.dataset.tid, name:el.dataset.name};
+  el.classList.add('dragging');
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain', el.dataset.name);
+}
+function _cmDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  var el=e.currentTarget;
+  if(_cmDragging && el.dataset.name!==_cmDragging.name) el.classList.add('drag-over');
+}
+function _cmDragLeave(e){ e.currentTarget.classList.remove('drag-over'); }
+function _cmDragEnd(e){ 
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.ctor-mgr-chip').forEach(function(c){ c.classList.remove('drag-over'); });
+  _cmDragging=null;
+}
+function _cmDrop(e, tid){
+  e.preventDefault();
+  var target=e.currentTarget;
+  target.classList.remove('drag-over');
+  if(!_cmDragging || _cmDragging.tid!==tid) return;
+  var fromName=_cmDragging.name;
+  var toName=target.dataset.name;
+  if(fromName===toName) return;
+  /* 현재 정렬된 배열에서 swap */
+  var task=(S.tasks||[]).find(function(t){return t.id===tid;});
+  var ctors=task?(task.contractors||[]).filter(Boolean):[];
+  var gc=getGlobalCtors();
+  (gc[tid]||[]).forEach(function(c){ if(c&&ctors.indexOf(c)<0) ctors.push(c); });
+  var sorted=cpSorted(tid,ctors);
+  var fi=sorted.indexOf(fromName), ti=sorted.indexOf(toName);
+  if(fi<0||ti<0) return;
+  sorted.splice(fi,1); sorted.splice(ti,0,fromName);
+  var p=cpGetPriority(); p[tid]=sorted; cpSavePriority(p);
+  /* 자동배치 1순위도 갱신 */
+  var settings=asGetSettings();
+  if(!settings[tid])settings[tid]={};
+  settings[tid].contractors=[sorted[0]];
+  asSaveSettings(settings);
+  rCtorMgr();
 }
 
 /* 편집탭 공종별 담당 업체 우선순위 이동 */
