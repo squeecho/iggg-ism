@@ -2875,15 +2875,21 @@ function rCtorMgr(){
       sorted.forEach(function(cn,idx){
         var safe=cn.replace(/\\/g,'\\\\').replace(/'/g,'&#39;');
         var isFirst=idx===0,isLast=idx===sorted.length-1;
-        var rankBadge=sorted.length>1?'<span style="font-size:10px;color:#15803d;font-weight:800;margin-right:4px;">'+(idx+1)+'순위</span>':'';
-        var _upSt='border:none;background:none;font-size:11px;cursor:pointer;padding:0 2px;color:var(--mu);line-height:1;'+(isFirst?'opacity:.25;':'');
-        var _dnSt='border:none;background:none;font-size:11px;cursor:pointer;padding:0 2px;color:var(--mu);line-height:1;'+(isLast?'opacity:.25;':'');
-        var upBtn=sorted.length>1?'<button style="'+_upSt+'" '+(isFirst?'disabled':'')+' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',-1)">▲</button>':'';
-        var dnBtn=sorted.length>1?'<button style="'+_dnSt+'" '+(isLast?'disabled':'')+' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',1)">▼</button>':'';
-        h+='<div class="ctor-mgr-chip" style="'+(isFirst&&sorted.length>1?'border-color:#22c55e;background:#f0fdf4;':'')+'">'
-          +rankBadge+esc(cn)
+        var chipBorderStyle=isFirst&&sorted.length>1?'border-color:#22c55e;background:#f0fdf4;':'';
+        var rankColor=isFirst?'#15803d':'#6b7280';
+        var rankLabel=sorted.length>1?'<span style="font-size:10px;font-weight:700;color:'+rankColor+';margin-right:5px;white-space:nowrap;">'+(idx+1)+'순위</span>':'';
+        /* ▲▼ 버튼 — 크게, 터치 영역 확보 */
+        var _upSt='min-width:28px;min-height:28px;border:1px solid #d1d5db;border-radius:6px;background:'+(isFirst?'#f3f4f6':'#fff')+';font-size:13px;cursor:'+(isFirst?'default':'pointer')+';padding:0 6px;color:'+(isFirst?'#d1d5db':'#374151')+';line-height:1;margin-right:3px;';
+        var _dnSt='min-width:28px;min-height:28px;border:1px solid #d1d5db;border-radius:6px;background:'+(isLast?'#f3f4f6':'#fff')+';font-size:13px;cursor:'+(isLast?'default':'pointer')+';padding:0 6px;color:'+(isLast?'#d1d5db':'#374151')+';line-height:1;';
+        var upBtn=sorted.length>1?'<button style="'+_upSt+'" '+(isFirst?'disabled':'')+' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',-1)" title="위로">▲</button>':'';
+        var dnBtn=sorted.length>1?'<button style="'+_dnSt+'" '+(isLast?'disabled':'')+' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',1)" title="아래로">▼</button>':'';
+        /* 삭제버튼 — 오른쪽 끝에 확실히 분리 (margin-left:auto) */
+        var delBtn='<button class="ctor-mgr-chip-del" style="margin-left:auto;min-width:28px;min-height:28px;" onclick="ctorMgrDelete('+tid+',\''+safe+'\')" title="삭제">×</button>';
+        h+='<div class="ctor-mgr-chip" style="'+chipBorderStyle+'display:flex;align-items:center;gap:2px;padding:6px 8px;">'
+          +rankLabel
+          +'<span style="flex:1;font-size:13px;font-weight:500;">'+esc(cn)+'</span>'
           +upBtn+dnBtn
-          +'<button class="ctor-mgr-chip-del" onclick="ctorMgrDelete('+tid+',\''+safe+'\')" title="삭제">×</button>'
+          +delBtn
           +'</div>';
       });
     } else {
@@ -2930,6 +2936,9 @@ function ctorMgrAdd(tid){
 function ctorMgrPrioMove(tid, name, dir){
   var task=(S.tasks||[]).find(function(t){return t.id===tid;});
   var ctors=task?(task.contractors||[]).filter(Boolean):[];
+  /* rCtorMgr와 동일하게 globalCtors 합산 */
+  var _pgc=getGlobalCtors();
+  (_pgc[tid]||[]).forEach(function(c){ if(c&&ctors.indexOf(c)<0) ctors.push(c); });
   var sorted=cpSorted(tid,ctors);
   var idx=sorted.indexOf(name);
   var newIdx=idx+dir;
