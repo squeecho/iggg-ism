@@ -304,7 +304,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-cal-bars{position:absolute;top:22px;left:0;right:0;display:flex;flex-direction:column;gap:2px;width:100%;padding:0;z-index:2;pointer-events:none;}
 .ig-cal-bar{pointer-events:auto;}
 /* ★ width 버그 수정: rng-s/e/se 마진만큼 width를 calc로 보정 */
-.ig-cal-bar{height:16px;border-radius:2px;width:100%;display:flex;align-items:center;overflow:hidden;box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.18);}
+.ig-cal-bar{height:16px;border-radius:2px;width:100%;display:flex;align-items:center;overflow:hidden;}
 .ig-cal-bar-label{font-size:8px;color:rgba(255,255,255,.98);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;flex:1;min-width:0;pointer-events:none;letter-spacing:-.2px;text-shadow:0 1px 2px rgba(0,0,0,.25);}
 .ig-cal-bar.rng-s{border-radius:3px 0 0 3px;margin-left:2px;width:calc(100% - 2px);}
 .ig-cal-bar.rng-e{border-radius:0 3px 3px 0;margin-right:2px;width:calc(100% - 2px);}
@@ -313,7 +313,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ig-cal-next-month{border-top:1px dashed var(--bd);}
 
 /* 외부일정 바 */
-.ig-cal-bar.ext-bar{background:repeating-linear-gradient(45deg,#94a3b8 0px,#94a3b8 3px,#e2e8f0 3px,#e2e8f0 7px)!important;box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.22);}
+.ig-cal-bar.ext-bar{background:repeating-linear-gradient(45deg,#94a3b8 0px,#94a3b8 3px,#e2e8f0 3px,#e2e8f0 7px)!important;}
 .ig-cal-bar-label.ext-label{color:#1e293b;text-shadow:none;font-weight:700;}
 /* 외부일정 모달 */
 .ext-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;}
@@ -6351,7 +6351,7 @@ async function doIGCtorImg(btn, tradeName, ctorName) {
           /* 바 flex 유지 — display:block 강제 금지 */
           '.ig-cal-day{position:relative!important;overflow:hidden!important;}',
           '.ig-cal-bars{position:absolute!important;top:22px!important;left:0!important;right:0!important;}',
-          '.ig-cal-bar{display:flex!important;align-items:center!important;}'
+          '.ig-cal-bar{display:flex!important;align-items:center!important;box-shadow:none!important;}'
         ].join('');
         doc.head.appendChild(s);
       }
