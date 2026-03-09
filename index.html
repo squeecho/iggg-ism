@@ -2887,9 +2887,9 @@ function rCtorMgr(){
         var safe=cn.replace(/\\/g,'\\\\').replace(/'/g,'&#39;');
         var isFirst=idx===0;
         var multi=sorted.length>1;
-        var rankColor=isFirst&&multi?'color:#15803d;':'color:var(--mu2);';
+        var rankColor=isFirst?'color:#15803d;':'color:var(--mu2);';
         var rankTxt=multi?(idx+1)+'순위':'';
-        h+='<div class="ctor-mgr-chip'+(isFirst&&multi?' is-first':'')+'"'
+        h+='<div class="ctor-mgr-chip'+(isFirst?' is-first':'')+'"'
           +' draggable="true"'
           +' data-tid="'+tid+'" data-name="'+safe+'"'
           +' ondragstart="_cmDragStart(event)"'
