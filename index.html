@@ -725,6 +725,28 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .as-priority-badge{font-size:9px;font-weight:800;background:var(--al);color:#2563eb;border-radius:8px;padding:1px 5px;flex-shrink:0;margin-right:2px;}
 .as-ctor-priority-row .as-ctor-chip{flex:1;}
 .as-priority-auto-label{font-size:10px;color:#15803d;font-weight:700;flex-shrink:0;white-space:nowrap;}
+/* 통합탭 공종별 우선순위 모달 */
+.ig-prio-modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:950;display:flex;align-items:center;justify-content:center;}
+.ig-prio-modal-box{background:var(--sf);border-radius:18px;width:min(92vw,380px);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.18);}
+.ig-prio-modal-hd{display:flex;justify-content:space-between;align-items:flex-start;padding:16px 18px 10px;}
+.ig-prio-modal-title{font-size:15px;font-weight:800;color:var(--tx);}
+.ig-prio-modal-sub{font-size:11px;color:var(--mu);margin-top:2px;}
+.ig-prio-modal-close{border:none;background:none;font-size:20px;cursor:pointer;color:var(--mu);line-height:1;padding:4px;}
+.ig-prio-modal-body{padding:10px 16px 16px;overflow-y:auto;}
+.ig-prio-modal-note{font-size:11px;color:var(--mu);background:var(--al);border-radius:8px;padding:8px 10px;margin-bottom:12px;line-height:1.5;}
+.ig-prio-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;border:1.5px solid var(--bd);margin-bottom:7px;background:var(--sf);transition:background .1s;}
+.ig-prio-row.first{border-color:#22c55e;background:#f0fdf4;}
+.ig-prio-rank{width:22px;height:22px;border-radius:50%;background:#e2e8f0;color:#475569;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.ig-prio-row.first .ig-prio-rank{background:#22c55e;color:#fff;}
+.ig-prio-nm{flex:1;font-size:13px;font-weight:700;color:var(--tx);}
+.ig-prio-row.first .ig-prio-nm::after{content:' · 자동선택';font-size:10px;font-weight:600;color:#15803d;}
+.ig-prio-btns{display:flex;flex-direction:column;gap:3px;}
+.ig-prio-btn{border:1.5px solid var(--bd);background:none;border-radius:5px;width:26px;height:23px;font-size:10px;cursor:pointer;color:var(--mu);display:flex;align-items:center;justify-content:center;transition:background .1s;}
+.ig-prio-btn:hover{background:var(--bd);color:var(--tx);}
+.ig-prio-btn:disabled{opacity:.25;cursor:default;}
+/* 공종 헤더에 우선순위 버튼 */
+.ig-prio-open-btn{border:none;background:none;font-size:11px;color:var(--mu);cursor:pointer;padding:2px 7px;border-radius:6px;border:1px solid var(--bd);font-weight:600;flex-shrink:0;margin-left:4px;white-space:nowrap;}
+.ig-prio-open-btn:hover{background:var(--al);color:#2563eb;}
 .as-ctor-chip:hover{border-color:var(--barh);}
 .as-ctor-chip.on{background:#1e293b;border-color:#1e293b;color:#fff;}
 .as-ctor-chip-del{font-size:14px;line-height:1;opacity:.5;margin-left:1px;flex-shrink:0;}
@@ -5405,6 +5427,22 @@ function rIntegrated() {
     var tname = IG_TASK_NAMES[tid] || ('공종 '+tid);
     var isCollapsed = !!collapsed[tid];
 
+    /* 공종의 전체 등록 업체 목록 (우선순위 버튼 표시용) */
+    var _allTradeCtors = [];
+    monthSiteList.forEach(function(site){
+      var task = site.tasks.find(function(t){ return t.id===tid; });
+      if(!task) return;
+      var ctors = (task.contractors||[]).filter(function(c){ return c&&c.trim(); });
+      if(ctors[0] && _allTradeCtors.indexOf(ctors[0])<0) _allTradeCtors.push(ctors[0]);
+    });
+    /* 글로벌 스토어에서도 수집 */
+    (getGlobalCtors()[tid]||[]).filter(Boolean).forEach(function(c){
+      if(_allTradeCtors.indexOf(c)<0) _allTradeCtors.push(c);
+    });
+    var _prioBtn = (_allTradeCtors.length > 1)
+      ? '<button class="ig-prio-open-btn no-print" onclick="event.stopPropagation();igOpenPrioModal('+tid+')">⇅ 우선순위</button>'
+      : '';
+
     html += '<div class="ig-trade'+(isCollapsed?' collapsed':'')+'" id="ig-trade-'+tid+'">';
     /* 겹침 여부: 같은 업체 내에서만 체크 (업체가 달라도 날짜 겹침은 정상) */
     var _hasOverlap = groupNames.some(function(cn){ return igDetectOverlaps(groups[cn]).length > 0; })
@@ -5413,6 +5451,7 @@ function rIntegrated() {
     html += '<div class="ig-trade-hd" onclick="igToggleTrade('+tid+')">'
           + '<span class="ig-trade-nm">' + tname + '</span>'
           + (_hasOverlap ? '<span class="ig-overlap-badge no-print">⚠️ 일정 겹침</span>' : '')
+          + _prioBtn
           + '<span class="ig-trade-chevron">▾</span>'
           + '</div>';
     html += '<div class="ig-trade-body">';
@@ -5684,6 +5723,64 @@ function igSaveCtorModal() {
   toast('저장 완료');
   igCloseCtorModal();
   rIntegrated();
+}
+
+/* 통합탭 공종별 우선순위 설정 모달 */
+var _igPrioTid = 0;
+function igOpenPrioModal(tid) {
+  _igPrioTid = tid;
+  var tname = IG_TASK_NAMES[tid] || ('공종 '+tid);
+  document.getElementById('igPrioModalTitle').textContent = '⇅ 업체 우선순위 설정';
+  document.getElementById('igPrioModalSub').textContent = tname;
+  igRenderPrioBody();
+  document.getElementById('igPrioModalOv').style.display = 'flex';
+}
+function igClosePrioModal() {
+  document.getElementById('igPrioModalOv').style.display = 'none';
+}
+function igRenderPrioBody() {
+  var tid = _igPrioTid;
+  /* 전체 현장에서 이 공종의 주 배정 업체 + 글로벌 스토어 수집 */
+  var ctors = [];
+  (_cloudSites||[]).forEach(function(site){
+    var task = (site.tasks||[]).find(function(t){ return t.id===tid; });
+    if(!task) return;
+    var valid = (task.contractors||[]).filter(function(c){ return c&&c.trim(); });
+    if(valid[0] && ctors.indexOf(valid[0])<0) ctors.push(valid[0]);
+  });
+  (getGlobalCtors()[tid]||[]).filter(Boolean).forEach(function(c){
+    if(ctors.indexOf(c)<0) ctors.push(c);
+  });
+  var sorted = cpSorted(tid, ctors);
+  var h = '<div class="ig-prio-modal-note">1순위 업체가 자동배치 시 우선 선택됩니다.<br>▲▼ 버튼으로 순서를 변경하세요.</div>';
+  sorted.forEach(function(cn, idx){
+    var safe = cn.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+    var listAttr = sorted.map(function(c){ return c.replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }).join('|');
+    var isFirst = idx===0, isLast = idx===sorted.length-1;
+    h += '<div class="ig-prio-row'+(isFirst?' first':'')+'" id="igPrioRow_'+idx+'">'
+      + '<div class="ig-prio-rank">'+(idx+1)+'</div>'
+      + '<div class="ig-prio-nm">'+esc(cn)+'</div>'
+      + '<div class="ig-prio-btns">'
+      + '<button class="ig-prio-btn" data-tid="'+tid+'" data-nm="'+safe+'" data-list="'+listAttr+'" data-dir="-1" onclick="igPrioMove(+this.dataset.tid,this.dataset.nm,this.dataset.list,+this.dataset.dir)" '+(isFirst?'disabled':'')+'>▲</button>'
+      + '<button class="ig-prio-btn" data-tid="'+tid+'" data-nm="'+safe+'" data-list="'+listAttr+'" data-dir="1" onclick="igPrioMove(+this.dataset.tid,this.dataset.nm,this.dataset.list,+this.dataset.dir)" '+(isLast?'disabled':'')+'>▼</button>'
+      + '</div>'
+      + '</div>';
+  });
+  document.getElementById('igPrioModalBody').innerHTML = h;
+}
+function igPrioMove(tid, name, listStr, dir) {
+  var sorted = listStr.split('|');
+  var idx = sorted.indexOf(name);
+  var newIdx = idx + dir;
+  if(newIdx < 0 || newIdx >= sorted.length) return;
+  sorted.splice(idx, 1); sorted.splice(newIdx, 0, name);
+  var p = cpGetPriority(); p[tid] = sorted; cpSavePriority(p);
+  /* AS_SETTINGS 1순위 자동선택 업데이트 */
+  var settings = asGetSettings();
+  if(!settings[tid]) settings[tid] = {};
+  settings[tid].contractors = [sorted[0]];
+  asSaveSettings(settings);
+  igRenderPrioBody();
 }
 
 function igCloseCtorModal() {
@@ -7881,6 +7978,19 @@ function asApplyResult(){
 </div>
 
 <!-- 업체 배정 모달 -->
+<div id="igPrioModalOv" class="ig-prio-modal-ov" style="display:none" onclick="if(event.target===this)igClosePrioModal()">
+  <div class="ig-prio-modal-box">
+    <div class="ig-prio-modal-hd">
+      <div>
+        <div class="ig-prio-modal-title" id="igPrioModalTitle">⇅ 업체 우선순위 설정</div>
+        <div class="ig-prio-modal-sub" id="igPrioModalSub"></div>
+      </div>
+      <button class="ig-prio-modal-close" onclick="igClosePrioModal()">&#215;</button>
+    </div>
+    <div class="ig-prio-modal-body" id="igPrioModalBody"></div>
+  </div>
+</div>
+
 <div id="igCtorModalOv" class="ig-ctor-modal-ov" style="display:none" onclick="if(event.target===this)igCloseCtorModal()">
   <div class="ig-ctor-modal-box">
     <div class="ig-ctor-modal-hd">
