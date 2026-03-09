@@ -2860,9 +2860,6 @@ function rCtorMgr(){
     var task=(S.tasks||[]).find(function(t){return t.id===tid;});
     if(!task)return;
     var ctors=(task.contractors||[]).filter(Boolean);
-    /* globalCtors에 있지만 이 task에 없는 업체 → 빠른추가 제안용 */
-    var gc=getGlobalCtors();
-    var gcList=(gc[tid]||[]).filter(function(c){ return c&&ctors.indexOf(c)<0; });
     var tname=NAMES[tid]||('공종'+tid);
     h+='<div class="ctor-mgr-item'+(task.on?'':' off')+'">';
     h+='<div class="ctor-mgr-hd">';
@@ -2871,9 +2868,19 @@ function rCtorMgr(){
     h+='</div>';
     h+='<div class="ctor-mgr-chips">';
     if(ctors.length){
-      ctors.forEach(function(cn){
+      /* 우선순위 적용해서 표시 */
+      var sorted=cpSorted(tid,ctors);
+      sorted.forEach(function(cn,idx){
         var safe=cn.replace(/\\/g,'\\\\').replace(/'/g,'&#39;');
-        h+='<div class="ctor-mgr-chip">'+esc(cn)
+        var isFirst=idx===0,isLast=idx===sorted.length-1;
+        var rankBadge=sorted.length>1?'<span style="font-size:10px;color:#15803d;font-weight:800;margin-right:4px;">'+(idx+1)+'순위</span>':'';
+        var upBtn=sorted.length>1?'<button style="border:none;background:none;font-size:11px;cursor:pointer;padding:0 2px;color:var(--mu);line-height:1;" '+(isFirst?'disabled style="opacity:.25;"':'')
+          +' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',-1)">▲</button>':'';
+        var dnBtn=sorted.length>1?'<button style="border:none;background:none;font-size:11px;cursor:pointer;padding:0 2px;color:var(--mu);line-height:1;" '+(isLast?'disabled style="opacity:.25;"':'')
+          +' onclick="ctorMgrPrioMove('+tid+',\''+safe+'\',1)">▼</button>':'';
+        h+='<div class="ctor-mgr-chip" style="'+(isFirst&&sorted.length>1?'border-color:#22c55e;background:#f0fdf4;':'')+'">'
+          +rankBadge+esc(cn)
+          +upBtn+dnBtn
           +'<button class="ctor-mgr-chip-del" onclick="ctorMgrDelete('+tid+',\''+safe+'\')" title="삭제">×</button>'
           +'</div>';
       });
@@ -2881,16 +2888,6 @@ function rCtorMgr(){
       h+='<span class="ctor-mgr-empty">업체 미배정</span>';
     }
     h+='</div>';
-    /* 글로벌 스토어에 있는 업체 빠른추가 버튼 */
-    if(gcList.length && !IS_RO){
-      h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">';
-      gcList.forEach(function(cn){
-        var safe=cn.replace(/\\/g,'\\\\').replace(/'/g,'&#39;');
-        h+='<button class="ctor-mgr-btn" style="background:transparent;border:1.5px dashed var(--bd);color:var(--mu);font-size:11px;padding:4px 10px;" '
-          +'onclick="ctorMgrAddByName('+tid+',\''+safe+'\')">+ '+esc(cn)+'</button>';
-      });
-      h+='</div>';
-    }
     h+='<div class="ctor-mgr-add-row">'
       +'<input class="ctor-mgr-fi" id="ctorFi_'+tid+'" placeholder="업체명 입력 후 Enter"'
       +' onkeydown="if(event.key===\'Enter\'){event.preventDefault();ctorMgrAdd('+tid+');}">'
@@ -2927,19 +2924,22 @@ function ctorMgrAdd(tid){
   toast('"'+val+'" 추가됨');
 }
 
-/* 글로벌 스토어 업체를 이 현장 task에 빠르게 배정 */
-function ctorMgrAddByName(tid, name){
-  if(IS_RO){toast('읽기 전용 현장은 수정할 수 없어요');return;}
+/* 편집탭 공종별 담당 업체 우선순위 이동 */
+function ctorMgrPrioMove(tid, name, dir){
   var task=(S.tasks||[]).find(function(t){return t.id===tid;});
-  if(!task)return;
-  if(!task.contractors)task.contractors=[];
-  if(task.contractors.indexOf(name)>=0){toast('이미 추가된 업체예요');return;}
-  pushUndo();
-  task.contractors.push(name);
-  _ctorMgrSyncToAS(tid,task.contractors);
-  autoSave();
+  var ctors=task?(task.contractors||[]).filter(Boolean):[];
+  var sorted=cpSorted(tid,ctors);
+  var idx=sorted.indexOf(name);
+  var newIdx=idx+dir;
+  if(newIdx<0||newIdx>=sorted.length)return;
+  sorted.splice(idx,1);sorted.splice(newIdx,0,name);
+  var p=cpGetPriority();p[tid]=sorted;cpSavePriority(p);
+  /* 자동배치 1순위 업체도 갱신 */
+  var settings=asGetSettings();
+  if(!settings[tid])settings[tid]={};
+  settings[tid].contractors=[sorted[0]];
+  asSaveSettings(settings);
   rCtorMgr();
-  toast('"'+name+'" 추가됨');
 }
 
 function ctorMgrDelete(tid,name){
@@ -5074,6 +5074,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
     /* 업체 목록 + 현장 칩 동시 로드 */
     _loadCtorsFromCloud().catch(function(){});
+    _loadPrioFromCloud().catch(function(){});
     loadCloudSites().then(rCloudChips);
   }, 400);
   document.addEventListener('click', function(e){
@@ -5467,9 +5468,7 @@ function rIntegrated() {
     (getGlobalCtors()[tid]||[]).filter(Boolean).forEach(function(c){
       if(_allTradeCtors.indexOf(c)<0) _allTradeCtors.push(c);
     });
-    var _prioBtn = (_allTradeCtors.length > 1)
-      ? '<button class="ig-prio-open-btn no-print" onclick="event.stopPropagation();igOpenPrioModal('+tid+')">⇅ 우선순위</button>'
-      : '';
+    var _prioBtn = ''; /* 우선순위는 편집탭에서 설정 */
 
     html += '<div class="ig-trade'+(isCollapsed?' collapsed':'')+'" id="ig-trade-'+tid+'">';
     /* 겹침 여부: 같은 업체 내에서만 체크 (업체가 달라도 날짜 겹침은 정상) */
@@ -5627,25 +5626,9 @@ var _igCtorEdit = {pn:'', tid:0, selected:[]};
 function igOpenCtorModal(pn, tid) {
   _igCtorEdit.pn = pn;
   _igCtorEdit.tid = tid;
-  /* 현재 배정 업체 탐색: cloudSites → recent 스냅 → S 순서로 폴백 */
-  var current = [];
-  var site = (_cloudSites||[]).find(function(s){ return s.pn===pn; });
+  var site = _cloudSites.find(function(s){ return s.pn === pn; });
   var task = site ? (site.tasks||[]).find(function(t){ return t.id===tid; }) : null;
-  if (task) current = (task.contractors||[]).filter(function(c){ return c&&c.trim(); });
-  if (!current.length) {
-    try {
-      var li = getRecent().find(function(x){ return x.pn===pn; });
-      if (li && li.snap) {
-        var lsite = JSON.parse(li.snap);
-        var lt = (lsite.tasks||[]).find(function(t){ return t.id===tid; });
-        if (lt) current = (lt.contractors||[]).filter(function(c){ return c&&c.trim(); });
-      }
-    } catch(e) {}
-  }
-  if (!current.length && typeof S !== 'undefined' && S && S.pn===pn) {
-    var st = (S.tasks||[]).find(function(t){ return t.id===tid; });
-    if (st) current = (st.contractors||[]).filter(function(c){ return c&&c.trim(); });
-  }
+  var current = task ? (task.contractors||[]).filter(function(c){ return c&&c.trim(); }) : [];
   _igCtorEdit.selected = current.slice();
 
   var tname = IG_TASK_NAMES[tid] || '공종 '+tid;
@@ -5748,50 +5731,22 @@ function igDeleteCtor(name) {
 function igSaveCtorModal() {
   var pn = _igCtorEdit.pn;
   var tid = _igCtorEdit.tid;
-  var newCtors = _igCtorEdit.selected.filter(function(c){ return c && c.trim(); });
-  window._igNewCtors = [];
-
-  /* ① cloudSites + Firebase 저장 */
-  var site = (_cloudSites||[]).find(function(s){ return s.pn===pn; });
+  var site = _cloudSites.find(function(s){ return s.pn === pn; });
   if (!site) { igCloseCtorModal(); return; }
-  var task = (site.tasks||[]).find(function(t){ return t.id===tid; });
+  var task = (site.tasks||[]).find(function(t){ return t.id === tid; });
   if (!task) { igCloseCtorModal(); return; }
   pushIgUndo();
-  task.contractors = newCtors;
-  saveToCloud(site);
-
-  /* ② globalCtors 갱신 — 다음에 모달 열었을 때 목록에 나타나게 */
-  var gc = getGlobalCtors();
-  if (!gc[tid]) gc[tid] = [];
-  newCtors.forEach(function(c){ if(gc[tid].indexOf(c)<0) gc[tid].push(c); });
-  setGlobalCtors(gc);
-
-  /* ③ 로컬 recent 스냅 갱신 */
-  try {
-    var arr = getRecent();
-    var ci = arr.findIndex(function(x){ return x.pn===pn; });
-    if (ci>=0 && arr[ci].snap) {
-      var lsite = JSON.parse(arr[ci].snap);
-      var lt = (lsite.tasks||[]).find(function(t){ return t.id===tid; });
-      if (lt) {
-        lt.contractors = newCtors;
-        arr[ci] = Object.assign({}, arr[ci], {snap: JSON.stringify(lsite)});
-        setRecent(arr);
-      }
-    }
-  } catch(e) {}
-
-  /* ④ 현재 편집 중인 현장(S)도 갱신 */
-  if (typeof S !== 'undefined' && S && S.pn===pn) {
-    var sTask = (S.tasks||[]).find(function(t){ return t.id===tid; });
-    if (sTask) sTask.contractors = newCtors;
-    /* AS_SETTINGS 동기화 */
+  task.contractors = _igCtorEdit.selected.filter(function(c){ return c && c.trim(); });
+  window._igNewCtors = []; /* 임시 목록 초기화 */
+  /* ★ AS_SETTINGS 업체 목록 동기화 (통합탭 → 자동배치) */
+  if(pn === S.pn){
     var asSettings = asGetSettings();
-    if (!asSettings[tid]) asSettings[tid] = {};
-    asSettings[tid].contractors = newCtors;
+    if(!asSettings[tid]) asSettings[tid] = {};
+    /* 현재 AS 선택 업체 중 유효한 것만 유지, 새 목록으로 교체 */
+    asSettings[tid].contractors = task.contractors.slice();
     asSaveSettings(asSettings);
   }
-
+  saveToCloud(site);
   toast('저장 완료');
   igCloseCtorModal();
   rIntegrated();
@@ -5862,39 +5817,15 @@ function igCloseCtorModal() {
 /* 공종별 업체명 목록 (tid 기준으로만 수집) */
 function igAllCtorNames(tid) {
   var names = {};
-  /* ① 글로벌 스토어 — 가장 완전한 소스 (편집탭 등록 + 통합탭 저장 전체 누적) */
-  var gc = getGlobalCtors();
-  (gc[tid]||[]).forEach(function(c){ if(c&&c.trim()) names[c.trim()]=true; });
-  /* ② Firebase 확정 현장 — 직접 저장된 데이터 */
-  (_cloudSites||[]).forEach(function(site) {
+  _cloudSites.forEach(function(site) {
     (site.tasks||[]).forEach(function(t) {
-      if (t.id !== tid) return;
+      if (t.id !== tid) return; /* ★ 공종 필터 */
       (t.contractors||[]).forEach(function(c) {
         if (c && c.trim()) names[c.trim()] = true;
       });
     });
   });
-  /* ③ 로컬 recent 스냅샷 — 미확정 현장 포함 */
-  try {
-    getRecent().forEach(function(item) {
-      if (!item.snap) return;
-      var site = JSON.parse(item.snap);
-      (site.tasks||[]).forEach(function(t) {
-        if (t.id !== tid) return;
-        (t.contractors||[]).forEach(function(c) {
-          if (c && c.trim()) names[c.trim()] = true;
-        });
-      });
-    });
-  } catch(e) {}
-  /* ④ 현재 편집 중인 현장(S) */
-  if (typeof S !== 'undefined' && S && S.tasks) {
-    (S.tasks||[]).forEach(function(t) {
-      if (t.id !== tid) return;
-      (t.contractors||[]).forEach(function(c) { if(c&&c.trim()) names[c.trim()]=true; });
-    });
-  }
-  /* ⑤ 이번 모달 세션에서 새로 입력된 업체 */
+  /* 이번 모달 세션에서 새로 입력된 업체도 포함 (동일 tid) */
   (window._igNewCtors||[]).forEach(function(c){ if(c) names[c]=true; });
   return Object.keys(names).sort();
 }
@@ -6523,6 +6454,31 @@ function cpGetPriority(){
 }
 function cpSavePriority(obj){
   try{ localStorage.setItem(CP_PRIORITY_KEY, JSON.stringify(obj)); }catch(e){}
+  /* Firebase에도 저장 — 새 기기에서도 우선순위 유지 */
+  _savePrioToCloud(obj);
+}
+async function _savePrioToCloud(obj){
+  if(!_fbReady||!_db)return;
+  try{
+    await _db.collection('global').doc('priority').set({data:JSON.stringify(obj),_updatedAt:Date.now()});
+  }catch(e){ console.warn('우선순위 클라우드 저장 실패:',e); }
+}
+async function _loadPrioFromCloud(){
+  if(!_fbReady||!_db)return;
+  try{
+    var doc=await _db.collection('global').doc('priority').get();
+    if(!doc.exists)return;
+    var remote=JSON.parse(doc.data().data||'{}');
+    var local=cpGetPriority();
+    /* 병합: remote 기준, local에 없는 tid 추가 */
+    var merged=Object.assign({},remote);
+    Object.keys(local).forEach(function(tid){
+      if(!merged[tid]||!merged[tid].length) merged[tid]=local[tid];
+    });
+    try{ localStorage.setItem(CP_PRIORITY_KEY, JSON.stringify(merged)); }catch(e){}
+    /* UI 갱신 */
+    try{ rCtorMgr(); }catch(e){}
+  }catch(e){ console.warn('우선순위 클라우드 로드 실패:',e); }
 }
 /* tid별 업체 목록을 우선순위 순으로 정렬 */
 function cpSorted(tid, ctors){
