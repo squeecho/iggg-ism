@@ -4004,6 +4004,7 @@ function calMPickSel(m){
 var _deviceName = '';
 
 var _gcalToken = null;
+var _gcalNeedConsent = false;
 var _gcalTokenExpiry = 0; /* 토큰 만료 시각 (ms) */
 var _gcalEnabled = false;
 var _gcalPendingAction = null; /* 'upload' : 재인증 후 즉시 업로드 */
@@ -4061,13 +4062,18 @@ function initGoogleAuth(){
     scope:'https://www.googleapis.com/auth/calendar',
     callback:function(resp){
       if(resp.error){
-        /* prompt:'' 실패(세션 만료) → 팝업으로 재로그인 */
-        if(_gcalPendingAction==='upload'||_gcalPendingAction==='uploadBoth'){
-          _gcalPendingAction= _gcalPendingAction==='uploadBoth' ? 'uploadBoth' : 'upload';
-          _gcalTokenClient.requestAccessToken({prompt:'select_account'});
+        /* 비동기 콜백 내에서 requestAccessToken 재호출 시 팝업 차단됨 → 재시도 금지 */
+        /* 대신 플래그 설정 → 사용자가 버튼을 다시 누를 때 select_account 사용 */
+        _gcalToken=null;
+        _gcalPendingAction=null;
+        _gcalNeedConsent=true;
+        _gcalHideLoading();
+        if(resp.error==='access_denied'){
+          toast('⚠️ 구글 계정 접근이 거부됐어요');
         } else {
-          toast('⚠️ 구글 로그인 실패');_gcalEnabled=false;_gcalSyncUI();
+          toast('🔐 구글 로그인이 필요해요. 동기화 버튼을 다시 눌러주세요');
         }
+        _gcalSyncUI();
         return;
       }
       _gcalToken=resp.access_token;
@@ -4357,7 +4363,9 @@ function _gcalUploadBoth(){
   if(_gcalToken && Date.now() < _gcalTokenExpiry){ _gcalRunUploadBoth(); return; }
   _gcalToken = null; /* 만료 토큰 초기화 */
   _gcalPendingAction = 'uploadBoth';
-  _gcalTokenClient.requestAccessToken({prompt:''});
+  var _prompt = _gcalNeedConsent ? 'select_account' : '';
+  _gcalNeedConsent = false;
+  _gcalTokenClient.requestAccessToken({prompt: _prompt});
 }
 var _gcalUploadMode = 'detail'; /* 'detail' | 'simple' */
 function _gcalUploadNow(mode){
