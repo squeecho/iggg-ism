@@ -2466,6 +2466,18 @@ async function loadCloudProject(pn) {
 
   toast('☁️ ' + pn + ' · 공유된 현장입니다. 편집이 잠겨있어요.');
 }
+/* 모바일 뒤로가기 → 열려있는 모달 닫기 */
+window.addEventListener('popstate', function(e) {
+  var asOv = document.getElementById('asModalOv');
+  if (asOv && asOv.style.display !== 'none') { asOv.style.display = 'none'; return; }
+  var ccOv = document.getElementById('ctorCheckOv');
+  if (ccOv && ccOv.style.display !== 'none') { ccOv.style.display = 'none'; return; }
+  var bpOv = document.getElementById('igBarpickOv');
+  if (bpOv && bpOv.style.display !== 'none') { bpOv.style.display = 'none'; return; }
+  var cfOv = document.getElementById('igConfirmOv');
+  if (cfOv && cfOv.style.display !== 'none') { cfOv.style.display = 'none'; return; }
+});
+
 window.addEventListener('beforeunload',function(){
   if(!S.pn||!S.pn.trim())return;
   var nm=S.pn.trim();var arr=getRecent();var ci=arr.findIndex(function(x){return x.pn===nm;});
@@ -5644,7 +5656,7 @@ function rIntegrated() {
       }
     });
 
-    var groupNames = Object.keys(groups);
+    var groupNames = cpSorted(tid, Object.keys(groups));
     var totalCtors = groupNames.length + (unassigned.length ? 1 : 0);
     var tname = IG_TASK_NAMES[tid] || ('공종 '+tid);
     var isCollapsed = !!collapsed[tid];
@@ -7139,12 +7151,16 @@ function openAutoSchedModal(){
     asSettings[t.id].useSplit3 = !!(t.split3);
   });
   asSaveSettings(asSettings);
+  /* 모달을 즉시 열고 pushState → 뒤로가기 즉시 작동
+     Firebase 로딩은 백그라운드 처리 후 step1 재렌더 */
+  document.getElementById('asModalOv').style.display='flex';
+  history.pushState({modal:'autoSched'}, '');
+  asShowStep1();
   _loadCtorsFromCloud().then(function(){
     return loadCloudSites();
   }).then(function(){
-    document.getElementById('asModalOv').style.display='flex';
-    history.pushState({modal:'autoSched'}, '');
-    asShowStep1();
+    /* 모달이 아직 열려있을 때만 재렌더 */
+    if(document.getElementById('asModalOv').style.display!=='none') asShowStep1();
   });
 }
 function closeAutoSchedModal(){
@@ -8709,6 +8725,13 @@ function asApplyResult(){
     function _assignNewCtor(){
       r.ctor='신규업체('+((r.tname||IG_TASK_NAMES[r.tid]||'공종'+r.tid).slice(0,4))+')';
       r._autoResolved='newctor';
+    }
+
+    /* AS_FIXED 공종(가설·철거·소방·목공·전기): 날짜는 절대 이동하지 않고 신규업체만 배당 */
+    if(AS_FIXED.indexOf(r.tid)>=0){
+      _assignNewCtor();
+      r._autoReason='고정공종 — 날짜 유지, 신규업체 배당';
+      return;
     }
 
     if(ratio>0.50){
