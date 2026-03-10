@@ -3627,12 +3627,31 @@ function oTU(){
 
 /* PDF */
 
-/* 캡처 시 라이트모드 강제 적용 */
+/* 캡처 시 라이트모드 강제 적용 — CSS 변수 직접 인라인 주입 */
+var _savedInlineStyle='';
 function _forceLightMode(){
-  document.documentElement.setAttribute('data-force-light','1');
+  var r=document.documentElement;
+  _savedInlineStyle=r.getAttribute('style')||'';
+  /* 라이트모드 변수값 직접 주입 (prefers-color-scheme 미디어쿼리 무력화) */
+  var light=[
+    '--bg:#f2f0eb','--sf:#fff','--bd:#e0dbd2','--bmd:#ccc7bc',
+    '--tx:#18170f','--mu:#7a7870','--mu2:#b5b0a8',
+    '--bar:#cbd5e1','--barh:#94a3b8','--al:#eef2fd',
+    '--sc:rgba(255,60,60,.07)','--sh:#fde8e8',
+    '--ac:rgba(60,100,255,.07)','--ah:#e4eaff',
+    '--hc:rgba(255,140,0,.10)','--hh:#fff3cd',
+    '--hd:#1a1916','--ht:#f2f0eb',
+    '--rd:#dc2626','--gn:#86efac','--am:#b45309',
+    '--cl-hl:#d1fae5'
+  ].join(';');
+  r.setAttribute('style',(_savedInlineStyle?_savedInlineStyle+';':'')+light);
+  r.setAttribute('data-force-light','1');
 }
 function _restoreLightMode(){
-  document.documentElement.removeAttribute('data-force-light');
+  var r=document.documentElement;
+  if(_savedInlineStyle){r.setAttribute('style',_savedInlineStyle);}
+  else{r.removeAttribute('style');}
+  r.removeAttribute('data-force-light');
 }
 async function doIMG(){
   if(typeof html2canvas==='undefined'){toast('캡처 라이브러리 로딩 중...');return;}
