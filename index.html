@@ -36,6 +36,16 @@
 [data-force-light] .pnchip,[data-force-light] .cd,[data-force-light] .ig-trade,
 [data-force-light] .ig-cal-day,[data-force-light] .tabs,
 [data-force-light] .ctor-mgr-chip,[data-force-light] .ctor-mgr-fi{background:revert!important;}
+/* 다크모드 하드코딩 색상 강제 라이트 복원 */
+[data-force-light] .tabs{background:#e8e5df!important;}
+[data-force-light] .tab{color:#7a7870!important;}
+[data-force-light] .tab.on{background:#16a34a!important;color:#fff!important;}
+[data-force-light] .cd{background:#fff!important;}
+[data-force-light] .fi{background:#fff!important;color:#18170f!important;border-color:#e0dbd2!important;}
+[data-force-light] .pnchip{background:#fff!important;}
+[data-force-light] .as-conflict-card{background:#fff!important;border-color:#fca5a5!important;}
+[data-force-light] .as-conflict-hd{background:#fef2f2!important;border-color:#fca5a5!important;}
+[data-force-light] .as-recommend{background:#eff6ff!important;border-color:#93c5fd!important;}
 
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--tx);}
@@ -880,7 +890,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .as-conflict-card{background:#1e1c18;border-color:#5b2222;}
 .as-conflict-hd{background:#2e1a1a;border-color:#5b2222;}
 
-:root{
+html:not([data-force-light]) :root,html:not([data-force-light]){
 --bg:#141412;--sf:#1e1e1b;--bd:#2e2d29;--bmd:#3a3935;
 --tx:#f0ede6;--mu:#9e9c94;--mu2:#7e7c77;
 --bar:#6e96cc;--barh:#8ab0de;--al:#1c2640;
