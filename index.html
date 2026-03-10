@@ -1401,7 +1401,24 @@ var _open=null,IS_RO=false,_origPn=null,_cancelPn=null;
 var RK='cs_recent';
 var _undoStack=[],_redoStack=[];
 function pushUndo(){_undoStack.push(JSON.stringify(S));if(_undoStack.length>30)_undoStack.shift();_redoStack=[];_updUR();}
-function doUndo(){if(IS_RO)return;if(!_undoStack.length)return;if(navigator.vibrate)navigator.vibrate(15);_redoStack.push(JSON.stringify(S));S=JSON.parse(_undoStack.pop());_open=null;calInit();sync();rEdit();rChips();_restoreCtorMgrState();rChart();_updUR();}
+function doUndo(){if(IS_RO)return;if(!_undoStack.length)return;if(navigator.vibrate)navigator.vibrate(15);_redoStack.push(JSON.stringify(S));S=JSON.parse(_undoStack.pop());_open=null;calInit();/* ── 우선순위 정렬 (첫 번째 블록에서 선언 필요) ── */
+var CP_PRIORITY_KEY = 'ig_ctor_priority_v1';
+function cpGetPriority(){
+  try{ return JSON.parse(localStorage.getItem(CP_PRIORITY_KEY)||'{}'); }catch(e){ return {}; }
+}
+function cpSorted(tid, ctors){
+  var prio = cpGetPriority()[tid] || [];
+  var result = ctors.slice();
+  result.sort(function(a, b){
+    var ia = prio.indexOf(a);
+    var ib = prio.indexOf(b);
+    if(ia === -1) ia = 9999;
+    if(ib === -1) ib = 9999;
+    return ia - ib;
+  });
+  return result;
+}
+sync();rEdit();rChips();_restoreCtorMgrState();rChart();_updUR();}
 function doRedo(){if(IS_RO)return;if(!_redoStack.length)return;if(navigator.vibrate)navigator.vibrate(15);_undoStack.push(JSON.stringify(S));S=JSON.parse(_redoStack.pop());_open=null;calInit();sync();rEdit();rChips();rChart();_updUR();}
 function _updUR(){var u=document.getElementById('btnUndo');var r=document.getElementById('btnRedo');if(u)u.classList.toggle('on',_undoStack.length>0);if(r)r.classList.toggle('on',_redoStack.length>0);}
 function _updLockOverlay(){
@@ -7070,10 +7087,7 @@ function asSaveSettings(obj){
 }
 
 /* ── 업체 우선순위 관리 ── */
-var CP_PRIORITY_KEY = 'ig_ctor_priority_v1';
-function cpGetPriority(){
-  try{ return JSON.parse(localStorage.getItem(CP_PRIORITY_KEY)||'{}'); }catch(e){ return {}; }
-}
+/* cpGetPriority / cpSorted / CP_PRIORITY_KEY — 첫 번째 스크립트 블록으로 이동 */
 function cpSavePriority(obj){
   try{ localStorage.setItem(CP_PRIORITY_KEY, JSON.stringify(obj)); }catch(e){}
   /* Firebase에도 저장 — 새 기기에서도 우선순위 유지 */
