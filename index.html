@@ -1391,17 +1391,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 </div>
 
 <script>
-var WK=['일','월','화','수','목','금','토'];
-/* Firebase / cloud 전역 변수 — script 블록 분리 문제 방지용 상단 선언 */
-var _db = null;
-var _cloudSites = [];
-var _fbReady = false;
-var _cloudView = null; /* 공유 현장 보기 전용 - S를 덮어쓰지 않음 */
-var _open=null,IS_RO=false,_origPn=null,_cancelPn=null;
-var RK='cs_recent';
-var _undoStack=[],_redoStack=[];
-function pushUndo(){_undoStack.push(JSON.stringify(S));if(_undoStack.length>30)_undoStack.shift();_redoStack=[];_updUR();}
-function doUndo(){if(IS_RO)return;if(!_undoStack.length)return;if(navigator.vibrate)navigator.vibrate(15);_redoStack.push(JSON.stringify(S));S=JSON.parse(_undoStack.pop());_open=null;calInit();/* ── 우선순위 정렬 (첫 번째 블록에서 선언 필요) ── */
+/* ── 우선순위 정렬 전역 선언 (rCtorMgr보다 먼저 정의 필요) ── */
 var CP_PRIORITY_KEY = 'ig_ctor_priority_v1';
 function cpGetPriority(){
   try{ return JSON.parse(localStorage.getItem(CP_PRIORITY_KEY)||'{}'); }catch(e){ return {}; }
@@ -1418,7 +1408,18 @@ function cpSorted(tid, ctors){
   });
   return result;
 }
-sync();rEdit();rChips();_restoreCtorMgrState();rChart();_updUR();}
+
+var WK=['일','월','화','수','목','금','토'];
+/* Firebase / cloud 전역 변수 — script 블록 분리 문제 방지용 상단 선언 */
+var _db = null;
+var _cloudSites = [];
+var _fbReady = false;
+var _cloudView = null; /* 공유 현장 보기 전용 - S를 덮어쓰지 않음 */
+var _open=null,IS_RO=false,_origPn=null,_cancelPn=null;
+var RK='cs_recent';
+var _undoStack=[],_redoStack=[];
+function pushUndo(){_undoStack.push(JSON.stringify(S));if(_undoStack.length>30)_undoStack.shift();_redoStack=[];_updUR();}
+function doUndo(){if(IS_RO)return;if(!_undoStack.length)return;if(navigator.vibrate)navigator.vibrate(15);_redoStack.push(JSON.stringify(S));S=JSON.parse(_undoStack.pop());_open=null;calInit();sync();rEdit();rChips();_restoreCtorMgrState();rChart();_updUR();}
 function doRedo(){if(IS_RO)return;if(!_redoStack.length)return;if(navigator.vibrate)navigator.vibrate(15);_undoStack.push(JSON.stringify(S));S=JSON.parse(_redoStack.pop());_open=null;calInit();sync();rEdit();rChips();rChart();_updUR();}
 function _updUR(){var u=document.getElementById('btnUndo');var r=document.getElementById('btnRedo');if(u)u.classList.toggle('on',_undoStack.length>0);if(r)r.classList.toggle('on',_redoStack.length>0);}
 function _updLockOverlay(){
