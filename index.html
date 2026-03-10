@@ -7294,7 +7294,13 @@ function _buildCtorCheck(){
   var myRanges=[]; /* {tid, name, ctors[], ranges:[{sd,ed}]} */
   (S.tasks||[]).forEach(function(t){
     if(!t.on||!t.sd||!t.ed)return;
-    var ctors=getCurTaskCtors(t); /* 글로벌 저장 업체 포함, 미지정→기본 */
+    /* 공정 자동배치와 동일: task에 직접 배당된 1순위 업체만 체크
+       getCurTaskCtors는 글로벌 스토어까지 포함해서 오탐 발생 → 사용 안 함 */
+    var rawCtors=(t.contractors||[]).filter(Boolean);
+    if(!rawCtors.length)return; /* 배당 업체 없는 공종은 체크 제외 */
+    var primary=cpSorted(t.id, rawCtors)[0];
+    if(!primary)return;
+    var ctors=[primary];
     var ranges=[{sd:t.sd,ed:t.ed}];
     if(t.split&&t.sd2&&t.ed2)ranges.push({sd:t.sd2,ed:t.ed2});
     if(t.split3&&t.sd3&&t.ed3)ranges.push({sd:t.sd3,ed:t.ed3});
@@ -7311,8 +7317,10 @@ function _buildCtorCheck(){
       confirmed.forEach(function(site){
         (site.tasks||[]).forEach(function(st){
           if(!st.on||!st.sd||!st.ed)return;
+          /* 확정 현장도 1순위 업체만 비교 */
           var stCtors=getSiteTaskCtors(st);
-          if(stCtors.indexOf(ctor)<0)return;
+          var stPrimary=stCtors.length?stCtors[0]:'';
+          if(!stPrimary||stPrimary!==ctor)return;
           /* 날짜 범위 수집 */
           var sRanges=[{sd:st.sd,ed:st.ed}];
           if(st.split&&st.sd2&&st.ed2)sRanges.push({sd:st.sd2,ed:st.ed2});
