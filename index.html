@@ -6895,6 +6895,82 @@ var AS_DEP_LAG = {
 /* 종료일 기준이 아닌 시작일 기준 의존성: {tid: {depTid: maxLagDays}} */
 var AS_DEP_START = { 5: {2: 2} }; /* 전기1차: 목공 시작일로부터 최대 2일 이내 시작 */
 
+/* ── 역방향 의존성: 이 공종이 완료되어야 시작 가능한 후행공종 목록 ── */
+var AS_RDEPS = (function(){
+  var r={};
+  Object.keys(AS_DEPS).forEach(function(tid){
+    (AS_DEPS[tid]||[]).forEach(function(depTid){
+      if(!r[depTid])r[depTid]=[];
+      r[depTid].push(parseInt(tid));
+    });
+  });
+  return r;
+})();
+
+/* ── 공종 이동 제약 계산 ──
+   반환: { canMoveEarlier, canMoveLater, earliestSd, latestSd, lockedReason }
+   earliestSd: 이 날짜보다 앞으로는 이동 불가 (선행공종 미완료)
+   latestSd:   이 날짜보다 뒤로 이동 시 후행공종이 공기 내 배치 불가 */
+function asGetMoveConstraint(tid){
+  var pStart=S.sd, pEnd=S.ed;
+  var task=S.tasks.find(function(t){return t.id===tid;});
+  if(!task) return {canMoveEarlier:true, canMoveLater:true, earliestSd:pStart, latestSd:pEnd};
+
+  /* 선행공종 완료일 기준 — 최대값 */
+  var earliestSd=pStart;
+  var blockedByDep=null;
+  (AS_DEPS[tid]||[]).forEach(function(depTid){
+    var depT=S.tasks.find(function(t){return t.id===depTid&&t.on;});
+    var depEnd=depT?(depT.split&&depT.ed2?depT.ed2:depT.ed):null;
+    if(!depEnd) return;
+    var lag=(AS_DEP_LAG[tid]&&AS_DEP_LAG[tid][depTid])||0;
+    var minStart=addD(depEnd,1+lag);
+    if(minStart>earliestSd){ earliestSd=minStart; blockedByDep=depTid; }
+  });
+
+  /* 후행공종 최소 기간 합산 기준 latestSd 계산
+     이 공종 종료일이 latestSd 이후면 후행공종들이 공기 내 불가 */
+  var latestEd=pEnd;
+  var blockedByRdep=null;
+  (AS_RDEPS[tid]||[]).forEach(function(rdepTid){
+    var rdepT=S.tasks.find(function(t){return t.id===rdepTid&&t.on;});
+    if(!rdepT) return;
+    var rdepMinDays=dif(rdepT.sd,rdepT.ed)+1||AS_DEFAULT_DAYS[rdepTid]||3;
+    var lag=(AS_DEP_LAG[rdepTid]&&AS_DEP_LAG[rdepTid][tid])||0;
+    /* 이 공종이 latestEd에 끝나면 후행공종은 최소 rdepMinDays+lag 일 필요 */
+    var maxAllowedEnd=addD(pEnd,-(rdepMinDays+lag));
+    if(maxAllowedEnd<latestEd){ latestEd=maxAllowedEnd; blockedByRdep=rdepTid; }
+  });
+
+  var dur=task.sd&&task.ed?dif(task.sd,task.ed):AS_DEFAULT_DAYS[tid]||3;
+  /* latestSd: 이 공종 시작일의 최댓값 = latestEd - dur */
+  var latestSd=addD(latestEd,-dur);
+
+  var canMoveEarlier=(task.sd>earliestSd); /* 지금보다 앞으로 이동 여지 있음 */
+  var canMoveLater=(task.sd<latestSd);     /* 지금보다 뒤로 이동 여지 있음 */
+
+  /* 락 사유 문구 */
+  var lockedEarlierReason=blockedByDep?((IG_TASK_NAMES[blockedByDep]||'공종'+blockedByDep)+' 완료 전 착수 불가'):null;
+  var lockedLaterReason=blockedByRdep?((IG_TASK_NAMES[blockedByRdep]||'공종'+blockedByRdep)+' 공기 내 배치 불가'):null;
+
+  return {
+    canMoveEarlier:canMoveEarlier,
+    canMoveLater:canMoveLater,
+    earliestSd:earliestSd,
+    latestSd:latestSd,
+    lockedEarlierReason:lockedEarlierReason,
+    lockedLaterReason:lockedLaterReason
+  };
+}
+
+/* ── 겹침 위치 판단: 앞부분 겹침 vs 뒷부분 겹침 ──
+   겹침 구간의 중심이 공종 기간의 전반부(≤50%)인지 후반부인지 */
+function asOverlapPosition(taskSd, taskEd, overlapSd, overlapEd){
+  var taskMid=dif(taskSd, addD(taskSd, Math.floor(dif(taskSd,taskEd)/2)));
+  var overlapMid=dif(taskSd, addD(overlapSd, Math.floor(dif(overlapSd,overlapEd)/2)));
+  return overlapMid<=taskMid?'front':'rear'; /* front: 앞부분, rear: 뒷부분 */
+}
+
 function asGetSettings(){
   try{
     var s=JSON.parse(localStorage.getItem(AS_SETTINGS_KEY)||'{}');
@@ -8061,6 +8137,23 @@ function asCancelIgnore(tid){
   }
 }
 
+/* 신규 업체 배당 — 등록된 대체 업체 없을 때 항상 사용 가능한 마지막 선택지 */
+function asAssignNewCtor(tid){
+  var r=_asResult.find(function(x){return x.tid===tid;});
+  if(!r)return;
+  /* 신규 업체 배당: 해당 공종을 '신규업체' 로 표시, 충돌 해소 */
+  var newCtorName='신규업체('+( (r.tname||'공종'+tid).slice(0,4) )+')';
+  r.ctor=newCtorName;
+  r.requestedCtors=[newCtorName];
+  r.recommend=null;
+  r.changeReasons=(r.changeReasons||[]).concat([{type:'reorder',
+    label:'신규업체 배당',
+    detail:'기존 업체 일정 충돌 → 신규업체 배당으로 해결. 편집탭에서 실제 업체명을 입력해주세요.'}]);
+  _asResult[_asResult.findIndex(function(x){return x.tid===tid;})]=r;
+  asShowStep2(_asResult,S.ed);
+  toast('👷 '+r.tname+' → 신규업체 배당됨. 편집탭에서 업체를 지정해주세요.');
+}
+
 /* 추천 업체로 교체 후 재실행 */
 function asSwapCtor(tid, newCtor){
   var settings=asGetSettings();
@@ -8070,31 +8163,57 @@ function asSwapCtor(tid, newCtor){
   asRunSchedule();
 }
 
-/* 충돌 해결 - 옵션1: 겹치는 만큼 일정 단축 */
+/* 충돌 해결 - 옵션1: 겹치는 만큼 일정 단축/이동 */
 function asConflictTrim(tid){
   var r=_asResult.find(function(x){return x.id===tid||x.tid===tid;});
   if(!r)return;
   var ctor=r.ctor||'기본';
   var cSites=asGetConflictSites(tid,ctor);
-  /* 가장 이른 기확정 시작일 직전까지 줄이기 */
-  var newEd=r.ed;
+  /* 실제 겹치는 구간만 수집 */
+  var busy=[];
   cSites.forEach(function(cs){
     cs.ranges.forEach(function(rng){
-      if(r.sd<=rng.ed&&r.ed>=rng.sd){
-        var cutTo=addD(rng.sd,-1);
-        if(cutTo<newEd)newEd=cutTo;
-      }
+      if(r.sd<=rng.ed&&r.ed>=rng.sd) busy.push({sd:rng.sd,ed:rng.ed});
     });
   });
-  if(newEd===r.ed){toast('단축할 겹침 구간 없음');return;}
-  if(newEd<r.sd){toast('⚠️ 단축 불가 — 시작일보다 앞서요');return;}
-  /* _asResult 직접 수정 후 step2 재렌더 */
-  r.ed=newEd;
-  r.changeReasons=[{type:'reorder',label:'겹침 구간 단축',
-    detail:'기확정 현장 시작 전날('+newEd.slice(5).replace('-','/')+')까지 단축'}];
+  if(!busy.length){toast('단축할 겹침 구간 없음');return;}
+  busy.sort(function(a,b){return a.sd<b.sd?-1:1;});
+
+  /* 방법A: 첫 번째 충돌 시작 직전까지 종료일 단축 */
+  var firstConflict=busy[0];
+  var cutEnd=addD(firstConflict.sd,-1);
+  if(cutEnd>=r.sd){
+    r.ed=cutEnd;
+    r.changeReasons=[{type:'reorder',label:'겹침 구간 단축 (종료일 조정)',
+      detail:'기확정 현장 시작 전날('+cutEnd.slice(5).replace('-','/')+')까지 단축'}];
+    _asResult[_asResult.findIndex(function(x){return x.tid===tid;})]=r;
+    asShowStep2(_asResult,S.ed);
+    toast('✂️ '+r.tname+' 일정 단축 적용');
+    return;
+  }
+
+  /* 방법B: 겹침이 시작일 이전부터 → 모든 충돌 이후로 시작일 이동 */
+  var lastConflict=busy[busy.length-1];
+  var newStart=addD(lastConflict.ed,1);
+  var dur=dif(r.sd,r.ed);
+  var newEnd=addD(newStart,dur);
+  if(newStart<=S.ed){
+    r.sd=newStart; r.ed=newEnd;
+    r.changeReasons=[{type:'reorder',label:'겹침 이후로 시작일 이동',
+      detail:'기확정 현장 종료 후 '+newStart.slice(5).replace('-','/')+'부터 시작'}];
+    _asResult[_asResult.findIndex(function(x){return x.tid===tid;})]=r;
+    asShowStep2(_asResult,S.ed);
+    toast('✂️ '+r.tname+' 겹침 이후 배치 적용');
+    return;
+  }
+
+  /* 방법C: 공기 내 배치 불가 — 최소 1일만 남기고 단축 */
+  r.sd=S.sd; r.ed=S.sd; /* 최소 1일 */
+  r.changeReasons=[{type:'conflict',label:'공기 내 단축 배치 (최소)',
+    detail:'충돌로 인해 공사기간 내 최소 일정으로 배치. 업체 변경 권장'}];
   _asResult[_asResult.findIndex(function(x){return x.tid===tid;})]=r;
   asShowStep2(_asResult,S.ed);
-  toast('✂️ '+r.tname+' 일정 단축 적용');
+  toast('⚠️ '+r.tname+' 최소 일정 배치 — 업체 변경 검토 필요');
 }
 
 /* 충돌 해결 - 옵션2: 겹침 피해 이동 (비고정 공종만) */
@@ -8182,7 +8301,10 @@ function asShowStep2(result,originalEnd){
     ?'\u26A0\uFE0F '+maxExt+'일 연장 필요 · 아래 확인 후 적용하세요'
     :'\u2705 공사기간 내 모든 공종 배치 완료';
 
-  var h='<div class="as-result-list">';
+  var h='<div class="as-result-list">'
+    +'<div style="margin-bottom:10px;padding:9px 12px;background:#f0f9ff;border-radius:10px;border-left:3px solid #0ea5e9;font-size:11px;color:#0c4a6e;line-height:1.6;">'
+    +'💡 <b>옵션 미선택 시 자동 처리:</b> 겹침 <b>≤20%</b> → ✂️ 시작/종료일 단축, <b>20~50%</b> → ↔️ 이동 (위계 락 시 👷 신규업체), <b>>50%</b> → 👷 신규업체 배당'
+    +'</div>';
   result.forEach(function(r,i){
     var isDefault=(!r.ctor||r.ctor==='기본');
     var hasExt=r.extension&&r.extension>0;
@@ -8277,14 +8399,15 @@ function asShowStep2(result,originalEnd){
           +'</div>'
           +'<span style="font-size:11px;color:var(--mu);">›</span>'
           +'</div>';
-        /* 선택지2: 이동 (고정공종은 비활성) */
+        /* 선택지2: 이동 (고정공종도 이동 가능 — 단, 경고 표시) */
         if(_isFixed){
-          h+='<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--bd);background:var(--bg);opacity:.45;">'
+          h+='<div onclick="asConflictShift('+r.tid+')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--bd);background:var(--sf);-webkit-tap-highlight-color:transparent;">'
             +'<span style="font-size:16px;flex-shrink:0;">↔️</span>'
             +'<div style="flex:1;">'
-            +'<div style="font-size:11px;font-weight:800;color:var(--tx);">일정 앞뒤로 이동</div>'
-            +'<div style="font-size:10px;color:var(--mu);margin-top:1px;">이 공종은 공정 순서상 이동 불가</div>'
+            +'<div style="font-size:11px;font-weight:800;color:var(--tx);">겹침 피해 이동 <span style="font-size:9px;font-weight:600;color:#b45309;background:#fef3c7;border-radius:4px;padding:1px 5px;">공정 순서 확인 필요</span></div>'
+            +'<div style="font-size:10px;color:var(--mu);margin-top:1px;">기확정 앞 또는 뒤로 이동 · 선행공종 의존성을 직접 확인하세요</div>'
             +'</div>'
+            +'<span style="font-size:11px;color:var(--mu);">›</span>'
             +'</div>';
         } else {
           h+='<div onclick="asConflictShift('+r.tid+')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--bd);background:var(--sf);-webkit-tap-highlight-color:transparent;">'
@@ -8296,7 +8419,7 @@ function asShowStep2(result,originalEnd){
             +'<span style="font-size:11px;color:var(--mu);">›</span>'
             +'</div>';
         }
-        /* 선택지3: 업체 변경 (recommend 있을 때만 활성) */
+        /* 선택지3: 업체 변경 — 항상 활성 (신규업체 배당 포함) */
         if(r.recommend){
           var _recName=esc(r.recommend);
           var _safeRec=r.recommend.replace(/'/g,'&#39;');
@@ -8309,12 +8432,14 @@ function asShowStep2(result,originalEnd){
             +'<span style="font-size:11px;color:var(--mu);">›</span>'
             +'</div>';
         } else {
-          h+='<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);opacity:.45;">'
+          /* 등록된 대체 업체 없어도 → 신규업체 배당 (항상 선택 가능한 마지막 선택지) */
+          h+='<div onclick="asAssignNewCtor('+r.tid+')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;background:#f0fdf4;border-top:1px solid #bbf7d0;-webkit-tap-highlight-color:transparent;">'
             +'<span style="font-size:16px;flex-shrink:0;">👷</span>'
             +'<div style="flex:1;">'
-            +'<div style="font-size:11px;font-weight:800;color:var(--tx);">공사 업체 변경</div>'
-            +'<div style="font-size:10px;color:var(--mu);margin-top:1px;">대체 가능한 등록 업체 없음</div>'
+            +'<div style="font-size:11px;font-weight:800;color:#15803d;">신규업체 배당</div>'
+            +'<div style="font-size:10px;color:#166534;margin-top:1px;">이 공종에 신규업체 배당 → 일정 충돌 해소 · 편집탭에서 업체 지정</div>'
             +'</div>'
+            +'<span style="font-size:11px;color:#16a34a;font-weight:800;">›</span>'
             +'</div>';
         }
         h+='</div></div>';
@@ -8441,6 +8566,124 @@ function asShowStep2(result,originalEnd){
 /* 공정표 적용 */
 function asApplyResult(){
   if(!_asResult)return;
+
+  /* ── 미선택 충돌 자동 해결 (위계 락 + 비율 기준) ──
+     ≤20%: 겹침 위치(앞/뒤) 보고 시작일 또는 종료일만 단축 (ctorCheck 방식)
+     20~50%: 위계 이동 가능 → 이동, 불가(락) → 신규업체
+     >50%: 무조건 신규업체 */
+  _asResult.forEach(function(r){
+    if(_asIgnored[r.tid]||!r.sd||!r.ed) return;
+    var ctor=r.ctor||'기본';
+    var cSites=asGetConflictSites(r.tid,ctor);
+    if(!cSites.length) return;
+
+    /* 겹침 구간 수집 */
+    var myRanges=[{sd:r.sd,ed:r.ed}];
+    if(r.useSplit&&r.sd2&&r.ed2) myRanges.push({sd:r.sd2,ed:r.ed2});
+    var overlapSegs=[];
+    var overlapDays=0;
+    cSites.forEach(function(cs){
+      cs.ranges.forEach(function(rng){
+        myRanges.forEach(function(mr){
+          if(mr.sd<=rng.ed&&mr.ed>=rng.sd){
+            var ovS=mr.sd>rng.sd?mr.sd:rng.sd;
+            var ovE=mr.ed<rng.ed?mr.ed:rng.ed;
+            if(ovE>=ovS){
+              overlapSegs.push({sd:ovS,ed:ovE,cSd:rng.sd,cEd:rng.ed});
+              overlapDays+=dif(ovS,ovE)+1;
+            }
+          }
+        });
+      });
+    });
+    if(!overlapDays) return;
+
+    var totalDays=myRanges.reduce(function(s,mr){return s+dif(mr.sd,mr.ed)+1;},0);
+    var ratio=overlapDays/totalDays;
+
+    /* 위계 이동 제약 계산 */
+    var con=asGetMoveConstraint(r.tid);
+
+    /* busy 리스트 */
+    var busy=[];
+    cSites.forEach(function(cs){cs.ranges.forEach(function(rng){busy.push({sd:rng.sd,ed:rng.ed});});});
+    busy.sort(function(a,b){return a.sd<b.sd?-1:1;});
+    var dur=dif(r.sd,r.ed);
+
+    function _assignNewCtor(){
+      r.ctor='신규업체('+((r.tname||IG_TASK_NAMES[r.tid]||'공종'+r.tid).slice(0,4))+')';
+      r._autoResolved='newctor';
+    }
+
+    if(ratio>0.50){
+      /* >50% → 신규업체 무조건 */
+      _assignNewCtor();
+      r._autoReason='겹침 '+Math.round(ratio*100)+'% 초과';
+
+    } else if(ratio>0.20){
+      /* 20~50% → 이동 시도, 위계 락이면 신규업체 */
+      var moved=false;
+      if(con.canMoveLater){
+        var lateStart=addD(busy[busy.length-1].ed,1);
+        var lateEnd=addD(lateStart,dur);
+        if(lateStart<=con.latestSd){
+          r.sd=lateStart; r.ed=lateEnd;
+          r._autoResolved='shift';
+          r._autoReason='겹침 '+Math.round(ratio*100)+'% — 뒤로 이동';
+          moved=true;
+        }
+      }
+      if(!moved&&con.canMoveEarlier){
+        var earlyEnd=addD(busy[0].sd,-1);
+        var earlyStart=addD(earlyEnd,-dur);
+        if(earlyStart>=con.earliestSd){
+          r.sd=earlyStart; r.ed=earlyEnd;
+          r._autoResolved='shift';
+          r._autoReason='겹침 '+Math.round(ratio*100)+'% — 앞으로 이동';
+          moved=true;
+        }
+      }
+      if(!moved){
+        _assignNewCtor();
+        r._autoReason='위계 락'+(con.lockedLaterReason?' ('+con.lockedLaterReason+')':'');
+      }
+
+    } else {
+      /* ≤20% → 겹침 위치 보고 시작일/종료일 단축 */
+      var seg=overlapSegs[0];
+      var pos=asOverlapPosition(r.sd,r.ed,seg.sd,seg.ed);
+
+      if(pos==='front'){
+        /* 앞부분 겹침 → 시작일을 겹침 종료+1로 */
+        var newSd=addD(seg.cEd,1);
+        if(newSd<=r.ed&&newSd>=con.earliestSd&&newSd<=con.latestSd){
+          r.sd=newSd;
+          r._autoResolved='trim_start';
+          r._autoReason='겹침 '+Math.round(ratio*100)+'% (앞) — 시작일 단축';
+        } else if(!con.canMoveLater){
+          /* 후행공종 위계 락 → 신규업체 */
+          _assignNewCtor();
+          r._autoReason='선행공종 위계 락'+(con.lockedEarlierReason?' ('+con.lockedEarlierReason+')':'');
+        } else {
+          var lS=addD(seg.cEd,1);
+          if(lS<=con.latestSd){ r.sd=lS; r.ed=addD(lS,dur); r._autoResolved='shift'; r._autoReason='앞부분 단축 불가 — 뒤로 이동'; }
+          else { _assignNewCtor(); r._autoReason='이동 범위 초과'; }
+        }
+      } else {
+        /* 뒷부분 겹침 → 종료일을 겹침 시작-1로 */
+        var newEd=addD(seg.cSd,-1);
+        if(newEd>=r.sd){
+          r.ed=newEd;
+          r._autoResolved='trim_end';
+          r._autoReason='겹침 '+Math.round(ratio*100)+'% (뒤) — 종료일 단축';
+        } else {
+          _assignNewCtor();
+          r._autoReason='후행공종 위계 락'+(con.lockedLaterReason?' ('+con.lockedLaterReason+')':'');
+        }
+      }
+    }
+  });
+
   pushUndo();
   var maxExt=0;
   _asResult.forEach(function(r){if(!_asIgnored[r.tid]&&r.extension&&r.extension>maxExt)maxExt=r.extension;});
@@ -8473,18 +8716,32 @@ function asApplyResult(){
       task.split=false;task.sd2='';task.ed2='';task._s2off=false;
       task.split3=false;task.sd3='';task.ed3='';
     }
-    if(r.ctor&&r.ctor!=='기본')task.contractors=[r.ctor];
-    else if(!r.ctor||r.ctor==='기본'){/* 미선택: contractors 건드리지 않음 */}
+    if(r.ctor&&r.ctor!=='기본'&&!r.ctor.startsWith('신규업체(')){task.contractors=[r.ctor];}
+    else if(r.ctor&&r.ctor.startsWith('신규업체(')){/* 신규업체 배당: contractors 비워서 편집탭에서 입력하도록 */task.contractors=[];}
   });
   if(maxExt>0){
     S.ed=addD(S.ed,maxExt);
     var fe=document.getElementById('fend');if(fe)fe.value=S.ed;
   }
-  var changedCount=0;
+  var changedCount=0, autoShift=0, autoNewctor=0, autoTrim=0, autoLocked=0;
   syncPeriod();calInit();rChart();sync();rEdit();autoSave();
-  _asResult.forEach(function(r){if(!_asIgnored[r.tid]&&r.origSd&&r.sd&&(r.sd!==r.origSd||r.ed!==r.origEd))changedCount++;});
+  _asResult.forEach(function(r){
+    if(!_asIgnored[r.tid]&&r.origSd&&r.sd&&(r.sd!==r.origSd||r.ed!==r.origEd))changedCount++;
+    if(r._autoResolved==='shift') autoShift++;
+    if(r._autoResolved==='newctor'){
+      autoNewctor++;
+      if(r._autoReason&&r._autoReason.indexOf('위계 락')>=0) autoLocked++;
+    }
+    if(r._autoResolved==='trim_start'||r._autoResolved==='trim_end') autoTrim++;
+  });
   closeAutoSchedModal();
-  toast('✅ 공정표 반영 완료! '+(changedCount>0?changedCount+'개 공종 날짜 변경':'날짜 변경 없음 (이미 최적)')+(maxExt>0?' (+'+maxExt+'일 연장)':''));
+  var msg='✅ 공정표 반영 완료! '+(changedCount>0?changedCount+'개 공종 날짜 변경':'날짜 변경 없음')
+    +(autoTrim?'  |  ✂️ 기간단축 '+autoTrim+'건':'')
+    +(autoShift?'  |  ↔️ 자동이동 '+autoShift+'건':'')
+    +(autoLocked?'  |  🔒 위계락→신규업체 '+autoLocked+'건':'')
+    +(autoNewctor?'  |  👷 신규업체 '+autoNewctor+'건 (편집탭 확인)':'')
+    +(maxExt>0?' (+'+maxExt+'일 연장)':'');
+  toast(msg);
 }
 
 </script>
