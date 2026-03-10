@@ -4029,9 +4029,11 @@ var TASK_SHORT = {
 var GCAL_COLOR_IDS = ['4','5','6','7','8','10','11'];
 
 function _gcalColorId(pn){
+  if(!pn) return '7';
+  var ids = (typeof GCAL_COLOR_IDS!=='undefined' && GCAL_COLOR_IDS) || ['4','5','6','7','8','10','11'];
   var h=0;
   for(var i=0;i<pn.length;i++) h=Math.imul(h,31)+pn.charCodeAt(i)|0;
-  return GCAL_COLOR_IDS[Math.abs(h)%GCAL_COLOR_IDS.length];
+  return ids[Math.abs(h)%ids.length];
 }
 
 function _gcalRegion(pn){
@@ -4409,10 +4411,18 @@ function _gcalDoUploadAll(calId, sites, onAllDone){
       return acc+(s.tasks||[]).filter(function(t){return t.on&&t.sd&&t.ed;}).length;
     },0);
     var timeoutMs = Math.max(120000, totalEvts*1000+60000);
+    /* 전체 업로드 타임아웃 — fetch가 hanging되면 강제 종료 */
+    var _allTimer = setTimeout(function(){
+      console.warn('[gcal] 전체 업로드 타임아웃 ('+timeoutMs+'ms)');
+      _gcalCalendarId = prevCalId;
+      _gcalUpdateLoading('타임아웃 - 네트워크 상태 확인 필요', 100);
+      setTimeout(function(){ _gcalHideLoading(); toast('⚠️ 캘린더 동기화 타임아웃, 다시 시도해주세요'); }, 1500);
+    }, timeoutMs);
     _gcalUpdateLoading('업로드 준비 중...', 20);
 
     function uploadNext(){
       if(!queue.length){
+        clearTimeout(_allTimer);
         _gcalCalendarId = prevCalId;
         /* 로딩 닫기는 _gcalRunUploadBoth 최종 콜백에서 처리 */
         if(onAllDone)onAllDone();
@@ -4657,7 +4667,9 @@ function _gcalDeleteSiteEvents(pns, cb){
   /* 2) 태그 검색으로 summary 매칭 이벤트 ID 수집 */
   var url='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(calId)
     +'/events?privateExtendedProperty=src%3Diggg-ism&maxResults=2500&showDeleted=false';
-  fetch(url,{headers:{'Authorization':'Bearer '+_gcalToken}})
+  var _dCtrl=new AbortController();
+  setTimeout(function(){_dCtrl.abort();},15000);
+  fetch(url,{headers:{'Authorization':'Bearer '+_gcalToken},signal:_dCtrl.signal})
     .then(function(r){return r.json();})
     .then(function(data){
       var items=(data.items||[]).filter(function(ev){
@@ -4682,8 +4694,10 @@ function _gcalDeleteSiteEvents(pns, cb){
       function delNext(){
         if(!q.length){cb(true);return;}  /* 전체 삭제 성공 */
         var id=q.shift();
+        var _dc=new AbortController();
+        setTimeout(function(){_dc.abort();},15000);
         fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(calId)+'/events/'+id,
-          {method:'DELETE',headers:{'Authorization':'Bearer '+_gcalToken}})
+          {method:'DELETE',headers:{'Authorization':'Bearer '+_gcalToken},signal:_dc.signal})
           .then(function(r){
             if(r.status===429){
               setTimeout(function(){q.unshift(id);delNext();},2000);
@@ -4927,11 +4941,14 @@ function _gcalDoUpload(snap, onDone){
     }
     var evt=_evtQueue.shift();
     function doPost(retries){
+      var _ctrl=new AbortController();
+      var _tid=setTimeout(function(){_ctrl.abort();},20000); /* 20초 타임아웃 */
       fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(_gcalCalendarId)+'/events',{
         method:'POST',
         headers:{'Authorization':'Bearer '+_gcalToken,'Content-Type':'application/json'},
-        body:JSON.stringify(evt)
-      }).then(function(r){
+        body:JSON.stringify(evt),
+        signal:_ctrl.signal
+      }).then(function(r){clearTimeout(_tid);
         if(r.ok){
           r.json().then(function(j){
             if(j&&j.id){var ids=_gcalLoadIdsPn(_gcalCalendarId,pn);ids.push(j.id);_gcalSaveIdsPn(ids,_gcalCalendarId,pn);}
