@@ -4363,9 +4363,8 @@ function _gcalUploadBoth(){
   if(_gcalToken && Date.now() < _gcalTokenExpiry){ _gcalRunUploadBoth(); return; }
   _gcalToken = null; /* 만료 토큰 초기화 */
   _gcalPendingAction = 'uploadBoth';
-  var _prompt = _gcalNeedConsent ? 'select_account' : '';
-  _gcalNeedConsent = false;
-  _gcalTokenClient.requestAccessToken({prompt: _prompt});
+  /* prompt:'select_account' — silent auth('') 는 브라우저 팝업 차단됨 */
+  _gcalTokenClient.requestAccessToken({prompt:'select_account'});
 }
 var _gcalUploadMode = 'detail'; /* 'detail' | 'simple' */
 function _gcalUploadNow(mode){
@@ -4746,7 +4745,7 @@ function gcalToggleChange(){
   } else {
     /* 켜기 — OAuth 요청 */
     if(!_gcalTokenClient){toast('잠깐, 초기화 중이에요...');setTimeout(gcalToggleChange,800);return;}
-    _gcalTokenClient.requestAccessToken({prompt:'consent'});
+    _gcalTokenClient.requestAccessToken({prompt:'select_account'});
   }
 }
 
@@ -4844,7 +4843,7 @@ function gcalUploadOnConfirm(snap){
   if(!_gcalEnabled)return;
   if(!_gcalToken){
     _gcalPendingSnap=snap;
-    if(_gcalTokenClient)_gcalTokenClient.requestAccessToken({prompt:''});
+    if(_gcalTokenClient)_gcalTokenClient.requestAccessToken({prompt:'select_account'});
     return;
   }
   _gcalDoUpload(snap);
