@@ -4004,6 +4004,7 @@ function calMPickSel(m){
 var _deviceName = '';
 
 var _gcalToken = null;
+var _gcalTokenExpiry = 0; /* 토큰 만료 시각 (ms) */
 var _gcalEnabled = false;
 var _gcalPendingAction = null; /* 'upload' : 재인증 후 즉시 업로드 */
 var _gcalCalendarId = 'primary'; /* 상세 업로드용 (하위호환) */
@@ -4061,7 +4062,8 @@ function initGoogleAuth(){
     callback:function(resp){
       if(resp.error){
         /* prompt:'' 실패(세션 만료) → 팝업으로 재로그인 */
-        if(_gcalPendingAction==='upload'){
+        if(_gcalPendingAction==='upload'||_gcalPendingAction==='uploadBoth'){
+          _gcalPendingAction= _gcalPendingAction==='uploadBoth' ? 'uploadBoth' : 'upload';
           _gcalTokenClient.requestAccessToken({prompt:'select_account'});
         } else {
           toast('⚠️ 구글 로그인 실패');_gcalEnabled=false;_gcalSyncUI();
@@ -4069,13 +4071,11 @@ function initGoogleAuth(){
         return;
       }
       _gcalToken=resp.access_token;
+      _gcalTokenExpiry=Date.now()+((resp.expires_in||3600)-120)*1000; /* 2분 여유 */
       _gcalEnabled=true;
       try{localStorage.setItem('_gcalEnabled','1');}catch(e){}
       _gcalSyncUI();
-      if(_gcalPendingAction==='upload'){
-        _gcalPendingAction=null;
-        _gcalDoUploadAll();
-      } else if(_gcalPendingAction==='uploadBoth'){
+      if(_gcalPendingAction==='upload'||_gcalPendingAction==='uploadBoth'){
         _gcalPendingAction=null;
         _gcalRunUploadBoth();
       } else if(_gcalPendingAction==='pickCal'){
@@ -4324,11 +4324,9 @@ function _gcalRunUploadBoth(){
 
   if(!sites.length && !hasDeletions){ toast('확정된 현장이 없어요'); return; }
 
-  /* 삭제 대상이 있으면 로딩 먼저 표시 */
-  if(hasDeletions){
-    _gcalShowLoading();
-    _gcalUpdateLoading('미확정 현장 캘린더 동기화 중...', 30);
-  }
+  /* 항상 로딩 표시 (hasDeletions 여부와 무관) */
+  _gcalShowLoading();
+  _gcalUpdateLoading(hasDeletions ? '미확정 현장 정리 중...' : '캘린더 동기화 준비 중...', 10);
 
   /* 비활성 현장 삭제 */
   _gcalDeleteInactiveSites(sites, detailCalId, simpleCalId, function(){
@@ -4355,8 +4353,9 @@ function _gcalRunUploadBoth(){
 function _gcalUploadBoth(){
   if(!_gcalEnabled){ toast('구글 캘린더 연동 스위치를 켜주세요'); return; }
   if(!_gcalTokenClient){ toast('잠깐, 초기화 중이에요...'); setTimeout(_gcalUploadBoth, 800); return; }
-  /* 토큰이 이미 있으면 바로 실행, 없으면 silent 재인증 */
-  if(_gcalToken){ _gcalRunUploadBoth(); return; }
+  /* 토큰이 유효하면 바로 실행, 만료됐거나 없으면 재인증 */
+  if(_gcalToken && Date.now() < _gcalTokenExpiry){ _gcalRunUploadBoth(); return; }
+  _gcalToken = null; /* 만료 토큰 초기화 */
   _gcalPendingAction = 'uploadBoth';
   _gcalTokenClient.requestAccessToken({prompt:''});
 }
@@ -4381,21 +4380,21 @@ function _gcalDoUploadAll(calId, sites, onAllDone){
   var skipped = sites.length - changed.length;
 
   if(!changed.length){
-    _gcalHideLoading(); /* hasDeletions로 열린 로딩이 있을 수 있으므로 닫기 */
-    if(sites.length) toast('📅 변경된 현장이 없어요 ✅');
+    /* 로딩은 _gcalRunUploadBoth의 최종 콜백에서 닫힘 — 여기선 진행 상태만 업데이트 */
+    _gcalUpdateLoading((_gcalUploadMode==='simple'?'[간략]':'[상세]')+' 변경 없음, 건너뜀', 85);
     if(onAllDone)onAllDone();
     return;
   }
 
-  _gcalShowLoading();
-  if(skipped>0) _gcalUpdateLoading(skipped+'개 현장은 변경 없어 스킵', 10);
-  else _gcalUpdateLoading('기존 일정 체크 중...', 10);
+  if(skipped>0) _gcalUpdateLoading((_gcalUploadMode==='simple'?'[간략]':'[상세]')+' '+skipped+'개 스킵, '+changed.length+'개 업로드', 20);
+  else _gcalUpdateLoading((_gcalUploadMode==='simple'?'[간략]':'[상세]')+' 기존 일정 정리 중...', 20);
 
   /* 변경된 현장의 기존 이벤트 삭제 후 재업로드 */
   var prevCalId = _gcalCalendarId;
   _gcalCalendarId = calId;
 
   _gcalDeleteSiteEvents(changed.map(function(s){return s.pn;}), function(){
+
     var queue = changed.slice();
     var total = queue.length;
     var done = 0;
@@ -4408,7 +4407,7 @@ function _gcalDoUploadAll(calId, sites, onAllDone){
     function uploadNext(){
       if(!queue.length){
         _gcalCalendarId = prevCalId;
-        _gcalHideLoading();
+        /* 로딩 닫기는 _gcalRunUploadBoth 최종 콜백에서 처리 */
         if(onAllDone)onAllDone();
         return;
       }
