@@ -4037,6 +4037,7 @@ function _gcalColorId(pn){
 }
 
 function _gcalRegion(pn){
+  if(!pn) return '';
   /* '지역 브랜드' 형식에서 지역(첫 번째 공백 앞) 추출
      공백 없으면 전체 현장명 사용 */
   var idx = pn.indexOf(' ');
@@ -4045,7 +4046,8 @@ function _gcalRegion(pn){
 
 function _gcalEventTitle(pn, taskName, vendor){
   var region = _gcalRegion(pn);
-  var t = TASK_SHORT[taskName] || taskName;
+  var _ts = (typeof TASK_SHORT !== 'undefined' && TASK_SHORT) || {};
+  var t = _ts[taskName] || taskName || '';
   return region + ' | ' + t + (vendor ? ' | ' + vendor : '');
 }
 
