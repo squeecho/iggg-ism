@@ -539,7 +539,14 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .cta .btn{flex:1;justify-content:center;padding:13px;font-size:14px;}
 /* CHART */
 .cp{padding:12px 12px 30px;}
-.ca{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;position:sticky;top:90px;z-index:350;background:var(--bg);padding:8px 0 8px;border-bottom:1.5px solid var(--bd);}
+.ca{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center;position:sticky;top:90px;z-index:350;background:var(--bg);padding:8px 0 8px;border-bottom:1.5px solid var(--bd);}
+.ca-row{display:flex;align-items:center;gap:6px;width:100%;}
+.ca-row1{flex-wrap:nowrap;}
+.ca-row2{flex-wrap:nowrap;}
+.ca-undo-group{display:flex;gap:0;}
+.ca-main-btn{flex:1;background:#0ea5e9;border-color:#0ea5e9;color:#fff;font-size:12px;padding:7px 10px;justify-content:center;}
+.ca-sub-btn{flex:1;background:#7c3aed;border-color:#7c3aed;color:#fff;font-size:12px;padding:7px 10px;justify-content:center;}
+@media(min-width:640px){.ca-row{width:auto;flex:none;}.ca{flex-wrap:nowrap;}.ca-row2{flex:1;}.ca-main-btn,.ca-sub-btn{flex:1;}}
 .cw{background:var(--sf);border-radius:0;border:2px solid #b8b2a8;overflow:hidden;}
 .cs{overflow-x:auto;}
 .gt{border-collapse:collapse;table-layout:fixed;}
@@ -1324,10 +1331,16 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 <!-- 차트 -->
 <div class="pg cp" id="pc">
   <div class="ca" id="ca">
-    <button class="btn bur" id="btnUndo" ontouchstart="" ontouchend="this.blur();doUndo()" onclick="doUndo()" title="실행 취소">↩ Undo</button><button class="btn bur" id="btnRedo" ontouchstart="" ontouchend="this.blur();doRedo()" onclick="doRedo()" title="다시 실행">↪ Redo</button>
-    <button class="btn" id="btnAutoSched" onclick="openAutoSchedModal()" style="background:#0ea5e9;border-color:#0ea5e9;color:#fff;font-size:12px;padding:7px 12px;">🔄 공정 자동배치</button>
-    <button class="btn" id="btnCtorCheck" onclick="openCtorCheckModal()" style="background:#7c3aed;border-color:#7c3aed;color:#fff;font-size:12px;padding:7px 12px;">👥 협력업체 일정체크</button>
-    <div class="bp-group"><button class="btn bp" onclick="doPDF()">PDF 저장</button><button class="btn bp" style="background:#6b7280" onclick="doIMG()">이미지 저장</button></div>
+    <div class="ca-row ca-row1">
+      <div class="ca-undo-group">
+        <button class="btn bur" id="btnUndo" ontouchstart="" ontouchend="this.blur();doUndo()" onclick="doUndo()" title="실행 취소">↩ Undo</button><button class="btn bur" id="btnRedo" ontouchstart="" ontouchend="this.blur();doRedo()" onclick="doRedo()" title="다시 실행">↪ Redo</button>
+      </div>
+      <div class="bp-group"><button class="btn bp" onclick="doPDF()">PDF 저장</button><button class="btn bp" style="background:#6b7280" onclick="doIMG()">이미지 저장</button></div>
+    </div>
+    <div class="ca-row ca-row2">
+      <button class="btn ca-main-btn" id="btnAutoSched" onclick="openAutoSchedModal()">🔄 공정 자동배치</button>
+      <button class="btn ca-sub-btn" id="btnCtorCheck" onclick="openCtorCheckModal()">👥 협력업체 일정체크</button>
+    </div>
   </div>
   <div id="pa">
     <div class="cw"><div class="cs"><table class="gt" id="gt"></table></div></div>
@@ -7157,6 +7170,46 @@ function closeCtorCheckModal(){
   if(history.state&&history.state.modal==='ctorCheck') history.back();
 }
 
+/* 업체변경: 해당 공종의 업체를 변경하여 겹침 해소 */
+function ctorCheckSwap(tid, rowId){
+  var task=S.tasks.find(function(t){return t.id===tid;});
+  if(!task||!task.on)return;
+  var tname=IG_TASK_NAMES[tid]||('공종'+tid);
+  var curCtors=getCurTaskCtors(task);
+  /* 현재 지정된 업체 외 등록된 업체 목록 */
+  var allCtors=(S.contractors||[]).concat((localStorage.getItem('igCtors')?JSON.parse(localStorage.getItem('igCtors')):[]))
+    .filter(function(c){ return typeof c==='string'?c:c.name; })
+    .map(function(c){ return typeof c==='string'?c:c.name; });
+  /* 중복 제거 */
+  var unique=[...new Set(allCtors)].filter(function(c){return curCtors.indexOf(c)<0&&c&&c!=='기본';});
+
+  /* 옵션 생성: 등록 업체 + 직접 입력 */
+  var opts=unique.map(function(c,i){return '<option value="'+c+'">'+c+'</option>';}).join('');
+
+  igConfirm(
+    tname+' · 업체를 변경하여 충돌을 해소합니다.\n현재: '+curCtors.join(', '),
+    function(){
+      /* 입력창을 모달로 대체 — 심플하게 prompt 패턴 사용 */
+      var newCtorName=window.prompt(tname+' 담당 업체를 입력하세요.\n현재: '+curCtors.join(', '), '');
+      if(!newCtorName||!newCtorName.trim())return;
+      newCtorName=newCtorName.trim();
+      pushUndo();
+      /* 기존 업체 목록 앞에 새 업체 추가 */
+      var prev=(task.contractors||[]).filter(function(c){return c&&c!==newCtorName;});
+      task.contractors=[newCtorName].concat(prev);
+      autoSave();
+      rChart();
+      toast('✅ '+tname+' 업체 → '+newCtorName+' 로 변경됐어요. 충돌 여부를 다시 확인해주세요.');
+      /* 행 상태 업데이트 */
+      var row=document.getElementById(rowId);
+      if(row){
+        row.innerHTML='<span style="font-size:11px;background:#dcfce7;color:#15803d;border:1.5px solid #16a34a;border-radius:6px;padding:2px 9px;font-weight:800;">✅ '+newCtorName+' 으로 업체 변경됨</span>'
+          +'<button onclick="ctorCheckUndo('+tid+',null,\''+rowId+'\',true)" style="font-size:11px;background:var(--bg);color:var(--tx);border:1.5px solid var(--bd);border-radius:6px;padding:2px 9px;font-weight:800;cursor:pointer;margin-left:6px;">↩ 되돌리기</button>';
+      }
+    }
+  );
+}
+
 /* 겹침삭제: 현재 현장 해당 공종의 시작일을 겹침 종료일 다음날로 조정 */
 function ctorCheckResolve(tid, overlapEnd, rowId, newSd){
   var task=S.tasks.find(function(t){return t.id===tid;});
@@ -7189,15 +7242,20 @@ function ctorCheckResolve(tid, overlapEnd, rowId, newSd){
   );
 }
 
-/* 겹침삭제 되돌리기 */
-function ctorCheckUndo(tid, origSd, rowId){
+/* 겹침삭제/업체변경 되돌리기 */
+function ctorCheckUndo(tid, origSd, rowId, isCtorSwap){
   var task=S.tasks.find(function(t){return t.id===tid;});
   if(!task)return;
   pushUndo();
-  task.sd=origSd;
-  autoSave();
-  rChart();
-  toast('↩ '+task.name+' 일정을 되돌렸어요');
+  if(isCtorSwap){
+    /* 업체변경 되돌리기: undo 스택에서 복원 */
+    doUndo();
+  } else {
+    task.sd=origSd;
+    autoSave();
+    rChart();
+    toast('↩ '+task.name+' 일정을 되돌렸어요');
+  }
   /* 행 다시 재렌더 */
   _buildCtorCheck();
 }
@@ -7334,9 +7392,10 @@ function _buildCtorCheck(){
 
         /* 겹침 뱃지 */
         var rowId='ccrow_'+cf.tid+'_'+cf.ctor.replace(/\W/g,'')+'_'+cf.sitePn.replace(/\W/g,'');
-        h+='<div id="'+rowId+'" style="margin-top:8px;display:flex;align-items:center;justify-content:center;gap:8px;">';
-        h+='<span style="font-size:11px;background:var(--hh);color:#c2410c;border:1.5px solid #f97316;border-radius:6px;padding:2px 9px;font-weight:800;">⚠️ 겹침 '+ovDays+'일 &nbsp;'+ovSd+' ~ '+ovEd+'</span>';
-        h+='<button onclick="ctorCheckResolve('+cf.tid+',\''+ovE+'\',\''+rowId+'\',\''+addD(ovE,1)+'\')" style="font-size:11px;background:#dc2626;color:#fff;border:none;border-radius:6px;padding:3px 10px;font-weight:800;cursor:pointer;">겹침삭제</button>';
+        h+='<div id="'+rowId+'" style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:6px;">';
+        h+='<button onclick="ctorCheckSwap('+cf.tid+',\''+rowId+'\')" style="font-size:11px;background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:3px 10px;font-weight:800;cursor:pointer;white-space:nowrap;">👤 업체변경</button>';
+        h+='<span style="font-size:11px;background:var(--hh);color:#c2410c;border:1.5px solid #f97316;border-radius:6px;padding:2px 9px;font-weight:800;text-align:center;">⚠️ 겹침 '+ovDays+'일 &nbsp;'+ovSd+' ~ '+ovEd+'</span>';
+        h+='<button onclick="ctorCheckResolve('+cf.tid+',\''+ovE+'\',\''+rowId+'\',\''+addD(ovE,1)+'\')" style="font-size:11px;background:#dc2626;color:#fff;border:none;border-radius:6px;padding:3px 10px;font-weight:800;cursor:pointer;white-space:nowrap;">✂️ 겹침삭제</button>';
         h+='</div>';
         h+='</div>';
       });
@@ -8649,36 +8708,67 @@ function asApplyResult(){
       }
 
     } else {
-      /* ≤20% → 겹침 위치 보고 시작일/종료일 단축 */
+      /* ≤20% → 이동 우선, 이동 불가 시 기간 단축 (단축도 불가 시 신규업체)
+         뒷부분 겹침 + 뒤이동 가능  → 뒤로 이동
+         앞부분 겹침 + 앞이동 가능  → 앞으로 이동
+         뒷부분 겹침 + 뒤이동 불가  → 종료일만 단축
+         앞부분 겹침 + 앞이동 불가  → 시작일만 단축 */
       var seg=overlapSegs[0];
       var pos=asOverlapPosition(r.sd,r.ed,seg.sd,seg.ed);
 
-      if(pos==='front'){
-        /* 앞부분 겹침 → 시작일을 겹침 종료+1로 */
-        var newSd=addD(seg.cEd,1);
-        if(newSd<=r.ed&&newSd>=con.earliestSd&&newSd<=con.latestSd){
-          r.sd=newSd;
-          r._autoResolved='trim_start';
-          r._autoReason='겹침 '+Math.round(ratio*100)+'% (앞) — 시작일 단축';
-        } else if(!con.canMoveLater){
-          /* 후행공종 위계 락 → 신규업체 */
-          _assignNewCtor();
-          r._autoReason='선행공종 위계 락'+(con.lockedEarlierReason?' ('+con.lockedEarlierReason+')':'');
+      if(pos==='rear'){
+        if(con.canMoveLater){
+          /* 뒷부분 겹침 + 뒤이동 가능 → 뒤로 이동 */
+          var lateStart2=addD(busy[busy.length-1].ed,1);
+          var lateEnd2=addD(lateStart2,dur);
+          if(lateStart2<=con.latestSd){
+            r.sd=lateStart2; r.ed=lateEnd2;
+            r._autoResolved='shift';
+            r._autoReason='겹침 '+Math.round(ratio*100)+'% (뒤) — 뒤로 이동';
+          } else {
+            /* 이동 범위 초과 → 종료일 단축 시도 */
+            var newEd2=addD(seg.cSd,-1);
+            if(newEd2>=r.sd){ r.ed=newEd2; r._autoResolved='trim_end'; r._autoReason='이동 범위 초과 — 종료일 단축'; }
+            else { _assignNewCtor(); r._autoReason='이동+단축 불가'; }
+          }
         } else {
-          var lS=addD(seg.cEd,1);
-          if(lS<=con.latestSd){ r.sd=lS; r.ed=addD(lS,dur); r._autoResolved='shift'; r._autoReason='앞부분 단축 불가 — 뒤로 이동'; }
-          else { _assignNewCtor(); r._autoReason='이동 범위 초과'; }
+          /* 뒷부분 겹침 + 뒤이동 불가 → 종료일만 단축 */
+          var newEd=addD(seg.cSd,-1);
+          if(newEd>=r.sd){
+            r.ed=newEd;
+            r._autoResolved='trim_end';
+            r._autoReason='겹침 '+Math.round(ratio*100)+'% (뒤) — 종료일 단축'+(con.lockedLaterReason?' ['+con.lockedLaterReason+']':'');
+          } else {
+            _assignNewCtor();
+            r._autoReason='종료일 단축 불가'+(con.lockedLaterReason?' — '+con.lockedLaterReason:'');
+          }
         }
       } else {
-        /* 뒷부분 겹침 → 종료일을 겹침 시작-1로 */
-        var newEd=addD(seg.cSd,-1);
-        if(newEd>=r.sd){
-          r.ed=newEd;
-          r._autoResolved='trim_end';
-          r._autoReason='겹침 '+Math.round(ratio*100)+'% (뒤) — 종료일 단축';
+        if(con.canMoveEarlier){
+          /* 앞부분 겹침 + 앞이동 가능 → 앞으로 이동 */
+          var earlyEnd2=addD(busy[0].sd,-1);
+          var earlyStart2=addD(earlyEnd2,-dur);
+          if(earlyStart2>=con.earliestSd){
+            r.sd=earlyStart2; r.ed=earlyEnd2;
+            r._autoResolved='shift';
+            r._autoReason='겹침 '+Math.round(ratio*100)+'% (앞) — 앞으로 이동';
+          } else {
+            /* 이동 범위 초과 → 시작일 단축 시도 */
+            var newSd2=addD(seg.cEd,1);
+            if(newSd2<=r.ed){ r.sd=newSd2; r._autoResolved='trim_start'; r._autoReason='이동 범위 초과 — 시작일 단축'; }
+            else { _assignNewCtor(); r._autoReason='이동+단축 불가'; }
+          }
         } else {
-          _assignNewCtor();
-          r._autoReason='후행공종 위계 락'+(con.lockedLaterReason?' ('+con.lockedLaterReason+')':'');
+          /* 앞부분 겹침 + 앞이동 불가 → 시작일만 단축 */
+          var newSd=addD(seg.cEd,1);
+          if(newSd<=r.ed&&newSd<=con.latestSd){
+            r.sd=newSd;
+            r._autoResolved='trim_start';
+            r._autoReason='겹침 '+Math.round(ratio*100)+'% (앞) — 시작일 단축'+(con.lockedEarlierReason?' ['+con.lockedEarlierReason+']':'');
+          } else {
+            _assignNewCtor();
+            r._autoReason='시작일 단축 불가'+(con.lockedEarlierReason?' — '+con.lockedEarlierReason:'');
+          }
         }
       }
     }
