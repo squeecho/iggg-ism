@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/calendar.ics",
+      "destination": "/api/calendar"
+    },
+    {
+      "source": "/calendar-simple.ics",
+      "destination": "/api/calendar?mode=simple"
+    }
+  ]
+}
