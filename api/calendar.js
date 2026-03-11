@@ -212,7 +212,7 @@ module.exports = async function handler(req, res) {
       }
     });
     
-    const calName = isSimple ? 'IG 공정표 (ꄄ략)' : 'IG 공정표 (상세)';
+    const calName = isSimple ? 'IG 공정표 (ꄄ략)' : '!G 공정표 (상세)';
     
     const ics = [
       'BEGIN:VCALENDAR',
