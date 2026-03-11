@@ -1179,9 +1179,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
     <span class="tb-label">CONSTRUCTION SCHEDULE</span>
     <span class="tb-site" id="tpn">(현장명 미입력)</span>
   </div>
-  <div id="tbGcalBtns" style="display:none;align-items:center;gap:6px;flex-shrink:0;">
-    <button id="tbUploadBothBtn" onclick="_gcalUploadBoth()" style="font-size:10px;padding:4px 12px;border-radius:6px;border:none;background:#16a34a;color:#fff;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.2px;">📅 캘린더 동기화</button>
-  </div>
+  <div id="tbGcalBtns" style="display:none;"></div>
 </div>
 <div class="tabs" id="tabs">
   <div class="tab on" id="te" onclick="sw('e')">편집</div>
@@ -1246,34 +1244,23 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
       </div>
     </div>
   </div>
-  <!-- Google Calendar 연동 -->
-  <div id="gcalSection" style="margin-top:12px;padding:10px 14px;background:var(--card);border-radius:10px;border:1px solid var(--bd);">
-    <div style="display:flex;align-items:center;justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:6px;">
-        <span style="font-size:14px;">📅</span>
-        <span style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;">구글 캘린더 자동 연동</span>
-      </div>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
-        <span id="gcalStatusLabel" style="font-size:10px;color:var(--mu);">꺼짐</span>
-        <div id="gcalToggleWrap" onclick="gcalToggleChange()" style="width:36px;height:20px;border-radius:10px;background:#d1d5db;position:relative;cursor:pointer;transition:background .2s;">
-          <div id="gcalToggleThumb" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);"></div>
-        </div>
-      </label>
+  <!-- 캘린더 구독 링크 -->
+  <div style="margin-top:12px;padding:10px 14px;background:var(--sf);border-radius:10px;border:1px solid var(--bd);">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+      <span style="font-size:14px;">📅</span>
+      <span style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;">캘린더 구독 (자동 갱신)</span>
     </div>
-    <div style="margin-top:8px;">
-      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-bottom:6px;display:none;"></div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <!-- 상세 동기화 경로 -->
-        <div style="display:flex;align-items:center;gap:4px;background:rgba(22,163,74,.06);border:1.5px solid rgba(22,163,74,.3);border-radius:10px;padding:4px 6px 4px 4px;">
-          <button id="gcalUploadNowBtn" onclick="_gcalChangeCalendar('detail')" style="display:none;font-size:11px;padding:5px 13px;border-radius:7px;border:none;background:rgba(22,163,74,.18);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.3px;">📋 상세 동기화 경로</button>
-          <button id="gcalCalDetailBtn" onclick="_gcalChangeCalendar('detail')" title="캘린더 변경" style="display:none;font-size:9px;padding:2px 7px;border-radius:6px;border:1px solid rgba(22,163,74,.3);background:transparent;color:#4ade80;cursor:pointer;white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;"></button>
-        </div>
-        <!-- 간략 동기화 경로 -->
-        <div style="display:flex;align-items:center;gap:4px;background:rgba(2,132,199,.06);border:1.5px solid rgba(2,132,199,.3);border-radius:10px;padding:4px 6px 4px 4px;">
-          <button id="gcalUploadSimpleBtn" onclick="_gcalChangeCalendar('simple')" style="display:none;font-size:11px;padding:5px 13px;border-radius:7px;border:none;background:rgba(2,132,199,.18);color:#0284c7;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.3px;">📌 간략 동기화 경로</button>
-          <button id="gcalCalSimpleBtn" onclick="_gcalChangeCalendar('simple')" title="캘린더 변경" style="display:none;font-size:9px;padding:2px 7px;border-radius:6px;border:1px solid rgba(2,132,199,.3);background:transparent;color:#38bdf8;cursor:pointer;white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;"></button>
-        </div>
-        <button id="gcalDeleteAllBtn" onclick="_gcalDeleteAllEvents()" style="display:none;font-size:10px;padding:5px 11px;border-radius:8px;border:1px solid #ef4444;background:rgba(239,68,68,.07);color:#ef4444;cursor:pointer;white-space:nowrap;font-weight:700;">🗑 전체 삭제</button>
+    <div style="font-size:10px;color:var(--mu2);line-height:1.5;margin-bottom:10px;">확정된 현장이 자동으로 캘린더에 반영됩니다.<br>아래 URL을 복사해서 캘린더 앱에 구독 등록하세요.</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button onclick="_copyIcsUrl('detail')" style="flex:1;display:flex;align-items:center;gap:6px;padding:9px 12px;border-radius:8px;border:1.5px solid rgba(22,163,74,.3);background:rgba(22,163,74,.06);color:#15803d;font-size:12px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;">
+          <span>📋</span> !G 공정표 (상세) — 공종별 일정
+        </button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button onclick="_copyIcsUrl('simple')" style="flex:1;display:flex;align-items:center;gap:6px;padding:9px 12px;border-radius:8px;border:1.5px solid rgba(2,132,199,.3);background:rgba(2,132,199,.06);color:#0284c7;font-size:12px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;">
+          <span>📌</span> !G 공정표 (요약) — 현장별 전체기간
+        </button>
       </div>
     </div>
   </div>
@@ -3971,6 +3958,23 @@ function igConfirm(msg, okCb){
 }
 
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');clearTimeout(_tt);_tt=setTimeout(function(){t.classList.remove('on');},3000);}
+
+/* ICS 구독 URL 복사 */
+function _copyIcsUrl(mode){
+  var baseUrl=location.origin||'https://iggg-ism.vercel.app';
+  var url=mode==='simple'?baseUrl+'/calendar-simple.ics':baseUrl+'/calendar.ics';
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(function(){
+      toast('📋 구독 URL 복사됨! 캘린더 앱에 붙여넣기 하세요');
+    }).catch(function(){_copyFallback(url);});
+  } else {_copyFallback(url);}
+}
+function _copyFallback(url){
+  var ta=document.createElement('textarea');ta.value=url;ta.style.cssText='position:fixed;left:-9999px;';
+  document.body.appendChild(ta);ta.select();
+  try{document.execCommand('copy');toast('📋 구독 URL 복사됨!');}catch(e){prompt('아래 URL을 복사하세요:',url);}
+  document.body.removeChild(ta);
+}
 
 /* ─── 글로벌 업체 저장소 (현장 독립) ─── */
 var GLOBAL_CTORS_KEY = 'ig_global_ctors_v1';
