@@ -1179,9 +1179,6 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
     <span class="tb-label">CONSTRUCTION SCHEDULE</span>
     <span class="tb-site" id="tpn">(현장명 미입력)</span>
   </div>
-  <div id="tbGcalBtns" style="display:none;align-items:center;gap:6px;flex-shrink:0;">
-    <button id="tbUploadBothBtn" onclick="_gcalUploadBoth()" style="font-size:10px;padding:4px 12px;border-radius:6px;border:none;background:#16a34a;color:#fff;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.2px;">📅 캘린더 동기화</button>
-  </div>
 </div>
 <div class="tabs" id="tabs">
   <div class="tab on" id="te" onclick="sw('e')">편집</div>
@@ -1266,12 +1263,12 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
       </div>
     </div>
   </div>
-  <!-- Google Calendar 연동 (수동 동기화) -->
+  <!-- Google Calendar 연동 (자동 동기화) -->
   <div id="gcalSection" style="margin-top:12px;padding:10px 14px;background:var(--sf);border-radius:10px;border:1px solid var(--bd);">
     <div style="display:flex;align-items:center;justify-content:space-between;">
       <div style="display:flex;align-items:center;gap:6px;">
         <span style="font-size:14px;">📅</span>
-        <span style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;">구글 캘린더 동기화</span>
+        <span style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;">구글 캘린더 자동 동기화</span>
       </div>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
         <span id="gcalStatusLabel" style="font-size:10px;color:var(--mu);">꺼짐</span>
@@ -1281,16 +1278,9 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
       </label>
     </div>
     <div style="margin-top:8px;">
-      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-bottom:6px;display:none;"></div>
+      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-bottom:6px;">현장 확정 시 자동으로 캘린더에 반영돼요</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:4px;background:rgba(22,163,74,.06);border:1.5px solid rgba(22,163,74,.3);border-radius:10px;padding:4px 6px 4px 4px;">
-          <button id="gcalUploadNowBtn" onclick="_gcalUploadNow('detail')" style="display:none;font-size:11px;padding:5px 13px;border-radius:7px;border:none;background:rgba(22,163,74,.18);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.3px;">📋 상세 동기화</button>
-          <button id="gcalCalDetailBtn" onclick="toast('캘린더 ID는 서버 환경변수에서 관리돼요')" title="캘린더 정보" style="display:none;font-size:9px;padding:2px 7px;border-radius:6px;border:1px solid rgba(22,163,74,.3);background:transparent;color:#4ade80;cursor:pointer;white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;"></button>
-        </div>
-        <div style="display:flex;align-items:center;gap:4px;background:rgba(2,132,199,.06);border:1.5px solid rgba(2,132,199,.3);border-radius:10px;padding:4px 6px 4px 4px;">
-          <button id="gcalUploadSimpleBtn" onclick="_gcalUploadNow('simple')" style="display:none;font-size:11px;padding:5px 13px;border-radius:7px;border:none;background:rgba(2,132,199,.18);color:#0284c7;cursor:pointer;white-space:nowrap;font-weight:800;letter-spacing:-.3px;">📌 간략 동기화</button>
-          <button id="gcalCalSimpleBtn" onclick="toast('캘린더 ID는 서버 환경변수에서 관리돼요')" title="캘린더 정보" style="display:none;font-size:9px;padding:2px 7px;border-radius:6px;border:1px solid rgba(2,132,199,.3);background:transparent;color:#38bdf8;cursor:pointer;white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;"></button>
-        </div>
+        <button id="gcalUploadNowBtn" onclick="_gcalUploadBoth()" style="display:none;font-size:10px;padding:5px 12px;border-radius:7px;border:1px solid rgba(22,163,74,.3);background:rgba(22,163,74,.06);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;">🔄 전체 수동 동기화</button>
         <button id="gcalDeleteAllBtn" onclick="_gcalDeleteAllEvents()" style="display:none;font-size:10px;padding:5px 11px;border-radius:8px;border:1px solid #ef4444;background:rgba(239,68,68,.07);color:#ef4444;cursor:pointer;white-space:nowrap;font-weight:700;">🗑 전체 삭제</button>
       </div>
     </div>
@@ -2004,14 +1994,14 @@ function _doConfirmToggle(pn,confirming){
       if(ci2>=0)_cloudSites[ci2]=Object.assign({},snap);
       else _cloudSites.push(Object.assign({},snap));
     }
-    /* Google Calendar 자동 업로드 */
-    /* 자동 캘린더 업로드 비활성 — 수동 "지금 업로드" 버튼 사용 */
-    // if(snap) gcalUploadOnConfirm(snap);
+    /* Google Calendar 자동 업로드 (서비스 계정) */
+    if(snap && _gcalEnabled && _gcalReady) _gcalAutoUpload(snap);
   } else {
     deleteFromCloud(pn);
     /* _cloudSites 메모리에서도 즉시 제거 */
     _cloudSites=(_cloudSites||[]).filter(function(s){return s.pn!==pn;});
-    /* 확정 해제 → 삭제 대기 목록에 추가 (업로드 시 캘린더에서 제거됨) */
+    /* 확정 해제 → 캘린더에서 즉시 삭제 */
+    if(_gcalEnabled && _gcalReady) _gcalAutoDelete(pn);
     _gcalAddPendingDelete(pn);
   }
 
@@ -4349,53 +4339,30 @@ function _gcalSyncUI(){
   var thumb=document.getElementById('gcalToggleThumb');
   var label=document.getElementById('gcalStatusLabel');
   var sub=document.getElementById('gcalSubLabel');
-  var tbBtns=document.getElementById('tbGcalBtns');
-  if(tbBtns)tbBtns.style.display=_gcalEnabled?'flex':'none';
+  var uploadBtn=document.getElementById('gcalUploadNowBtn');
+  var delBtn=document.getElementById('gcalDeleteAllBtn');
   if(!wrap)return;
   if(_gcalEnabled && _gcalReady){
     wrap.style.background='#16a34a';
     if(thumb)thumb.style.left='18px';
-    if(label)label.textContent='연동 중 (서비스계정)';
-
-    /* 상세/간략 캘린더가 같은 경우 → 상단 동기화 버튼 */
-    if(_gcalCalIdDetail === _gcalCalIdSimple || !_gcalCalIdSimple){
-      var tbBtn=document.getElementById('tbUploadBothBtn');
-      if(tbBtn)tbBtn.style.display='block';
-      if(sub)sub.textContent='캘린더 동기화 준비 완료';
-      var duBtn=document.getElementById('gcalUploadNowBtn');
-      if(duBtn)duBtn.style.display='none';
-      var suBtn=document.getElementById('gcalUploadSimpleBtn');
-      if(suBtn)suBtn.style.display='none';
-    } else {
-      if(sub)sub.textContent='캘린더별 업로드 · 아래 버튼 사용';
-      var tbBtn2=document.getElementById('tbUploadBothBtn');
-      if(tbBtn2)tbBtn2.style.display='block';
-      var duBtn2=document.getElementById('gcalUploadNowBtn');
-      if(duBtn2){ duBtn2.style.display='block'; duBtn2.textContent='📋 상세 동기화'; }
-      var suBtn2=document.getElementById('gcalUploadSimpleBtn');
-      if(suBtn2){ suBtn2.style.display='block'; suBtn2.textContent='📌 간략 동기화'; }
-      /* 캘린더 이름 버튼 */
-      var cdBtn=document.getElementById('gcalCalDetailBtn');
-      if(cdBtn){ cdBtn.style.display='block'; cdBtn.textContent=(_gcalCalNameDetail||'상세'); }
-      var csBtn=document.getElementById('gcalCalSimpleBtn');
-      if(csBtn){ csBtn.style.display='block'; csBtn.textContent=(_gcalCalNameSimple||'간략'); }
-    }
+    if(label)label.textContent='자동 연동 중';
+    if(sub)sub.textContent='현장 확정 시 자동으로 캘린더에 반영돼요';
+    if(uploadBtn)uploadBtn.style.display='inline-block';
+    if(delBtn)delBtn.style.display='inline-block';
   } else if(_gcalEnabled && !_gcalReady){
     wrap.style.background='#b45309';
     if(thumb)thumb.style.left='18px';
     if(label)label.textContent='서버 연결 실패';
     if(sub)sub.textContent='서비스 계정 설정을 확인해주세요';
+    if(uploadBtn)uploadBtn.style.display='none';
+    if(delBtn)delBtn.style.display='none';
   } else {
     wrap.style.background='#475569';
     if(thumb)thumb.style.left='2px';
     if(label)label.textContent='연동 꺼짐';
-    if(sub)sub.textContent='스위치를 켜면 자동으로 연동돼요';
-    var tbBtn3=document.getElementById('tbUploadBothBtn');
-    if(tbBtn3)tbBtn3.style.display='none';
-    var duBtn3=document.getElementById('gcalUploadNowBtn');
-    if(duBtn3)duBtn3.style.display='none';
-    var suBtn3=document.getElementById('gcalUploadSimpleBtn');
-    if(suBtn3)suBtn3.style.display='none';
+    if(sub)sub.textContent='스위치를 켜면 확정 시 자동 동기화돼요';
+    if(uploadBtn)uploadBtn.style.display='none';
+    if(delBtn)delBtn.style.display='none';
   }
 }
 
@@ -4558,13 +4525,54 @@ function _gcalCleanupPendingDeletes(calIds){
   });
 }
 
-/* ── 현장 확정 시 자동 업로드 (비활성 — 참고용) ── */
-function gcalUploadOnConfirm(snap){
-  /* 서비스 계정 방식에서는 수동 동기화 버튼 사용 */
-  /* 자동 업로드 필요 시 아래 주석 해제 */
-  // if(!_gcalEnabled||!_gcalReady)return;
-  // _gcalDoUpload(snap, 'detail');
+/* ── 현장 확정 시 자동 업로드 ── */
+function _gcalAutoUpload(snap){
+  if(!snap||!_gcalEnabled||!_gcalReady) return;
+  var pn = snap.pn || '';
+  if(!pn) return;
+
+  /* 상세 캘린더 업로드 */
+  if(_gcalCalIdDetail){
+    _gcalDeleteSiteEvents([pn], 'detail', function(){
+      _gcalUploadMode = 'detail';
+      _gcalDoUpload(snap, 'detail', function(ok){
+        if(ok !== false) _gcalSaveUploadTs(pn, _gcalCalIdDetail, snap);
+        toast('📅 '+pn+' 상세 일정 동기화 ✅');
+      });
+    });
+  }
+
+  /* 간략 캘린더 업로드 (다른 캘린더인 경우만) */
+  if(_gcalCalIdSimple && _gcalCalIdSimple !== _gcalCalIdDetail){
+    _gcalDeleteSiteEvents([pn], 'simple', function(){
+      _gcalUploadMode = 'simple';
+      _gcalDoUploadSimple(snap, 'simple', function(ok){
+        if(ok !== false) _gcalSaveUploadTs(pn, _gcalCalIdSimple, snap);
+        toast('📌 '+pn+' 간략 일정 동기화 ✅');
+      });
+    });
+  }
 }
+
+/* ── 현장 확정 해제 시 자동 삭제 ── */
+function _gcalAutoDelete(pn){
+  if(!pn||!_gcalEnabled||!_gcalReady) return;
+
+  if(_gcalCalIdDetail){
+    _gcalDeleteSiteEvents([pn], 'detail', function(){
+      _gcalClearUploadTs_pn(pn);
+    });
+  }
+  if(_gcalCalIdSimple && _gcalCalIdSimple !== _gcalCalIdDetail){
+    _gcalDeleteSiteEvents([pn], 'simple', function(){
+      _gcalClearUploadTs_pn(pn);
+    });
+  }
+  toast('🗑 '+pn+' 캘린더 일정 삭제됨');
+}
+
+/* (하위호환) */
+function gcalUploadOnConfirm(snap){ _gcalAutoUpload(snap); }
 
 function _doUploadBothSequence(sites){
   _gcalUpdateLoading('상세 캘린더 동기화 중...', 10);
