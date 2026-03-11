@@ -24,6 +24,24 @@ const TASK_SHORT = {
   '기타공사':'기타','준공청소':'청소'
 };
 
+/* ── 현장별 색상 (Google Calendar colorId와 동일 매핑) ── */
+const SITE_COLORS = [
+  { name: 'Flamingo',  hex: '#E67C73' },
+  { name: 'Banana',    hex: '#F6BF26' },
+  { name: 'Tangerine', hex: '#F4511E' },
+  { name: 'Peacock',   hex: '#039BE5' },
+  { name: 'Graphite',  hex: '#616161' },
+  { name: 'Basil',     hex: '#0B8043' },
+  { name: 'Tomato',    hex: '#D50000' },
+];
+
+function getSiteColor(pn) {
+  if (!pn) return SITE_COLORS[3]; // Peacock default
+  let h = 0;
+  for (let i = 0; i < pn.length; i++) h = Math.imul(h, 31) + pn.charCodeAt(i) | 0;
+  return SITE_COLORS[Math.abs(h) % SITE_COLORS.length];
+}
+
 /* ── Firestore REST API에서 전체 sites 컬렉션 로드 ── */
 async function loadSites() {
   const docs = [];
@@ -95,7 +113,7 @@ function getRegion(pn) {
 }
 
 /* ── ICS 이벤트 하나 생성 ── */
-function makeEvent(uid, summary, description, dtStart, dtEnd) {
+function makeEvent(uid, summary, description, dtStart, dtEnd, color) {
   // ICS의 DTEND는 exclusive (종료일 다음날)
   const endExclusive = addDay(dtEnd, 1);
   
@@ -109,6 +127,11 @@ function makeEvent(uid, summary, description, dtStart, dtEnd) {
   ];
   if (description) {
     lines.push('DESCRIPTION:' + escapeICS(description));
+  }
+  if (color) {
+    lines.push('COLOR:' + color.hex);
+    lines.push('X-APPLE-CALENDAR-COLOR:' + color.hex);
+    lines.push('CATEGORIES:' + color.name);
   }
   lines.push('END:VEVENT');
   return lines.join('\r\n');
@@ -127,6 +150,7 @@ function siteToDetailEvents(site) {
   const events = [];
   const pn = site.pn || '';
   const region = getRegion(pn);
+  const color = getSiteColor(pn);
   const tasks = (site.tasks || []).filter(t => t.on && t.sd && t.ed);
   
   tasks.forEach(t => {
@@ -136,14 +160,14 @@ function siteToDetailEvents(site) {
     const desc = pn + ' 공사 일정\n공종: ' + t.name + (vendor ? '\n업체: ' + vendor : '');
     const uid = 'igism-' + encodeURIComponent(pn) + '-t' + t.id + '@iggg-ism.vercel.app';
     
-    events.push(makeEvent(uid, summary, desc, t.sd, t.ed));
+    events.push(makeEvent(uid, summary, desc, t.sd, t.ed, color));
     
     // 2차 분리 일정
     if (t.split && t.sd2 && t.ed2) {
       const uid2 = uid.replace('@', '-p2@');
       const desc2 = t.desc2 || t.name;
       const summary2 = region + ' | ' + short + '(2차)' + (vendor ? ' | ' + vendor : '');
-      events.push(makeEvent(uid2, summary2, desc + '\n(2차: ' + desc2 + ')', t.sd2, t.ed2));
+      events.push(makeEvent(uid2, summary2, desc + '\n(2차: ' + desc2 + ')', t.sd2, t.ed2, color));
     }
     
     // 3차 분리 일정
@@ -151,7 +175,7 @@ function siteToDetailEvents(site) {
       const uid3 = uid.replace('@', '-p3@');
       const desc3 = t.desc3 || t.name;
       const summary3 = region + ' | ' + short + '(3차)' + (vendor ? ' | ' + vendor : '');
-      events.push(makeEvent(uid3, summary3, desc + '\n(3차: ' + desc3 + ')', t.sd3, t.ed3));
+      events.push(makeEvent(uid3, summary3, desc + '\n(3차: ' + desc3 + ')', t.sd3, t.ed3, color));
     }
   });
   
@@ -160,7 +184,7 @@ function siteToDetailEvents(site) {
     if (!n.label || !n.dt) return;
     const uid = 'igism-' + encodeURIComponent(pn) + '-n' + n.id + '@iggg-ism.vercel.app';
     const summary = region + ' | ' + n.label;
-    events.push(makeEvent(uid, summary, pn + ' · ' + n.label, n.dt, n.dt));
+    events.push(makeEvent(uid, summary, pn + ' · ' + n.label, n.dt, n.dt, color));
   });
   
   return events;
@@ -170,10 +194,11 @@ function siteToDetailEvents(site) {
 function siteToSimpleEvent(site) {
   const pn = site.pn || '';
   if (!site.sd || !site.ed) return null;
+  const color = getSiteColor(pn);
   const uid = 'igism-simple-' + encodeURIComponent(pn) + '@iggg-ism.vercel.app';
   const summary = '🔨 ' + pn;
   const desc = pn + ' 공사\n기간: ' + site.sd + ' ~ ' + site.ed;
-  return makeEvent(uid, summary, desc, site.sd, site.ed);
+  return makeEvent(uid, summary, desc, site.sd, site.ed, color);
 }
 
 /* ── 메인 핸들러 ── */
