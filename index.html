@@ -1243,48 +1243,6 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
       </div>
     </div>
   </div>
-  <!-- 캘린더 구독 링크 -->
-  <div style="margin-top:12px;padding:10px 14px;background:var(--sf);border-radius:10px;border:1px solid var(--bd);">
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
-      <span style="font-size:14px;">📅</span>
-      <span style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;">캘린더 구독 (자동 갱신)</span>
-    </div>
-    <div style="font-size:10px;color:var(--mu2);line-height:1.5;margin-bottom:10px;">확정된 현장이 자동으로 캘린더에 반영됩니다.<br>아래 URL을 복사해서 캘린더 앱에 구독 등록하세요.</div>
-    <div style="display:flex;flex-direction:column;gap:8px;">
-      <div style="display:flex;align-items:center;gap:6px;">
-        <button onclick="_copyIcsUrl('detail')" style="flex:1;display:flex;align-items:center;gap:6px;padding:9px 12px;border-radius:8px;border:1.5px solid rgba(22,163,74,.3);background:rgba(22,163,74,.06);color:#15803d;font-size:12px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;">
-          <span>📋</span> !G 공정표 (상세) — 공종별 일정
-        </button>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <button onclick="_copyIcsUrl('simple')" style="flex:1;display:flex;align-items:center;gap:6px;padding:9px 12px;border-radius:8px;border:1.5px solid rgba(2,132,199,.3);background:rgba(2,132,199,.06);color:#0284c7;font-size:12px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;">
-          <span>📌</span> !G 공정표 (요약) — 현장별 전체기간
-        </button>
-      </div>
-    </div>
-  </div>
-  <!-- Google Calendar 연동 (자동 동기화) -->
-  <div id="gcalSection" style="margin-top:12px;padding:10px 14px;background:var(--sf);border-radius:10px;border:1px solid var(--bd);">
-    <div style="display:flex;align-items:center;justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:6px;">
-        <span style="font-size:14px;">📅</span>
-        <span style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;">구글 캘린더 자동 동기화</span>
-      </div>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
-        <span id="gcalStatusLabel" style="font-size:10px;color:var(--mu);">꺼짐</span>
-        <div id="gcalToggleWrap" onclick="gcalToggleChange()" style="width:36px;height:20px;border-radius:10px;background:#d1d5db;position:relative;cursor:pointer;transition:background .2s;">
-          <div id="gcalToggleThumb" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);"></div>
-        </div>
-      </label>
-    </div>
-    <div style="margin-top:8px;">
-      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-bottom:6px;">현장 확정 시 자동으로 캘린더에 반영돼요</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <button id="gcalUploadNowBtn" onclick="_gcalUploadBoth()" style="display:none;font-size:10px;padding:5px 12px;border-radius:7px;border:1px solid rgba(22,163,74,.3);background:rgba(22,163,74,.06);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;">🔄 전체 수동 동기화</button>
-        <button id="gcalDeleteAllBtn" onclick="_gcalDeleteAllEvents()" style="display:none;font-size:10px;padding:5px 11px;border-radius:8px;border:1px solid #ef4444;background:rgba(239,68,68,.07);color:#ef4444;cursor:pointer;white-space:nowrap;font-weight:700;">🗑 전체 삭제</button>
-      </div>
-    </div>
-  </div>
   </div><!-- /ep-info-col -->
   <!-- 오른쪽: 공사기간 달력 -->
   <div class="ep-cal-col">
@@ -1322,6 +1280,54 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
   </div><!-- /edit-lockable-cal -->
   </div><!-- /ep-cal-col -->
   </div><!-- /ep-top-row -->
+
+  <!-- 구글 캘린더 자동 동기화 -->
+  <div id="gcalSection" style="margin-top:12px;padding:10px 14px;background:var(--sf);border-radius:10px;border:1px solid var(--bd);">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:14px;">📅</span>
+        <span style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;">구글 캘린더 자동 동기화</span>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
+        <span id="gcalStatusLabel" style="font-size:10px;color:var(--mu);">꺼짐</span>
+        <div id="gcalToggleWrap" onclick="gcalToggleChange()" style="width:36px;height:20px;border-radius:10px;background:#d1d5db;position:relative;cursor:pointer;transition:background .2s;">
+          <div id="gcalToggleThumb" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);"></div>
+        </div>
+      </label>
+    </div>
+    <div style="margin-top:8px;">
+      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-bottom:6px;">현장 확정 시 자동으로 캘린더에 반영돼요</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button id="gcalUploadNowBtn" onclick="_gcalUploadBoth()" style="display:none;font-size:10px;padding:5px 12px;border-radius:7px;border:1px solid rgba(22,163,74,.3);background:rgba(22,163,74,.06);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;">🔄 전체 수동 동기화</button>
+        <button id="gcalDeleteAllBtn" onclick="_gcalDeleteAllEvents()" style="display:none;font-size:10px;padding:5px 11px;border-radius:8px;border:1px solid #ef4444;background:rgba(239,68,68,.07);color:#ef4444;cursor:pointer;white-space:nowrap;font-weight:700;">🗑 전체 삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 캘린더 구독 링크 (접기/펼치기) -->
+  <div style="margin-top:12px;padding:10px 14px;background:var(--sf);border-radius:10px;border:1px solid var(--bd);">
+    <div onclick="var b=document.getElementById('icsSubBody');var a=document.getElementById('icsArrow');if(b.style.display==='none'){b.style.display='block';a.textContent='▼';}else{b.style.display='none';a.textContent='▶';}" style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
+      <span style="font-size:14px;">📅</span>
+      <span style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;">캘린더 구독 (자동 갱신)</span>
+      <span id="icsArrow" style="font-size:9px;color:var(--mu2);margin-left:auto;">▶</span>
+    </div>
+    <div id="icsSubBody" style="display:none;margin-top:10px;">
+      <div style="font-size:10px;color:var(--mu2);line-height:1.5;margin-bottom:10px;">확정된 현장이 자동으로 캘린더에 반영됩니다.<br>아래 URL을 복사해서 캘린더 앱에 구독 등록하세요.</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button onclick="_copyIcsUrl('detail')" style="flex:1;display:flex;align-items:center;gap:6px;padding:9px 12px;border-radius:8px;border:1.5px solid rgba(22,163,74,.3);background:rgba(22,163,74,.06);color:#15803d;font-size:12px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;">
+            <span>📋</span> !G 공정표 (상세) — 공종별 일정
+          </button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button onclick="_copyIcsUrl('simple')" style="flex:1;display:flex;align-items:center;gap:6px;padding:9px 12px;border-radius:8px;border:1.5px solid rgba(2,132,199,.3);background:rgba(2,132,199,.06);color:#0284c7;font-size:12px;font-weight:700;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;">
+            <span>📌</span> !G 공정표 (요약) — 현장별 전체기간
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 하단 풀폭: 공종 + 비고 (잠금 영역) -->
   <div id="edit-lockable" style="position:relative">
     <div class="sl" style="margin:12px 2px 8px">공종별 일정 <span style="font-weight:400;color:var(--mu2)">(탭하여 편집)</span></div>
@@ -4348,7 +4354,7 @@ function _gcalSyncUI(){
     if(label)label.textContent='자동 연동 중';
     if(sub)sub.textContent='현장 확정 시 자동으로 캘린더에 반영돼요';
     if(uploadBtn)uploadBtn.style.display='inline-block';
-    if(delBtn)delBtn.style.display='inline-block';
+    if(delBtn)delBtn.style.display=_masterMode?'inline-block':'none';
   } else if(_gcalEnabled && !_gcalReady){
     wrap.style.background='#b45309';
     if(thumb)thumb.style.left='18px';
