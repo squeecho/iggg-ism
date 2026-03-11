@@ -1340,6 +1340,14 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 </div>
 <!-- 차트 -->
 <div class="pg cp" id="pc">
+  <!-- 마스터 클라우드 편집 배너 (차트탭) -->
+  <div id="cloud-edit-banner" style="display:none;align-items:center;gap:8px;background:#fef3c7;border:1.5px solid #f59e0b;border-radius:12px;padding:10px 16px;margin-bottom:10px;font-size:13px;font-weight:700;color:#92400e;flex-wrap:wrap;">
+    <span>🔑 마스터 편집 모드</span>
+    <span style="margin-left:auto;display:flex;gap:6px;">
+      <button onclick="_cloudEditSave()" style="border:none;background:#2563eb;color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:8px;cursor:pointer;">☁️ 클라우드 저장</button>
+      <button onclick="_cloudEditCancel()" style="border:1.5px solid #cbd5e1;background:#fff;color:#64748b;font-size:12px;font-weight:700;padding:5px 12px;border-radius:8px;cursor:pointer;">취소</button>
+    </span>
+  </div>
   <div class="ca" id="ca">
     <div class="ca-row ca-row1">
       <div class="ca-undo-group">
@@ -1426,6 +1434,7 @@ function _updLockOverlay(){
   var wrap=document.getElementById('edit-lockable');
   var calWrap=document.getElementById('edit-lockable-cal');
   var ov=document.getElementById('lock-overlay');
+  var editLocked = IS_RO || !!_cloudEditing; /* 마스터 클라우드 편집 중 편집탭 잠금 */
   function applyLock(el,on){
     if(!el)return;
     el.style.filter=on?'blur(3px)':'';
@@ -1434,9 +1443,12 @@ function _updLockOverlay(){
     el.style.userSelect=on?'none':'';
   }
   if(!wrap)return;
-  applyLock(wrap,IS_RO);
-  applyLock(calWrap,IS_RO);
-  if(ov)ov.style.display=IS_RO?'flex':'none';
+  applyLock(wrap,editLocked);
+  applyLock(calWrap,editLocked);
+  if(ov)ov.style.display=editLocked?'flex':'none';
+  /* 차트탭 마스터 편집 배너 */
+  var ceb=document.getElementById('cloud-edit-banner');
+  if(ceb) ceb.style.display=_cloudEditing?'flex':'none';
 }
 var HOLS={'2025-01-01':'신정','2025-01-28':'설전날','2025-01-29':'설날','2025-01-30':'설후날',
   '2025-03-01':'삼일절','2025-05-05':'어린이날','2025-06-06':'현충일','2025-08-15':'광복절',
@@ -2483,16 +2495,24 @@ async function loadCloudProject(pn) {
       lkb.style.color = '#92400e';
     }
     _updLockOverlay();
-    /* 헤더 배지 */
+    /* 헤더 배지 + 저장/취소 버튼 (차트탭 ca 영역) */
     var ca = document.getElementById('ca');
     var existing = ca ? ca.querySelector('.ro-badge') : null;
     if (existing) existing.remove();
+    var existingBtns = ca ? ca.querySelector('.cloud-edit-btns') : null;
+    if (existingBtns) existingBtns.remove();
     if (ca) {
       var rb = document.createElement('span');
       rb.className = 'ro-badge cloud-badge';
       rb.textContent = '🔑 마스터 편집';
       rb.style.cssText = 'font-size:11px;font-weight:700;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:3px 8px;margin-right:4px;';
       ca.insertBefore(rb, ca.firstChild);
+      /* 저장/취소 버튼 */
+      var btns = document.createElement('span');
+      btns.className = 'cloud-edit-btns';
+      btns.style.cssText = 'display:inline-flex;gap:5px;margin-right:6px;';
+      btns.innerHTML = '<button onclick="_cloudEditSave()" style="border:none;background:#2563eb;color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:8px;cursor:pointer;">☁️ 클라우드 저장</button><button onclick="_cloudEditCancel()" style="border:1.5px solid #cbd5e1;background:#fff;color:#64748b;font-size:12px;font-weight:700;padding:5px 12px;border-radius:8px;cursor:pointer;">취소</button>';
+      ca.insertBefore(btns, rb.nextSibling);
     }
     rChips(); rCloudChips();
     var _pnchipsEl=document.getElementById('pnchips');if(_pnchipsEl)_pnchipsEl.classList.add('cloud-viewing');
@@ -2582,6 +2602,7 @@ function _cloudEditCancel(silent) {
   _updLockOverlay();
   /* 배너 / 배지 정리 */
   var rb = document.querySelector('.ro-badge.cloud-badge'); if (rb) rb.remove();
+  var cebtns = document.querySelector('.cloud-edit-btns'); if (cebtns) cebtns.remove();
   var _pcEl = document.getElementById('pnchips'); if (_pcEl) _pcEl.classList.remove('cloud-viewing');
   var lkb = document.getElementById('lock-banner');
   if (lkb) {
@@ -2914,10 +2935,8 @@ function sw(m){
   var tabId=m==='e'?'te':m==='c'?'tc2':'ti';
   document.getElementById(tabId).classList.add('on');
   /* 편집/통합탭 전환 시 공유현장 뷰 해제 (차트탭은 유지 — read-only 차트 그대로) */
-  if(_cloudEditing && m !== 'c'){
-    _cloudEditCancel(true);
-  }
-  if(_cloudView && m !== 'c'){
+  /* 마스터 클라우드 편집 중에는 탭 전환해도 유지 */
+  if(_cloudView && !_cloudEditing && m !== 'c'){
     _cloudView=null;
     IS_RO=false;
     /* 로컬 현장 IS_RO 재확인 */
@@ -2945,7 +2964,9 @@ function sw(m){
 
 /* 차트탭 전환: Firebase 최신 데이터로 S 동기화 후 렌더 */
 async function swChart() {
+  _updLockOverlay(); /* 마스터 편집 배너 갱신 */
   rChart(); /* 즉시 렌더 */
+  if (_cloudEditing) return; /* 마스터 클라우드 편집 중엔 동기화 불필요 */
   if (_cloudView) return; /* 공유 현장 보기 중엔 로컬 동기화 불필요 */
   if (!_fbReady || !_db || !S || !S.pn) return;
   try {
@@ -2992,9 +3013,18 @@ function rEdit(){
   var li=document.getElementById('tl');if(!li)return;li.innerHTML='';
   /* 확정 블러 오버레이 */
   _updLockOverlay();
-  /* 확정 배너 */
+  /* 확정 배너 / 마스터 편집 배너 */
   var lkb=document.getElementById('lock-banner');
-  if(lkb){lkb.style.display=IS_RO?'flex':'none';}
+  if(lkb){
+    if(_cloudEditing){
+      lkb.style.display='flex';
+      lkb.innerHTML='🔑 마스터 편집 모드 — 차트탭에서 수정 후 저장하세요 <button onclick="_cloudEditSave()" style="margin-left:auto;border:none;background:#2563eb;color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:8px;cursor:pointer;">☁️ 클라우드 저장</button><button onclick="_cloudEditCancel()" style="margin-left:6px;border:1.5px solid #cbd5e1;background:#fff;color:#64748b;font-size:12px;font-weight:700;padding:5px 12px;border-radius:8px;cursor:pointer;">취소</button>';
+      lkb.style.background='#fef3c7';lkb.style.borderColor='#f59e0b';lkb.style.color='#92400e';
+    } else {
+      lkb.style.display=IS_RO?'flex':'none';
+      if(IS_RO){lkb.innerHTML='🔒 확정된 현장입니다 · 수정이 잠겨있습니다';lkb.style.background='';lkb.style.borderColor='';lkb.style.color='';}
+    }
+  }
   S.tasks.forEach(function(t,i){
     var io=_open===t.id;
     var rng=t.on?(t.id===14&&t.sd===t.ed?dsp(t.sd):(dsp(t.sd)+' ~ '+dsp(t.ed))):'비활성';
