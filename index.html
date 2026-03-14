@@ -558,8 +558,9 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ca-sub-btn{flex:1;background:#7c3aed;border-color:#7c3aed;color:#fff;font-size:12px;padding:7px 10px;justify-content:center;}
 @media(min-width:640px){.ca-row{width:auto;flex:none;}.ca{flex-wrap:nowrap;}.ca-row2{flex:1;}.ca-main-btn,.ca-sub-btn{flex:1;}}
 .cw{background:var(--sf);border-radius:0;border:2px solid #b8b2a8;overflow:hidden;}
-.cs{overflow-x:auto;}
+.cs{overflow:auto;max-height:calc(100vh - 180px);}
 .gt{border-collapse:collapse;table-layout:fixed;}
+.gt thead{position:sticky;top:0;z-index:20;}
 .gt th,.gt td{border-right:1px solid rgba(0,0,0,.06);border-bottom:1px solid var(--bd);}
 .gt tbody tr:last-child td{border-bottom:none;}
 .sc{position:static;z-index:5;}
@@ -626,7 +627,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 @keyframes spin{to{transform:rotate(360deg);}}
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(6px);background:#18170f;color:#fff;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:500;z-index:999;opacity:0;pointer-events:none;transition:all .22s;white-space:nowrap;}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
-@media print{@page{size:A3 landscape;margin:8mm;}.tb .btn,.tabs,.ep,.ca,.cta,.rob{display:none!important;}.tb{position:static;background:#fff;color:#000;border-bottom:2px solid #000;}.lg em{color:#000;}#pc{display:block!important;}.pg:not(#pc){display:none!important;}.cs{overflow:visible!important;}.sc{position:static!important;}}
+@media print{@page{size:A3 landscape;margin:8mm;}.tb .btn,.tabs,.ep,.ca,.cta,.rob{display:none!important;}.tb{position:static;background:#fff;color:#000;border-bottom:2px solid #000;}.lg em{color:#000;}#pc{display:block!important;}.pg:not(#pc){display:none!important;}.cs{overflow:visible!important;max-height:none!important;}.sc{position:static!important;}.gt thead{position:static!important;}}
 
 .cal-wrap{background:var(--sf);border:1.5px solid var(--bd);border-radius:12px;overflow:hidden;margin-top:0;user-select:none;}
 .cal-nav{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--bd);}
@@ -4238,14 +4239,27 @@ var TASK_SHORT = {
   '기타공사':'기타','준공청소':'청소'
 };
 
-var GCAL_COLOR_IDS = ['4','5','6','7','8','10','11'];
+var GCAL_COLOR_IDS = ['2','4','5','6','7','8','9','10','11','1','3'];
 
 function _gcalColorId(pn){
   if(!pn) return '7';
   var ids = GCAL_COLOR_IDS;
-  var h=0;
-  for(var i=0;i<pn.length;i++) h=Math.imul(h,31)+pn.charCodeAt(i)|0;
-  return ids[Math.abs(h)%ids.length];
+  /* localStorage 기반: 현장별 고유 색상 배정, 이미 사용 중인 색상 회피 */
+  var mapKey='_gcalColorMap';
+  var map;
+  try{ map=JSON.parse(localStorage.getItem(mapKey)||'{}'); }catch(e){ map={}; }
+  if(map[pn]) return map[pn];
+  /* 이미 사용 중인 색상 목록 */
+  var used={};
+  Object.keys(map).forEach(function(k){ used[map[k]]=true; });
+  /* 사용 안 된 색상 중 첫 번째 배정 */
+  var picked='7';
+  for(var i=0;i<ids.length;i++){
+    if(!used[ids[i]]){ picked=ids[i]; break; }
+  }
+  map[pn]=picked;
+  try{ localStorage.setItem(mapKey, JSON.stringify(map)); }catch(e){}
+  return picked;
 }
 
 function _gcalRegion(pn){
@@ -7009,7 +7023,7 @@ var AS_PCT_DUR = {
   5:0.20,  /* 전기1차 기간 (기존0.28→0.20) */
   6:0.22,  /* 도장 기간 (기존0.14→0.22) */
   7:0.19,  /* 금속 기간 (기존0.14→0.19) */
-  8:0.13,  /* 설비 기간 (기존0.24→0.13, 3~4일이면 충분) */
+  8:0.20,  /* 설비 기간 (전체공사기간의 20%, 반올림) */
   9:0.17,  /* 타일 기간 (기존0.21→0.17) */
   10:0.10, /* 공조1차 기간 (기존0.15→0.10) */
   11:0.10, /* 필름 기간 (기존0.18→0.10, 핵심수정) */
