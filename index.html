@@ -2765,7 +2765,7 @@ function autoTaskDates(){
 
   var endDates={};
   var sdDates={};  /* AS_DEP_START 용 시작일 추적 */
-  var taskOrder=[1,2,3,4,5,7,8,10,6,11,9,12,13,14];
+  var taskOrder=[1,2,3,4,5,7,8,10,11,6,9,12,13,14]; /* 설비→공조→필름→도장→타일 순 */
 
   taskOrder.forEach(function(tid){
     var task=S.tasks.find(function(x){return x.id===tid;});
@@ -2815,6 +2815,9 @@ function autoTaskDates(){
     /* 준공청소(14): 마지막날 고정 */
     if(tid===14){task.sd=pEnd;task.ed=pEnd;endDates[tid]=pEnd;return;}
 
+    /* 공조(10): 1차 시작은 설비(8) 시작일과 동일하게 맞춤 */
+    if(tid===10 && sdDates[8]) earliestStart=sdDates[8];
+
     var sd=earliestStart;
     var ed=addD(sd,minDays-1);
 
@@ -2845,8 +2848,8 @@ function autoTaskDates(){
     if(tid===10){
       task.split=true;
       task.sd2=addD(pStart,Math.round(total*0.70));
-      task.ed2=addD(task.sd2,1);/* 공조 2차: 1~2일이면 충분 */
-      if(!task.desc2)task.desc2='HVAC 마감';
+      task.ed2=task.sd2;/* 공조 2차: 1일 ★수정 (타일 마감 다음날로 후처리에서 이동) */
+      if(!task.desc2)task.desc2='덕트마감';
     }
   });
 
@@ -2863,12 +2866,11 @@ function autoTaskDates(){
       _elecT.ed2=addD(_minAfterTile,Math.max(0,_e2dur));
       if(_elecT.ed2>pEnd)_elecT.ed2=pEnd;
     }
-    /* 공조 2차 */
+    /* 공조 2차: 타일 마감 다음날로 고정 ★수정 */
     var _hvacT=S.tasks.find(function(x){return x.id===10&&x.on;});
-    if(_hvacT&&_hvacT.split&&_hvacT.sd2&&_hvacT.sd2<_minAfterTile){
-      var _h2dur=dif(_hvacT.sd2,_hvacT.ed2);
+    if(_hvacT&&_hvacT.split){
       _hvacT.sd2=_minAfterTile;
-      _hvacT.ed2=addD(_minAfterTile,Math.max(0,_h2dur));
+      _hvacT.ed2=_minAfterTile;/* 공조 2차: 1일 */
       if(_hvacT.ed2>pEnd)_hvacT.ed2=pEnd;
     }
   }
@@ -3692,31 +3694,73 @@ function oMM(e){
 
 /* 노트 점선 드래그 */
 var nDrag=null;
+/* ── 노트 세로 점선: 3초 롱프레스 후에만 드래그 가능 ── */
+/* 이동량 체크 없음 — 손가락을 떼지만 않으면 3초 후 활성화 */
+var _nLongPress = null;
+function _nLpCleanup(){
+  if(!_nLongPress)return;
+  clearTimeout(_nLongPress.timer);
+  if(_nLongPress.halfTimer)clearTimeout(_nLongPress.halfTimer);
+  document.querySelectorAll('.dg-note-line.longpress-wait').forEach(function(el){el.classList.remove('longpress-wait');});
+  if(_nLongPress.mh){document.removeEventListener('mousemove',_nLongPress.mh);document.removeEventListener('mouseup',_nLongPress.uh);}
+  if(_nLongPress.th){document.removeEventListener('touchmove',_nLongPress.th);document.removeEventListener('touchend',_nLongPress.tuh);document.removeEventListener('touchcancel',_nLongPress.tuh);}
+  _nLongPress=null;
+}
+function _nLpActivate(nid){
+  if(!_nLongPress)return;
+  _nLongPress.active=true;
+  if(navigator.vibrate)navigator.vibrate([50,30,50]);
+  var n=S.notes.find(function(x){return x.id===nid;});
+  if(!n)return;
+  var currentDt=nDt(n);
+  if(!n.dt)n.dt=currentDt||S.sd;
+  nDrag={nid:nid,sx:_nLongPress.curX,odt:n.dt,_pre:JSON.stringify(S)};
+  document.querySelectorAll('.dg-note-line.longpress-wait').forEach(function(el){el.classList.remove('longpress-wait');});
+  document.querySelectorAll('.dg-note-line[data-nid="'+nid+'"]').forEach(function(el){el.classList.add('dragging');});
+  toast('드래그 가능 — 좌우로 이동하세요');
+}
 function nDragStart(e,nid){
   if(IS_RO)return;
   e.preventDefault();e.stopPropagation();
-  var n=S.notes.find(function(x){return x.id===nid;});
-  if(!n)return;
-  /* manual 타입으로 전환해서 dt 직접 저장 */
-  var currentDt=nDt(n);
-  if(!n.dt)n.dt=currentDt||S.sd;
-  nDrag={nid:nid,sx:e.clientX,odt:n.dt,_pre:JSON.stringify(S)};
-  document.querySelectorAll('.dg-note-line[data-nid="'+nid+'"]').forEach(function(el){el.classList.add('dragging');});
-  document.addEventListener('mousemove',nDragMove);
-  document.addEventListener('mouseup',nDragEnd);
+  _nLpCleanup();
+  var sx=e.clientX;
+  _nLongPress={nid:nid, curX:sx, active:false};
+  document.querySelectorAll('.dg-note-line[data-nid="'+nid+'"]').forEach(function(el){el.classList.add('longpress-wait');});
+  _nLongPress.halfTimer=setTimeout(function(){if(_nLongPress&&!_nLongPress.active)toast('계속 누르고 있으면 이동 가능...');},1500);
+  _nLongPress.timer=setTimeout(function(){_nLpActivate(nid);},3000);
+  _nLongPress.mh=function(me){
+    if(!_nLongPress)return;
+    _nLongPress.curX=me.clientX;
+    if(_nLongPress.active) nDragMove(me);
+  };
+  _nLongPress.uh=function(){
+    if(_nLongPress&&_nLongPress.active) nDragEnd();
+    else _nLpCleanup();
+  };
+  document.addEventListener('mousemove',_nLongPress.mh);
+  document.addEventListener('mouseup',_nLongPress.uh);
 }
 function nDragStartT(e,nid){
   if(IS_RO)return;
   e.preventDefault();e.stopPropagation();
-  if(navigator.vibrate)navigator.vibrate(20);
-  var n=S.notes.find(function(x){return x.id===nid;});
-  if(!n)return;
-  var currentDt=nDt(n);
-  if(!n.dt)n.dt=currentDt||S.sd;
-  nDrag={nid:nid,sx:e.touches[0].clientX,odt:n.dt,_pre:JSON.stringify(S)};
-  document.querySelectorAll('.dg-note-line[data-nid="'+nid+'"]').forEach(function(el){el.classList.add('dragging');});
-  document.addEventListener('touchmove',nDragMoveT,{passive:false});
-  document.addEventListener('touchend',nDragEnd);
+  _nLpCleanup();
+  var touch=e.touches[0];
+  _nLongPress={nid:nid, curX:touch.clientX, active:false};
+  document.querySelectorAll('.dg-note-line[data-nid="'+nid+'"]').forEach(function(el){el.classList.add('longpress-wait');});
+  _nLongPress.halfTimer=setTimeout(function(){if(_nLongPress&&!_nLongPress.active)toast('계속 누르고 있으면 이동 가능...');},1500);
+  _nLongPress.timer=setTimeout(function(){_nLpActivate(nid);},3000);
+  _nLongPress.th=function(te){
+    if(!_nLongPress)return;
+    _nLongPress.curX=te.touches[0].clientX;
+    if(_nLongPress.active){te.preventDefault();nDragMoveT(te);}
+  };
+  _nLongPress.tuh=function(){
+    if(_nLongPress&&_nLongPress.active) nDragEnd();
+    else _nLpCleanup();
+  };
+  document.addEventListener('touchmove',_nLongPress.th,{passive:false});
+  document.addEventListener('touchend',_nLongPress.tuh);
+  document.addEventListener('touchcancel',_nLongPress.tuh);
 }
 function nDragMove(e){
   if(!nDrag)return;
@@ -3742,10 +3786,7 @@ function nDragEnd(){
   document.querySelectorAll('.dg-note-line.dragging').forEach(function(el){el.classList.remove('dragging');});
   if(nDrag){var _prev=nDrag._pre;if(_prev){_undoStack.push(_prev);if(_undoStack.length>30)_undoStack.shift();_redoStack=[];_updUR();}rChart();rSC();autoSave();}
   nDrag=null;
-  document.removeEventListener('mousemove',nDragMove);
-  document.removeEventListener('mouseup',nDragEnd);
-  document.removeEventListener('touchmove',nDragMoveT);
-  document.removeEventListener('touchend',nDragEnd);
+  _nLpCleanup();
 }
 function normalizeTasks(){
   /* 구 데이터 호환: task에 신규 필드 없을 때 기본값 채움 */
@@ -3795,12 +3836,12 @@ function chartTaskClick(id){
     else if(id===3){t.sd=addD(S.sd,s(0.03));t.ed=addD(S.sd,Math.max(s(0.03)+2,e(0.15)));}
     else if(id===4){t.sd=addD(S.sd,s(0.10));t.ed=addD(S.sd,e(0.42));}
     else if(id===5){var t4b=S.tasks.find(function(x){return x.id===4;});t.sd=t4b&&t4b.sd?t4b.sd:addD(S.sd,s(0.10));t.ed=addD(S.sd,e(0.38));}
-    else if(id===6){t.sd=addD(S.sd,s(0.43));t.ed=addD(S.sd,e(0.65));}
+    else if(id===6){var t4b=S.tasks.find(function(x){return x.id===4;});var t11b=S.tasks.find(function(x){return x.id===11;});var t6a=t4b&&t4b.on&&t4b.ed?addD(t4b.ed,1):addD(S.sd,s(0.43));var t6b2=t11b&&t11b.on&&t11b.ed?addD(t11b.ed,1):addD(S.sd,s(0.43));var t6s=t6a>t6b2?t6a:t6b2;t.sd=t6s;t.ed=addD(t6s,Math.max(2,Math.round(total*0.10)-1));if(t.ed>S.ed)t.ed=S.ed;}
     else if(id===7){t.sd=addD(S.sd,s(0.30));t.ed=addD(S.sd,e(0.50));}
     else if(id===8){t.sd=addD(S.sd,s(0.27));t.ed=addD(S.sd,e(0.52));}
-    else if(id===9){var t8b=S.tasks.find(function(x){return x.id===8;});var t9base=t8b&&t8b.ed?addD(t8b.ed,3):addD(S.sd,s(0.59));var t9pct=addD(S.sd,s(0.57));var t9s=t9base>t9pct?t9base:t9pct;t.sd=t9s;t.ed=addD(S.sd,e(0.78));if(t.ed<=t.sd)t.ed=addD(t.sd,Math.max(3,e(0.18)));if(t.ed>=S.ed)t.ed=addD(S.ed,-2);if(t.sd>=t.ed)t.sd=addD(t.ed,-3);}
-    else if(id===10){t.sd=addD(S.sd,s(0.27));t.ed=addD(S.sd,e(0.42));}
-    else if(id===11){t.sd=addD(S.sd,s(0.42));t.ed=addD(S.sd,e(0.60));}
+    else if(id===9){var t6b=S.tasks.find(function(x){return x.id===6;});var t9s=t6b&&t6b.on&&t6b.ed?addD(t6b.ed,1):addD(S.sd,s(0.57));t.sd=t9s;t.ed=addD(t9s,Math.max(3,Math.round(total*0.133)-1));if(t.ed>=S.ed)t.ed=addD(S.ed,-2);if(t.sd>=t.ed)t.sd=addD(t.ed,-3);}
+    else if(id===10){var t8c=S.tasks.find(function(x){return x.id===8;});t.sd=t8c&&t8c.on&&t8c.sd?t8c.sd:addD(S.sd,s(0.27));t.ed=addD(t.sd,Math.max(1,Math.round(total*0.067)-1));}
+    else if(id===11){var t8b=S.tasks.find(function(x){return x.id===8;});var t11s=t8b&&t8b.on&&t8b.ed?addD(t8b.ed,1):addD(S.sd,s(0.42));t.sd=t11s;t.ed=addD(t11s,Math.max(1,Math.round(total*0.067)-1));if(t.ed>S.ed)t.ed=S.ed;}
     else if(id===12){var n1=S.notes.find(function(x){return x.id===1;});var t9b=S.tasks.find(function(x){return x.id===9;});var kitBase=n1&&n1.dt?n1.dt:(t9b&&t9b.on&&t9b.ed?addD(t9b.ed,2):'');t.sd=kitBase?addD(kitBase,1):addD(S.sd,s(0.85));t.ed=addD(t.sd,Math.max(1,e(0.10)));if(t.ed>=S.ed)t.ed=addD(S.ed,-1);}
     else if(id===13){t.sd=addD(S.sd,s(0.83));t.ed=addD(S.ed,-1);if(t.sd>=t.ed)t.sd=addD(S.ed,-3);}
     else if(id===14){t.sd=S.ed;t.ed=S.ed;}
@@ -3814,7 +3855,7 @@ function chartTaskClick(id){
     if(id===14){t.sd2=addD(t.ed,1);t.ed2=addD(t.ed,1);return;}
     if(id===13){t.sd2=S.ed;t.ed2=S.ed;return;}
     if(id===5){t.sd2=addD(S.sd,s(0.75));t.ed2=addD(S.sd,e(0.90));if(!t.desc2)t.desc2='조명공사';return;}
-    if(id===10){t.sd2=addD(S.sd,s(0.70));t.ed2=addD(S.sd,e(0.83));if(!t.desc2)t.desc2='HVAC 마감';return;}
+    if(id===10){var t9c=S.tasks.find(function(x){return x.id===9&&x.on;});var h2s=t9c&&t9c.ed?addD(t9c.ed,1):addD(S.sd,s(0.70));t.sd2=h2s;t.ed2=h2s;if(!t.desc2)t.desc2='덕트마감';return;}
     if(id===6){t.sd2=addD(edBase,-5);t.ed2=addD(edBase,-3);return;}
     if(id===7){t.sd2=addD(edBase,-6);t.ed2=addD(edBase,-4);return;}
     if(id===8){t.sd2=addD(edBase,-5);t.ed2=addD(edBase,-3);return;}
@@ -7078,17 +7119,17 @@ var AS_DEPS = {
   3:[2],    /* 소방    ← 철거 완료 후 */
   4:[2],    /* 목공    ← 철거 완료 후 */
   5:[2],    /* 전기1차 ← 철거 완료 후 (목공과 동시) */
-  6:[4],    /* 도장    ← 목공 완료 후 (벽체 마감 전제) */
+  6:[4,11],  /* 도장    ← 목공+필름 둘 다 완료 후 ★수정(목공 의존 유지 + 설비→필름→도장→타일 순) */
   7:[2],    /* 금속    ← 철거 완료 후 (목공 진행 중 착수, 완료 불필요) ★수정 */
   8:[2],    /* 설비    ← 철거 완료 후 (배관은 천장 오픈 상태에서 선행) ★수정 */
-  9:[8],    /* 타일    ← 설비 완료+방통 양생 후 */
-  10:[2],   /* 공조    ← 철거 완료 후 (에어컨 배관은 천장 열렸을 때 먼저) ★수정 */
-  11:[6],   /* 필름    ← 도장 완료 후 */
+  9:[6],    /* 타일    ← 도장 완료 후 ★수정(설비→필름→도장→타일 순) */
+  10:[2],   /* 공조    ← 철거 완료 후 (1차는 설비 시작일 맞춤, 별도 처리) */
+  11:[8],   /* 필름    ← 설비 완료 후 ★수정(설비→필름→도장→타일 순) */
   12:[],    /* 가스    ← 의존성 없음, 주방집기입고일 기반으로 별도 계산 */
   /* 기타(13): 의존성 없음 — 전체 공정 버퍼 구간, AS_PCT 비율로만 배치 */
   14:[12]   /* 준공청소 ← 가스 완료 후 */
 };
-var AS_DEFAULT_DAYS = {1:3,2:4,3:5,4:8,5:7,6:6,7:5,8:4,9:6,10:5,11:3,12:3,13:3,14:1};
+var AS_DEFAULT_DAYS = {1:3,2:4,3:5,4:8,5:7,6:3,7:5,8:4,9:4,10:2,11:2,12:3,13:3,14:1};
 /* 날짜 고정 공종: 업체 충돌 시 날짜 이동 안 함, 경고+대체업체 제안만 */
 var AS_FIXED = [1, 2, 3, 4, 5];
 /* ── 공사기간 대비 시작 위치 비율 ──
@@ -7104,37 +7145,37 @@ var AS_PCT = {
   3:0.10,  /* 소방:   철거 후 바로 */
   4:0.07,  /* 목공:   초반 */
   5:0.08,  /* 전기1차: 목공과 동시 */
-  6:0.41,  /* 도장:   목공 완료 후 (기존0.45→0.41) */
-  7:0.19,  /* 금속:   목공 진행 중 (기존0.26→0.19) */
-  8:0.30,  /* 설비:   목공 진행 중(60~80%) — 실측 중앙값 ~33% ★보정 */
-  9:0.60,  /* 타일:   설비 완료+양생 후 */
-  10:0.22, /* 공조:   철거 직후 배관 선행 — 실측 최빈값 ~20% ★보정 */
-  11:0.42, /* 필름:   도장 완료 후 */
+  6:0.30,  /* 도장:   필름 완료 후 (dep 기반, PCT는 하한) ★수정 */
+  7:0.19,  /* 금속:   목공 진행 중 */
+  8:0.30,  /* 설비:   목공 진행 중 */
+  9:0.45,  /* 타일:   도장 완료 후 (dep 기반, PCT는 하한) ★수정 */
+  10:0.30, /* 공조:   설비 시작일 맞춤 (별도 처리) ★수정 */
+  11:0.30, /* 필름:   설비 완료 후 (dep 기반, PCT는 하한) ★수정 */
   12:0.82, /* 가스:   후반 */
   13:0.76, /* 기타:   말미 */
   14:1.00 /* 준공청소: 항상 마지막날 고정 */
 };
 /* ── 공사기간 대비 1차 기간 비율 (비례 기본일수 계산용) ── */
 var AS_PCT_DUR = {
-  /* 23개 현장 이미지 실측 평균 */
-  1:0.07,  /* 가설 기간 (기존0.12→0.07) */
+  /* 30일 기준 수정 */
+  1:0.07,  /* 가설 기간 */
   2:0.09,  /* 철거 기간 */
-  3:0.09,  /* 소방 기간 (기존0.12→0.09) */
-  4:0.29,  /* 목공 기간 (기존0.32→0.29) */
-  5:0.20,  /* 전기1차 기간 (기존0.28→0.20) */
-  6:0.22,  /* 도장 기간 (기존0.14→0.22) */
-  7:0.19,  /* 금속 기간 (기존0.14→0.19) */
-  8:0.20,  /* 설비 기간 (전체공사기간의 20%, 반올림) */
-  9:0.17,  /* 타일 기간 (기존0.21→0.17) */
-  10:0.10, /* 공조1차 기간 (기존0.15→0.10) */
-  11:0.10, /* 필름 기간 (기존0.18→0.10, 핵심수정) */
-  12:0.09, /* 가스 기간 (기존0.10→0.09) */
-  13:0.20, /* 기타 기간 (기존0.17→0.20) */
+  3:0.09,  /* 소방 기간 */
+  4:0.29,  /* 목공 기간 */
+  5:0.20,  /* 전기1차 기간 */
+  6:0.10,  /* 도장 기간 ★수정 30일→3일 */
+  7:0.19,  /* 금속 기간 */
+  8:0.20,  /* 설비 기간 */
+  9:0.133, /* 타일 기간 ★수정 30일→4일 */
+  10:0.067,/* 공조1차 기간 ★수정 30일→2일 */
+  11:0.067,/* 필름 기간 ★수정 30일→2일 */
+  12:0.09, /* 가스 기간 */
+  13:0.20, /* 기타 기간 */
   14:0.01
 };
 /* ── 선행 공종 완료 후 추가 대기일 (방통 양생 등) ── */
 var AS_DEP_LAG = {
-  9: {8:2}  /* 타일(9)은 설비(8) 완료 후 최소 +2일 (방통 48h 양생) */
+  /* 타일(9)→도장(6) 순서로 변경됨, 별도 양생 lag 불필요 */
 };
 /* 종료일 기준이 아닌 시작일 기준 의존성: {tid: {depTid: maxLagDays}} */
 var AS_DEP_START = { 5: {2: 2} }; /* 전기1차: 목공 시작일로부터 최대 2일 이내 시작 */
@@ -7317,9 +7358,12 @@ function openAutoSchedModal(){
   _asIgnored={};
   /* ★ S.tasks 업체 → AS_SETTINGS 초기값 동기화 + 자동선택 */
   var asSettings = asGetSettings();
+  var _gc = getGlobalCtors();
   (S.tasks||[]).forEach(function(t){
     if(!t.id) return;
     var ctors = (t.contractors||[]).filter(Boolean);
+    /* globalCtors 합산 (편집탭 rCtorMgr와 동일) */
+    (_gc[t.id]||[]).forEach(function(c){ if(c&&ctors.indexOf(c)<0) ctors.push(c); });
     if(!asSettings[t.id]) asSettings[t.id] = {};
     /* 업체 1개 → 무조건 자동선택 */
     if(ctors.length === 1){
@@ -7789,6 +7833,9 @@ function asShowStep1(){
     h+='<div class="as-section"><div class="as-section-lbl">담당 업체</div>';
     var _masterTask=(S.tasks||[]).find(function(x){return x.id===t.id;});
     var masterCtors=(_masterTask&&_masterTask.contractors||[]).filter(Boolean);
+    /* globalCtors 합산 (편집탭과 동일) */
+    var _gcS=getGlobalCtors();
+    (_gcS[t.id]||[]).forEach(function(c){ if(c&&masterCtors.indexOf(c)<0) masterCtors.push(c); });
     if(masterCtors.length){
       var sortedCtors=cpSorted(t.id, masterCtors);
       h+='<div class="as-ctor-priority-list">';
