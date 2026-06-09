@@ -1,0 +1,21 @@
+# ───────────────────────────────────────────────
+# 서비스 계정 비밀키 — 절대 커밋 금지 (유출 시 즉시 폐기/재발급)
+# ───────────────────────────────────────────────
+iggg-ism-72eae49fecfa.json
+*-service-account*.json
+*.pem
+*.key
+
+# 로컬 백업본 (작업용, 원격에 올리지 않음)
+*.backup-before-auth.html
+index(*).backup*.html
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# 에디터/임시
+*.swp
+*~
+.vscode/

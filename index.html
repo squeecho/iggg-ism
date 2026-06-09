@@ -15,6 +15,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <!-- Google OAuth 제거 — 서비스 계정 방식 사용 -->
 <style>:root{--bg:#f2f0eb;--sf:#fff;--bd:#e0dbd2;--bmd:#ccc7bc;--tx:#18170f;--mu:#7a7870;--mu2:#b5b0a8;
@@ -1637,6 +1638,9 @@ function per(){
 }
 function zz(n){return String(n).padStart(2,'0');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+/* JS 문자열 리터럴 이스케이프 — onclick="fn('...')" 같은 인라인 핸들러의 작은따옴표 문자열에 사용.
+   esc()는 HTML 엔티티라 onclick 안에서는 브라우저가 다시 디코드해 깨짐 → 이 함수를 써야 함. */
+function jsq(s){return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'\\x3C');}
 function cl(v,a,b){return Math.max(a,Math.min(b,v));}
 function isH(ds){return !!HOLS[ds];}
 function hNm(ds){return HOLS[ds]||'';}
@@ -2019,7 +2023,7 @@ function _showConflictModal(pn){
     +'<span style="color:#fbbf24;font-size:11px;">현장명을 변경한 후 다시 확정해주세요.</span>'
     +'</div>'
     +'<div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">'
-    +'<button class="master-modal-ok" style="background:#7c3aed;" onclick="_closeConflictModal();_openRenameFromConflict(\''+esc(pn)+'\')">✏️ 이름 변경하러 가기</button>'
+    +'<button class="master-modal-ok" style="background:#7c3aed;" onclick="_closeConflictModal();_openRenameFromConflict(\''+jsq(pn)+'\')">✏️ 이름 변경하러 가기</button>'
     +'<button class="master-modal-cancel" onclick="_closeConflictModal()">취소</button>'
     +'</div></div>';
   document.body.appendChild(bg);
@@ -2284,7 +2288,7 @@ function _showDeleteConfirmModal(pn){
     +'<div class="master-modal-sub" style="color:#fca5a5;font-size:12px;line-height:1.6;margin-top:0;">☁️ <b style="color:#fff">'+esc(pn)+'</b><br>모든 기기에서 완전히 삭제됩니다.<br>이 작업은 되돌릴 수 없습니다.</div>'
     +'<div class="master-modal-btns" style="margin-top:4px;">'
     +'<button class="master-modal-cancel" onclick="document.getElementById(\'_delConfirmBg\').remove()">취소</button>'
-    +'<button class="master-modal-ok" style="background:#ef4444;" onclick="_confirmDeleteCloud(\''+esc(pn)+'\')">삭제 확인</button>'
+    +'<button class="master-modal-ok" style="background:#ef4444;" onclick="_confirmDeleteCloud(\''+jsq(pn)+'\')">삭제 확인</button>'
     +'</div></div>';
   document.body.appendChild(bg);
 }
@@ -2724,7 +2728,9 @@ window.addEventListener('beforeunload',function(){
   if(_cloudEditing)return; /* 마스터 클라우드 편집 중 로컬 저장 차단 */
   if(!S.pn||!S.pn.trim())return;
   var nm=S.pn.trim();var arr=getRecent();var ci=arr.findIndex(function(x){return x.pn===nm;});
-  if(ci<0)return;var now=nowTS();
+  if(ci<0)return;
+  if(arr[ci].confirmed)return; /* 확정된 프로젝트는 덮어쓰기 차단 (autoSave와 동일) */
+  var now=nowTS();
   arr[ci]=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});
   setRecent(arr);try{localStorage.setItem('cs_last',nm);}catch(e){}
 });
@@ -3629,8 +3635,8 @@ function rChart(){
     /* 공유 현장 보기: S를 건드리지 않고 임시 교체 후 복원 */
     var _prevS=S,_prevRO=IS_RO;
     S=_cloudView;IS_RO=true;
-    rG();rSC();
-    S=_prevS;IS_RO=_prevRO;
+    /* rG()/rSC()에서 예외가 나도 전역 S가 _cloudView로 남지 않도록 복구 보장 */
+    try{ rG();rSC(); } finally { S=_prevS;IS_RO=_prevRO; }
   } else {
     rG();rSC();
   }
@@ -5347,15 +5353,23 @@ function initFirebase() {
     }
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     _db = firebase.firestore();
-    _fbReady = true;
-    /* 실시간 리스너 시작 — 다른 기기에서 삭제 시 즉시 감지 */
-    _startCloudListener();
-    /* Firebase 준비되자마자 업체 로드 */
-    setTimeout(function(){
-      _loadCtorsFromCloud().catch(function(){});
-      _loadPrioFromCloud().catch(function(){});
-      _loadExtScheduleFromCloud().catch(function(){});
-    }, 0);
+    /* ── 익명 인증 후 Firestore 사용 ──
+       Firestore Rules가 `if request.auth != null`이므로, 익명 로그인이
+       완료된 뒤에 _fbReady=true로 올려 리스너/로드를 시작한다.
+       (인증 전 호출은 기존 `if(!_fbReady) return` 가드로 자동 차단) */
+    firebase.auth().signInAnonymously()
+      .then(function(){
+        _fbReady = true;
+        /* 실시간 리스너 시작 — 다른 기기에서 삭제 시 즉시 감지 */
+        _startCloudListener();
+        /* Firebase 준비되자마자 업체 로드 */
+        setTimeout(function(){
+          _loadCtorsFromCloud().catch(function(){});
+          _loadPrioFromCloud().catch(function(){});
+          _loadExtScheduleFromCloud().catch(function(){});
+        }, 0);
+      })
+      .catch(function(e){ console.warn('익명 인증 실패:', e); });
   } catch(e) { console.warn('Firebase init error:', e); }
 }
 
@@ -6335,7 +6349,8 @@ function makeEntryHtml(entry, tid) {
   var task = entry.task;
   var site = entry.site;
   var color = (window._igSiteColors && window._igSiteColors[site.pn]) || '#888';
-  var pnKey = esc(site.pn);
+  var pnKey = esc(site.pn);      /* HTML 텍스트 컨텍스트용 */
+  var pnKeyJs = jsq(site.pn);    /* onclick(JS 문자열) 컨텍스트용 */
   var sd = task.sd||'', ed = task.ed||'';
   var durDays = (sd && ed) ? dif(sd,ed)+1 : 0;
   var periodText = '';
@@ -6356,7 +6371,7 @@ function makeEntryHtml(entry, tid) {
   var ctorEmpty = !ctors.length;
 
   var ctorLabel = ctorEmpty ? '' : esc(ctorDisp) + ' ✎';
-  return '<div class="ig-legend-chip" onclick="igOpenCtorModal(\''+pnKey+'\','+tid+')" title="업체 배정">'
+  return '<div class="ig-legend-chip" onclick="igOpenCtorModal(\''+pnKeyJs+'\','+tid+')" title="업체 배정">'
        + '<div class="ig-legend-chip-bar" style="background:'+color+'"></div>'
        + '<div class="ig-legend-chip-body">'
        +   '<div class="ig-legend-chip-name">'+pnKey+'</div>'
@@ -6399,7 +6414,7 @@ function igRenderCtorModalBody() {
     h += '<div class="ig-ctor-toggle-list">';
     all.forEach(function(name) {
       var on = (name === current);
-      h += '<div class="ig-ctor-toggle-row'+(on?' on':'')+'" onclick="igSelectCtorInModal(this,\''+esc(name)+'\')">'
+      h += '<div class="ig-ctor-toggle-row'+(on?' on':'')+'" onclick="igSelectCtorInModal(this,\''+jsq(name)+'\')">'
          + '<span class="ig-ctor-toggle-nm">'+esc(name)+'</span>'
          + '<span class="ig-ctor-toggle-chk">'+(on?'✓':'')+'</span>'
          + '</div>';
@@ -6887,7 +6902,7 @@ function igShowBarSheet(barEls) {
 
   var listHtml = items.map(function(it) {
     var period = it.sd ? (it.sd.slice(5).replace('-','/') + ' ~ ' + (it.ed?it.ed.slice(5).replace('-','/'):'?')) : '기간 미설정';
-    return '<div class="ig-barpick-sheet-item" onclick="igSheetSelect(\'' + esc(it.pn) + '\',' + it.tid + ',' + it.rIdx + ')">'
+    return '<div class="ig-barpick-sheet-item" onclick="igSheetSelect(\'' + jsq(it.pn) + '\',' + it.tid + ',' + it.rIdx + ')">'
       + '<div class="ig-barpick-sheet-dot" style="background:' + it.color + '"></div>'
       + '<div class="ig-barpick-sheet-info">'
       + '<div class="ig-barpick-sheet-nm">' + esc(it.pn) + '</div>'
