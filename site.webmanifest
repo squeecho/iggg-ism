@@ -1,0 +1,14 @@
+{
+  "name": "!G 통합 공정표 관리",
+  "short_name": "!G ISM",
+  "description": "iggg studio ISM",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a4d2e",
+  "theme_color": "#1a4d2e",
+  "icons": [
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" }
+  ]
+}
