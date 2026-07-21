@@ -2086,14 +2086,23 @@ function _doConfirmToggle(pn,confirming){
       if(ci2>=0)_cloudSites[ci2]=Object.assign({},snap);
       else _cloudSites.push(Object.assign({},snap));
     }
-    /* Google Calendar 자동 업로드 (서비스 계정) */
-    if(snap && _gcalEnabled && _gcalReady) _gcalAutoUpload(snap);
+    /* Google Calendar 자동 업로드 (서비스 계정) — 시작 시 설정 로드 실패로 _gcalReady 고착 시 여기서 재시도 */
+    if(snap && _gcalEnabled){
+      if(_gcalReady) _gcalAutoUpload(snap);
+      else initCalendarProxy(function(ok){
+        if(ok) _gcalAutoUpload(snap);
+        else toast('⚠️ 캘린더 서버 연결 실패 — 잠시 후 다시 확정하거나 수동 동기화해주세요');
+      });
+    }
   } else {
     deleteFromCloud(pn);
     /* _cloudSites 메모리에서도 즉시 제거 */
     _cloudSites=(_cloudSites||[]).filter(function(s){return s.pn!==pn;});
     /* 확정 해제 → 캘린더에서 즉시 삭제 */
-    if(_gcalEnabled && _gcalReady) _gcalAutoDelete(pn);
+    if(_gcalEnabled){
+      if(_gcalReady) _gcalAutoDelete(pn);
+      else initCalendarProxy(function(ok){ if(ok) _gcalAutoDelete(pn); });
+    }
     _gcalAddPendingDelete(pn);
   }
 
@@ -4556,8 +4565,8 @@ function _gcalApiCall(method, calIdAlias, path, body, query){
   });
 }
 
-/* ── 서버에서 캘린더 설정 로드 ── */
-function initCalendarProxy(){
+/* ── 서버에서 캘린더 설정 로드 (cb: 완료 후 성공여부(boolean)와 함께 호출 — 재시도 경로용) ── */
+function initCalendarProxy(cb){
   try{
     _gcalEnabled = localStorage.getItem('_gcalEnabled') === '1';
   }catch(e){}
@@ -4566,17 +4575,21 @@ function initCalendarProxy(){
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'config' })
-  }).then(function(r){ return r.json(); })
+  }).then(function(r){ if(!r.ok) throw new Error('config HTTP '+r.status); return r.json(); })
     .then(function(data){
       _gcalCalIdDetail = data.detailCalId || '';
       _gcalCalIdSimple = data.simpleCalId || '';
       _gcalCalendarId = _gcalCalIdDetail; /* 하위호환 */
+      /* 5xx JSON·빈 설정을 성공으로 오인하면 "자동 연동 중" 표시인데 조용히 스킵됨 → 실패로 처리해 재시도 대상에 포함 */
+      if(!_gcalCalIdDetail && !_gcalCalIdSimple) throw new Error('config empty');
       _gcalReady = true;
       _gcalSyncUI();
+      if(cb)cb(true);
     }).catch(function(e){
       console.warn('[gcal] 서버 설정 로드 실패:', e);
       _gcalReady = false;
       _gcalSyncUI();
+      if(cb)cb(false);
     });
 }
 
@@ -4623,7 +4636,10 @@ function gcalToggleChange(){
   } else {
     if(!_gcalReady){
       toast('⚠️ 서버 설정 확인 중...');
-      initCalendarProxy();
+      initCalendarProxy(function(ok){
+        if(ok && !_gcalEnabled) gcalToggleChange(); /* 로드 성공 시 두 번 안 눌러도 켜지게 */
+        else if(!ok) toast('⚠️ 캘린더 서버 연결 실패 — 잠시 후 다시 시도해주세요');
+      });
       return;
     }
     _gcalEnabled=true;
@@ -4642,7 +4658,14 @@ var _gcalUploadMode = 'detail';
 
 function _gcalUploadBoth(){
   if(!_gcalEnabled){ toast('캘린더 연동 스위치를 켜주세요'); return; }
-  if(!_gcalReady){ toast('서버 연결 확인 중...'); initCalendarProxy(); return; }
+  if(!_gcalReady){
+    toast('서버 연결 확인 중...');
+    initCalendarProxy(function(ok){
+      if(ok) _gcalRunUploadBoth();
+      else toast('⚠️ 캘린더 서버 연결 실패 — 잠시 후 다시 시도해주세요');
+    });
+    return;
+  }
   _gcalRunUploadBoth();
 }
 
