@@ -1379,7 +1379,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
       </label>
     </div>
     <div style="margin-top:8px;">
-      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-bottom:6px;">현장 확정 시 자동으로 캘린더에 반영돼요</div>
+      <div id="gcalSubLabel" style="font-size:10px;color:var(--mu2);margin-bottom:6px;">현장 확정·일정 수정 시 자동으로 캘린더에 반영돼요</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button id="gcalUploadNowBtn" onclick="_gcalUploadBoth()" style="display:none;font-size:10px;padding:5px 12px;border-radius:7px;border:1px solid rgba(22,163,74,.3);background:rgba(22,163,74,.06);color:#16a34a;cursor:pointer;white-space:nowrap;font-weight:700;">🔄 전체 수동 동기화</button>
         <button id="gcalDeleteAllBtn" onclick="_gcalDeleteAllEvents()" style="display:none;font-size:10px;padding:5px 11px;border-radius:8px;border:1px solid #ef4444;background:rgba(239,68,68,.07);color:#ef4444;cursor:pointer;white-space:nowrap;font-weight:700;">🗑 전체 삭제</button>
@@ -1801,6 +1801,13 @@ function renameProject(oldNm,newNm){
     deleteFromCloud(oldNm);
     var snap=arr[ci].snap?JSON.parse(arr[ci].snap):null;
     if(snap){snap.pn=newNm;snap.confirmed=true;saveToCloud(snap);}
+    /* 캘린더: 옛 이름 이벤트 삭제 + 새 이름으로 재업로드 */
+    _gcalAddPendingDelete(oldNm);
+    if(_gcalEnabled){
+      if(_gcalReady) _gcalAutoDelete(oldNm);
+      else initCalendarProxy(function(ok){ if(ok) _gcalAutoDelete(oldNm); });
+    }
+    if(snap) _gcalQueueAutoSync(newNm);
   }
   sync();rChips();rChart();
   toast('"'+oldNm+'" → "'+newNm+'" 이름이 변경됐어요!');
@@ -1935,6 +1942,11 @@ function deleteRecent(pn,ev){
     deleteFromCloud(pn);
     /* 현장 삭제 → 삭제 대기 목록에 추가 (업로드 시 캘린더에서 제거됨) */
     _gcalAddPendingDelete(pn);
+    /* 캘린더에서도 즉시 삭제 */
+    if(_gcalEnabled){
+      if(_gcalReady) _gcalAutoDelete(pn);
+      else initCalendarProxy(function(ok){ if(ok) _gcalAutoDelete(pn); });
+    }
   }
   var idx=arr.findIndex(function(x){return x.pn===pn;});
   var next=arr[idx+1]||arr[idx-1]||null; /* 다음 항목 또는 이전 항목 */
@@ -2679,6 +2691,8 @@ async function _cloudEditSave() {
   var snap = JSON.parse(JSON.stringify(S));
   snap.confirmed = true; /* 확정 유지 */
   await saveToCloud(snap);
+  /* 확정 현장 수정 → 캘린더 자동 반영 */
+  _gcalQueueAutoSync(snap.pn || pn);
   /* _cloudSites 캐시도 업데이트 */
   if (_cloudSites) {
     var ci = _cloudSites.findIndex(function(x){ return x.pn === pn; });
@@ -4606,7 +4620,7 @@ function _gcalSyncUI(){
     wrap.style.background='#16a34a';
     if(thumb)thumb.style.left='18px';
     if(label)label.textContent='자동 연동 중';
-    if(sub)sub.textContent='현장 확정 시 자동으로 캘린더에 반영돼요';
+    if(sub)sub.textContent='현장 확정·일정 수정 시 자동으로 캘린더에 반영돼요';
     if(uploadBtn)uploadBtn.style.display='inline-block';
     if(delBtn)delBtn.style.display=_masterMode?'inline-block':'none';
   } else if(_gcalEnabled && !_gcalReady){
@@ -5319,6 +5333,83 @@ function _gcalClearIdsPn(calId,pn){
 function _gcalSaveIds(ids,calId){try{localStorage.setItem('_gcalIds_'+(calId||'primary'),JSON.stringify(ids));}catch(e){}}
 function _gcalLoadIds(calId){try{var v=localStorage.getItem('_gcalIds_'+(calId||'primary'));return v?JSON.parse(v):[];}catch(e){return[];}}
 
+/* ════════════════════════════════════════════
+   자동 동기화 큐 + 캐치업
+   — 확정 현장의 일정이 바뀌는 모든 경로(통합탭 편집·드래그·업체변경·
+     마스터 편집·이름변경·undo)에서 _gcalQueueAutoSync(pn) 호출
+   — 앱 시작/탭 복귀 시 _gcalCatchupSync()로 다른 기기 변경분 따라잡기
+   ════════════════════════════════════════════ */
+var _gcalAutoSyncPns = {};
+var _gcalAutoSyncTimer = null;
+
+function _gcalQueueAutoSync(pn){
+  if(!pn || !_gcalEnabled) return;
+  _gcalAutoSyncPns[pn] = 1;
+  /* 드래그/연속 편집 대비 디바운스 */
+  clearTimeout(_gcalAutoSyncTimer);
+  _gcalAutoSyncTimer = setTimeout(_gcalFlushAutoSync, 2500);
+}
+
+function _gcalFlushAutoSync(){
+  var pns = Object.keys(_gcalAutoSyncPns);
+  _gcalAutoSyncPns = {};
+  if(!pns.length) return;
+  if(!_gcalReady){
+    initCalendarProxy(function(ok){
+      if(ok) _gcalDoQueuedSync(pns);
+      else toast('⚠️ 캘린더 서버 연결 실패 — 전체 수동 동기화해주세요');
+    });
+    return;
+  }
+  _gcalDoQueuedSync(pns);
+}
+
+function _gcalDoQueuedSync(pns){
+  var idx = 0;
+  function next(){
+    if(idx >= pns.length) return;
+    var pn = pns[idx++];
+    var site = (_cloudSites||[]).find(function(s){ return s.pn === pn; });
+    if(!site){
+      var item = getRecent().find(function(x){ return x.pn === pn && x.confirmed; });
+      if(item && item.snap){ try{ site = JSON.parse(item.snap); }catch(e){} }
+    }
+    if(site) _gcalAutoUpload(site);
+    /* 현장당 5초 간격 순차 처리 — API 부하/중복 방지 */
+    if(idx < pns.length) setTimeout(next, 5000);
+  }
+  next();
+}
+
+/* ── 캐치업: 확정 현장 중 이 기기가 마지막으로 올린 해시와 다른 것만 재업로드 ── */
+var _gcalCatchupLast = 0;
+function _gcalCatchupSync(){
+  if(!_gcalEnabled) return;
+  if(!_gcalReady){
+    initCalendarProxy(function(ok){ if(ok) _gcalCatchupSync(); });
+    return;
+  }
+  var now = Date.now();
+  if(now - _gcalCatchupLast < 600000) return; /* 10분 스로틀 */
+  _gcalCatchupLast = now;
+  var sites = _gcalGetActiveSites();
+  if(!sites.length) return;
+  var need = sites.filter(function(s){
+    return (_gcalCalIdDetail && _gcalNeedsUpload(s, _gcalCalIdDetail)) ||
+           (_gcalCalIdSimple && _gcalCalIdSimple !== _gcalCalIdDetail && _gcalNeedsUpload(s, _gcalCalIdSimple));
+  });
+  if(!need.length) return;
+  /* _doUploadBothSequence 내부에서 캘린더별 해시 비교로 바뀐 현장만 업로드 */
+  _doUploadBothSequence(sites);
+}
+
+/* 탭 복귀 시 캐치업 (스로틀은 함수 내부) */
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible'){
+    setTimeout(function(){ try{ _gcalCatchupSync(); }catch(e){} }, 2000);
+  }
+});
+
 /* ── 캘린더 선택 모달 제거 (서버 환경변수로 관리) ── */
 /* _gcalPickCalendar, _gcalShowCalModal, _gcalPickCalendarQueue 등 모두 불필요 */
 /* _gcalChangeCalendar도 제거 — 캘린더 ID는 Vercel 환경변수에서 관리 */
@@ -5430,6 +5521,11 @@ function _startCloudListener() {
         });
         /* 전체 스냅샷으로 _cloudSites 동기화 (초기 로드 포함) */
         _cloudSites = snapshot.docs.map(function(d){ return d.data(); }).filter(function(s){ return s.pn; });
+        /* 초기 로드 완료 후 1회: 다른 기기/다른 경로에서 바뀐 확정 현장 캐치업 동기화 */
+        if (!window._gcalCatchupInit) {
+          window._gcalCatchupInit = true;
+          setTimeout(function(){ try{ _gcalCatchupSync(); }catch(e){} }, 4000);
+        }
       },
       function(err) {
         console.warn('[실시간 리스너 오류]', err);
@@ -5658,6 +5754,7 @@ function _igRestoreAndSave(prevJson){
     var cur=_cloudSites.find(function(s){return s.pn===site.pn;});
     if(!cur||JSON.stringify(site)!==JSON.stringify(cur)){
       saveToCloud(site);
+      _gcalQueueAutoSync(site.pn); /* undo/redo도 캘린더 반영 */
     }
   });
   _cloudSites=prev;
@@ -6517,7 +6614,7 @@ function igDeleteCtor(name) {
     if (dirty) changed.push(site);
   });
   if (_igCtorEdit.selected[0] === name) _igCtorEdit.selected = [];
-  changed.forEach(function(s){ saveToCloud(s); });
+  changed.forEach(function(s){ saveToCloud(s); _gcalQueueAutoSync(s.pn); });
   toast('"' + name + '" 삭제 완료');
   igRenderCtorModalBody();
 }
@@ -6541,6 +6638,7 @@ function igSaveCtorModal() {
     asSaveSettings(asSettings);
   }
   saveToCloud(site);
+  _gcalQueueAutoSync(site.pn); /* 업체 변경 → 캘린더 제목 갱신 */
   toast('저장 완료');
   igCloseCtorModal();
   rIntegrated();
@@ -6855,6 +6953,7 @@ function igSaveDateModal() {
 
   /* 2. Firebase 저장 */
   saveToCloud(site);
+  _gcalQueueAutoSync(site.pn); /* 날짜 수정 → 캘린더 자동 반영 */
 
   /* 3. 로컬스토리지 snap 업데이트 → 차트탭 반영 */
   var arr = getRecent();
@@ -7167,6 +7266,7 @@ function igBarpickSave() {
 
   /* Firebase 저장 */
   saveToCloud(site);
+  _gcalQueueAutoSync(site.pn); /* 드래그 일정 수정 → 캘린더 자동 반영 */
 
   /* 로컬스토리지 snap 업데이트 */
   var arr = getRecent();
