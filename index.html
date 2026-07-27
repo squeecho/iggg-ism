@@ -2070,6 +2070,7 @@ function _doConfirmToggle(pn,confirming){
   if(ci<0)return;
   arr[ci].confirmed=confirming;
   arr[ci].savedAt=nowTS(); /* 확정 상태 변경도 저장으로 간주 → 캘린더 업로드 대상에 포함 */
+  if(confirming){ try{ _confirmGrace[pn]=Date.now(); }catch(e){} } /* 재조정 오탐 방지 유예 */
 
   /* FIFO: 확정 현장 최대 30개 유지 */
   if(confirming){
@@ -5561,6 +5562,9 @@ function _startCloudListener() {
         });
         /* 전체 스냅샷으로 _cloudSites 동기화 (초기 로드 포함) */
         _cloudSites = snapshot.docs.map(function(d){ return d.data(); }).filter(function(s){ return s.pn; });
+        /* 로컬↔클라우드 대조: 이 기기가 닫혀 있는 동안 다른 기기에서
+           확정 해제/삭제된 현장의 로컬 confirmed 잔재 정리 (캘린더 부활 방지) */
+        try{ _reconcileLocalConfirmed(); }catch(e){ console.warn('[reconcile]', e); }
         /* 초기 로드 완료 후 1회: 다른 기기/다른 경로에서 바뀐 확정 현장 캐치업 동기화 */
         if (!window._gcalCatchupInit) {
           window._gcalCatchupInit = true;
@@ -5575,6 +5579,31 @@ function _startCloudListener() {
 }
 
 /* 클라우드에서 특정 현장이 삭제됐을 때 로컬 확정 해제 처리 */
+/* ── 로컬 확정 잔재 정리 ──
+   onSnapshot 'removed'는 그 순간 열려 있는 기기에만 오므로, 닫혀 있던 기기는
+   삭제/해제를 영영 모른 채 로컬 confirmed:true를 유지 → 동기화 때마다
+   캘린더에 유령 현장을 되살린다. 스냅샷마다 로컬 확정 현장이 클라우드에
+   실재하는지 대조해 없으면 해제 + 캘린더에서도 삭제한다. */
+var _confirmGrace = {}; /* pn → 로컬 확정 시각 (저장 전파 지연/오프라인 확정 보호) */
+function _reconcileLocalConfirmed() {
+  var cloudPns = {};
+  (_cloudSites || []).forEach(function(s){ if (s.pn) cloudPns[s.pn] = 1; });
+  var now = Date.now();
+  getRecent().forEach(function(item){
+    if (!item.confirmed || !item.pn) return;
+    if (cloudPns[item.pn]) return;
+    /* 방금 이 기기에서 확정한 현장은 클라우드 반영 지연일 수 있음 → 5분 유예 */
+    if (_confirmGrace[item.pn] && (now - _confirmGrace[item.pn]) < 300000) return;
+    var pn = item.pn;
+    _handleCloudDeletion(pn); /* 로컬 확정 해제 + UI 정리 */
+    _gcalAddPendingDelete(pn);
+    if (_gcalEnabled) {
+      if (_gcalReady) _gcalAutoDelete(pn);
+      else initCalendarProxy(function(ok){ if (ok) _gcalAutoDelete(pn); });
+    }
+  });
+}
+
 function _handleCloudDeletion(pn) {
   if (!pn) return;
   var arr = getRecent();
