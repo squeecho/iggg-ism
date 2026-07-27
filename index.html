@@ -8,11 +8,11 @@
 <meta name="description" content="iggg studio ISM">
 <meta property="og:title" content="!G 통합 공정표 관리">
 <meta property="og:description" content="iggg studio ISM">
-<meta property="og:image" content="https://iggg-ism.vercel.app/thumbnail.png">
-<meta property="og:url" content="https://iggg-ism.vercel.app/">
+<meta property="og:image" content="https://ism.igggstudio.com/thumbnail.png">
+<meta property="og:url" content="https://ism.igggstudio.com/">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://iggg-ism.vercel.app/thumbnail.png">
+<meta name="twitter:image" content="https://ism.igggstudio.com/thumbnail.png">
 <meta name="theme-color" content="#1a4d2e">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -2317,10 +2317,10 @@ function rChips(){
   var archCount=document.getElementById('archiveCount');
   if(!el)return;
 
-  var today=new Date().toISOString().slice(0,10);
+  var td=today(); /* 로컬(KST) 기준 오늘 — toISOString(UTC)은 09시 이전에 하루 밀림 */
   /* 기간 안 지남(또는 미설정) → active / 기간 지남 → 지난현장 (확정 여부 무관) */
-  var active=arr.filter(function(x){return !x.ed || x.ed>=today;});
-  var archived=arr.filter(function(x){return x.ed && x.ed<today;});
+  var active=arr.filter(function(x){return !x.ed || x.ed>=td;});
+  var archived=arr.filter(function(x){return x.ed && x.ed<td;});
 
   /* ── 활성 칩 렌더 ── */
   if(!active.length){el.innerHTML='';} else {
@@ -2474,9 +2474,9 @@ function rCloudChips() {
   if(body)body.style.display = '';
 
   /* 오늘 날짜 기준으로 진행중 / 지난 현장 분리 */
-  var today = new Date().toISOString().slice(0,10);
-  var current = remote.filter(function(s){ return !s.ed || s.ed >= today; });
-  var past    = remote.filter(function(s){ return s.ed && s.ed < today; });
+  var td = today(); /* 로컬(KST) 기준 오늘 — toISOString(UTC)은 09시 이전에 하루 밀림 */
+  var current = remote.filter(function(s){ return !s.ed || s.ed >= td; });
+  var past    = remote.filter(function(s){ return s.ed && s.ed < td; });
 
   function buildCloudChip(site){
     var rawPn = site.pn;
@@ -4200,7 +4200,7 @@ function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.c
 
 /* ICS 구독 URL 복사 */
 function _copyIcsUrl(mode){
-  var baseUrl=location.origin||'https://iggg-ism.vercel.app';
+  var baseUrl=location.origin||'https://ism.igggstudio.com';
   var url=mode==='simple'?baseUrl+'/calendar-simple.ics':baseUrl+'/calendar.ics';
   if(navigator.clipboard&&navigator.clipboard.writeText){
     navigator.clipboard.writeText(url).then(function(){
@@ -7685,15 +7685,19 @@ function ctorCheckSwap(tid, rowId){
   if(!task||!task.on)return;
   var tname=IG_TASK_NAMES[tid]||('공종'+tid);
   var curCtors=getCurTaskCtors(task);
-  /* 현재 지정된 업체 외 등록된 업체 목록 */
-  var allCtors=(S.contractors||[]).concat((localStorage.getItem('igCtors')?JSON.parse(localStorage.getItem('igCtors')):[]))
+  /* 현재 지정된 업체 외 등록된 업체 목록
+     — 글로벌 저장소(GLOBAL_CTORS_KEY='ig_global_ctors_v1')는 {공종id:[업체명]} 맵이라 값들을 평탄화한다.
+       (구 코드는 존재하지 않는 'igCtors' 키를 읽어 항상 빈 목록이었음) */
+  var _gcAll=getGlobalCtors();
+  var allCtors=(S.contractors||[]).concat(
+      Object.keys(_gcAll).reduce(function(a,k){return a.concat(_gcAll[k]||[]);},[]))
     .filter(function(c){ return typeof c==='string'?c:c.name; })
     .map(function(c){ return typeof c==='string'?c:c.name; });
   /* 중복 제거 */
   var unique=[...new Set(allCtors)].filter(function(c){return curCtors.indexOf(c)<0&&c&&c!=='기본';});
 
   /* 옵션 생성: 등록 업체 + 직접 입력 */
-  var opts=unique.map(function(c,i){return '<option value="'+c+'">'+c+'</option>';}).join('');
+  var opts=unique.map(function(c,i){return '<option value="'+esc(c)+'">'+esc(c)+'</option>';}).join('');
 
   igConfirm(
     tname+' · 업체를 변경하여 충돌을 해소합니다.\n현재: '+curCtors.join(', '),
@@ -7712,7 +7716,7 @@ function ctorCheckSwap(tid, rowId){
       /* 행 상태 업데이트 */
       var row=document.getElementById(rowId);
       if(row){
-        row.innerHTML='<span style="font-size:11px;background:#dcfce7;color:#15803d;border:1.5px solid #16a34a;border-radius:6px;padding:2px 9px;font-weight:800;">✅ '+newCtorName+' 으로 업체 변경됨</span>'
+        row.innerHTML='<span style="font-size:11px;background:#dcfce7;color:#15803d;border:1.5px solid #16a34a;border-radius:6px;padding:2px 9px;font-weight:800;">✅ '+esc(newCtorName)+' 으로 업체 변경됨</span>'
           +'<button onclick="ctorCheckUndo('+tid+',null,\''+rowId+'\',true)" style="font-size:11px;background:var(--bg);color:var(--tx);border:1.5px solid var(--bd);border-radius:6px;padding:2px 9px;font-weight:800;cursor:pointer;margin-left:6px;">↩ 되돌리기</button>';
       }
     }

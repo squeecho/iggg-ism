@@ -142,15 +142,19 @@ function callCalendarAPI(token, method, path, body) {
   });
 }
 
-/* ── 허용된 Origin 확인 ── */
+/* ── 허용된 Origin 확인 ──
+   전수감사 2026-07-28: ①무Origin(=curl 등 비브라우저)이 무조건 통과해 서비스
+   계정 캘린더를 무인증 조작 가능 ②목록이 폐도메인 ③startsWith 는
+   evil.com 접두 위장 통과. → 무Origin 차단 + 현행 도메인 정확 일치.
+   (Origin 은 위조 가능하므로 완전한 인증은 아님 — 서명 토큰 도입은 백로그) */
 function isAllowedOrigin(origin) {
-  if (!origin) return true; // non-browser requests
+  if (!origin) return false;
   const allowed = [
-    'https://iggg-total-schedule.vercel.app',
-    'http://localhost',
-    'http://127.0.0.1',
+    'https://ism.igggstudio.com',
+    'https://iggg-ism.vercel.app',
   ];
-  return allowed.some((a) => origin.startsWith(a));
+  if (allowed.includes(origin)) return true;
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 }
 
 /* ── 캘린더 ID 매핑 ── */
@@ -182,6 +186,11 @@ module.exports = async (req, res) => {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // CORS 헤더만으론 실행 자체는 못 막는다 — 비허용 Origin 은 처리 전 차단
+  if (!isAllowedOrigin(origin)) {
+    return res.status(403).json({ error: 'Origin not allowed' });
   }
 
   try {

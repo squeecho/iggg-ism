@@ -19,3 +19,5 @@ index(*).backup*.html
 *.swp
 *~
 .vscode/
+.vercel
+.fablize/
