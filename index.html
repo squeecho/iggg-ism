@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<script src="https://www.igggstudio.com/sso-gate.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>!G 통합 공정표 관리</title>
 <meta name="description" content="iggg studio ISM">
@@ -1210,49 +1211,8 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 </div>
 <script>
 (function(){
-  var PIN='1999', SKEY='ig_unlocked';
-  if(localStorage.getItem(SKEY)==='1'){
-    document.getElementById('pinLockOv').classList.add('hidden');
-  } else {
-    var entered='';
-    var dots=document.getElementById('pinDots').children;
-    var errEl=document.getElementById('pinErr');
-    var kp=document.getElementById('pinKeypad');
-    function updDots(){for(var i=0;i<4;i++){dots[i].classList.toggle('filled',i<entered.length);}}
-    function press(n){
-      if(entered.length>=4)return;
-      entered+=n;
-      updDots();
-      if(entered.length===4){
-        if(entered===PIN){
-          localStorage.setItem(SKEY,'1');
-          document.getElementById('pinLockOv').classList.add('hidden');
-        } else {
-          errEl.textContent='PIN이 올바르지 않습니다';
-          var dd=document.getElementById('pinDots');
-          dd.style.animation='pinShake .4s ease';
-          if(navigator.vibrate)navigator.vibrate([50,30,50]);
-          setTimeout(function(){entered='';updDots();dd.style.animation='';errEl.innerHTML='&nbsp;';},600);
-        }
-      }
-    }
-    function back(){if(entered.length>0){entered=entered.slice(0,-1);updDots();errEl.innerHTML='&nbsp;';}}
-    var keys=[1,2,3,4,5,6,7,8,9,'',0,'⌫'];
-    keys.forEach(function(k){
-      var b=document.createElement('div');
-      b.className='pin-key'+(k===''?' empty':'')+(k==='⌫'?' back':'');
-      b.textContent=k;
-      if(k==='⌫'){b.onclick=back;}
-      else if(k!==''){b.onclick=function(){press(String(k));};}
-      kp.appendChild(b);
-    });
-    /* 물리 키보드 지원 */
-    document.addEventListener('keydown',function(e){
-      if(localStorage.getItem(SKEY)==='1')return;
-      if(e.key>='0'&&e.key<='9')press(e.key);
-      else if(e.key==='Backspace')back();
-    });
-  }
+  // 입장 PIN 제거(사장 확정 2026-07-27) — 입장 통제는 head 의 sso-gate.js.
+  document.getElementById('pinLockOv').classList.add('hidden');
 })();
 </script>
 <div class="tb" id="tb">
