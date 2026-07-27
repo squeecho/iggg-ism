@@ -78,6 +78,7 @@ function getAccessToken(email, privateKey) {
     };
 
     const req = https.request(options, (res) => {
+      res.setEncoding('utf8'); /* 멀티바이트 청크 분절 안전 디코딩 */
       let data = '';
       res.on('data', (chunk) => (data += chunk));
       res.on('end', () => {
@@ -123,6 +124,9 @@ function callCalendarAPI(token, method, path, body) {
     }
 
     const req = https.request(options, (res) => {
+      /* 한글(멀티바이트)이 청크 경계에서 잘리면 U+FFFD로 깨짐 →
+         setEncoding은 내부 StringDecoder로 경계를 보존한다 */
+      res.setEncoding('utf8');
       let data = '';
       res.on('data', (chunk) => (data += chunk));
       res.on('end', () => {
@@ -191,7 +195,18 @@ module.exports = async (req, res) => {
     // Vercel 환경변수의 \n 문자열을 실제 줄바꿈으로 변환
     const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
 
-    const { action, calendarId, method, path, body: reqBody, query } = req.body;
+    const { action, calendarId, method, path, body: reqBody, bodyB64, query } = req.body;
+
+    /* bodyB64: 프론트가 이벤트 본문을 base64(ASCII)로 무장해 전송 —
+       전송/파싱 계층의 멀티바이트 분절로 한글이 U+FFFD로 오염되는 것을 차단 */
+    let proxyBody = reqBody || null;
+    if (bodyB64) {
+      try {
+        proxyBody = JSON.parse(Buffer.from(bodyB64, 'base64').toString('utf8'));
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid bodyB64' });
+      }
+    }
 
     /* ── action: 'config' — 프론트엔드에서 캘린더 ID 조회 ── */
     if (action === 'config') {
@@ -221,7 +236,7 @@ module.exports = async (req, res) => {
 
       // Calendar API 호출
       const apiMethod = (method || 'GET').toUpperCase();
-      const result = await callCalendarAPI(token, apiMethod, apiPath, reqBody || null);
+      const result = await callCalendarAPI(token, apiMethod, apiPath, proxyBody);
 
       // 응답 전달
       res.status(result.status);

@@ -4565,17 +4565,26 @@ function getDeviceName(){ return _deviceName||'알 수 없음'; }
    (기존 직접 fetch → 이 함수로 교체)
    ════════════════════════════════════════════ */
 function _gcalApiCall(method, calIdAlias, path, body, query){
+  var payload = {
+    action: 'proxy',
+    calendarId: calIdAlias,  /* 'detail' | 'simple' | 실제 ID */
+    method: method,
+    path: path || '/events',
+    query: query || undefined
+  };
+  if(body){
+    /* 한글 본문을 base64(ASCII)로 무장 — 전송 계층의 멀티바이트 분절로
+       제목/현장명에 U+FFFD(�)가 박혀 저장되는 오염 차단 */
+    try{
+      payload.bodyB64 = btoa(unescape(encodeURIComponent(JSON.stringify(body))));
+    }catch(e){
+      payload.body = body; /* 인코딩 실패 시 구방식 폴백 */
+    }
+  }
   return fetch('/api/calendar', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action: 'proxy',
-      calendarId: calIdAlias,  /* 'detail' | 'simple' | 실제 ID */
-      method: method,
-      path: path || '/events',
-      body: body || undefined,
-      query: query || undefined
-    })
+    body: JSON.stringify(payload)
   });
 }
 
