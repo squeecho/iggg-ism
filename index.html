@@ -4670,6 +4670,17 @@ function gcalToggleChange(){
 
 var _gcalUploadMode = 'detail';
 
+/* ── 동시 실행 가드: 더블클릭·자동+수동 겹침 시 이벤트 중복 생성 방지 ── */
+var _gcalSyncBusy = false;
+var _gcalSyncBusyAt = 0;
+function _gcalIsBusy(){
+  return _gcalSyncBusy && (Date.now() - _gcalSyncBusyAt) < 300000; /* 5분 안전만료 */
+}
+function _gcalSetBusy(on){
+  _gcalSyncBusy = !!on;
+  _gcalSyncBusyAt = on ? Date.now() : 0;
+}
+
 function _gcalUploadBoth(){
   if(!_gcalEnabled){ toast('캘린더 연동 스위치를 켜주세요'); return; }
   if(!_gcalReady){
@@ -4684,9 +4695,11 @@ function _gcalUploadBoth(){
 }
 
 function _gcalRunUploadBoth(){
+  if(_gcalIsBusy()){ toast('⏳ 동기화가 이미 진행 중이에요 — 잠시 후 다시 시도해주세요'); return; }
   var sites = _gcalGetActiveSites();
   if(!sites.length){ toast('확정된 현장이 없어요'); return; }
 
+  _gcalSetBusy(true);
   _gcalShowLoading();
 
   var detailCalId = _gcalCalIdDetail;
@@ -4815,6 +4828,18 @@ function _gcalAutoUpload(snap){
   var pn = snap.pn || '';
   if(!pn) return;
 
+  /* 다른 동기화 진행 중이면 중복 생성 방지 위해 10초 후 재큐잉 */
+  if(_gcalIsBusy()){
+    setTimeout(function(){ _gcalQueueAutoSync(pn); }, 10000);
+    return;
+  }
+  var _branches = 0;
+  if(_gcalCalIdDetail) _branches++;
+  if(_gcalCalIdSimple && _gcalCalIdSimple !== _gcalCalIdDetail) _branches++;
+  if(!_branches) return;
+  _gcalSetBusy(true);
+  function _branchDone(){ if(--_branches <= 0) _gcalSetBusy(false); }
+
   /* 상세 캘린더 업로드 */
   if(_gcalCalIdDetail){
     _gcalDeleteSiteEvents([pn], 'detail', function(){
@@ -4822,6 +4847,7 @@ function _gcalAutoUpload(snap){
       _gcalDoUpload(snap, 'detail', function(ok){
         if(ok !== false) _gcalSaveUploadTs(pn, _gcalCalIdDetail, snap);
         toast('📅 '+pn+' 상세 일정 동기화 ✅');
+        _branchDone();
       });
     });
   }
@@ -4833,6 +4859,7 @@ function _gcalAutoUpload(snap){
       _gcalDoUploadSimple(snap, 'simple', function(ok){
         if(ok !== false) _gcalSaveUploadTs(pn, _gcalCalIdSimple, snap);
         toast('📌 '+pn+' 간략 일정 동기화 ✅');
+        _branchDone();
       });
     });
   }
@@ -4859,6 +4886,7 @@ function _gcalAutoDelete(pn){
 function gcalUploadOnConfirm(snap){ _gcalAutoUpload(snap); }
 
 function _doUploadBothSequence(sites){
+  _gcalSetBusy(true); /* 캐치업 등 직접 호출 경로 포함 */
   _gcalUpdateLoading('상세 캘린더 동기화 중...', 10);
   var detailAlias = 'detail';
   var simpleAlias = 'simple';
@@ -4870,11 +4898,11 @@ function _doUploadBothSequence(sites){
       _gcalUpdateLoading('간략 캘린더 동기화 중...', 55);
       _gcalDoUploadAll(_gcalCalIdSimple, simpleAlias, sites, function(){
         _gcalUpdateLoading('완료!', 100);
-        setTimeout(function(){ _gcalHideLoading(); toast('🔄 캘린더 동기화 완료 ✅'); }, 600);
+        _gcalSetBusy(false); setTimeout(function(){ _gcalHideLoading(); toast('🔄 캘린더 동기화 완료 ✅'); }, 600);
       });
     } else {
       _gcalUpdateLoading('완료!', 100);
-      setTimeout(function(){ _gcalHideLoading(); toast('🔄 캘린더 동기화 완료 ✅'); }, 600);
+      _gcalSetBusy(false); setTimeout(function(){ _gcalHideLoading(); toast('🔄 캘린더 동기화 완료 ✅'); }, 600);
     }
   });
 }
@@ -5167,6 +5195,7 @@ function _gcalUploadNow(mode){
   _gcalUploadMode = mode || 'detail';
   if(!_gcalEnabled){ toast('캘린더 연동 스위치를 켜주세요'); return; }
   if(!_gcalReady){ toast('서버 연결 확인 중...'); return; }
+  if(_gcalIsBusy()){ toast('⏳ 동기화가 이미 진행 중이에요 — 잠시 후 다시 시도해주세요'); return; }
 
   var sites=[];
   try{
@@ -5180,12 +5209,13 @@ function _gcalUploadNow(mode){
   }catch(e){}
   if(!sites.length){ toast('확정된 현장이 없어요'); return; }
 
+  _gcalSetBusy(true);
   _gcalShowLoading();
   var calId = (mode==='simple') ? _gcalCalIdSimple : _gcalCalIdDetail;
   var calAlias = mode;
   _gcalDoUploadAll(calId, calAlias, sites, function(){
     _gcalUpdateLoading('완료!', 100);
-    setTimeout(function(){ _gcalHideLoading(); toast('🔄 캘린더 동기화 완료 ✅'); }, 600);
+    _gcalSetBusy(false); setTimeout(function(){ _gcalHideLoading(); toast('🔄 캘린더 동기화 완료 ✅'); }, 600);
   });
 }
 
@@ -5389,6 +5419,7 @@ function _gcalCatchupSync(){
     initCalendarProxy(function(ok){ if(ok) _gcalCatchupSync(); });
     return;
   }
+  if(_gcalIsBusy()) return; /* 진행 중이면 이번 기회는 건너뜀 (스로틀 미소모) */
   var now = Date.now();
   if(now - _gcalCatchupLast < 600000) return; /* 10분 스로틀 */
   _gcalCatchupLast = now;
