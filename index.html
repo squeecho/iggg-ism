@@ -62,9 +62,15 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .lg{display:flex;align-items:center;flex-shrink:0;}.lg img{height:28px;width:auto;display:block;}
 .tb-div{width:1px;height:28px;background:rgba(255,255,255,.18);flex-shrink:0;}
 .tb-center{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;}
-.tb-label{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.4);line-height:1;}
+.tb-label{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.4);line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .tb-site{font-size:15px;font-weight:900;letter-spacing:-.5px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;}
 .tb-site em{color:var(--bar);font-style:normal;}
+/* ── 공통 셸(허브·계정·로그아웃) — 툴바 우측 ── */
+.tb-acct{display:flex;align-items:center;gap:8px;flex-shrink:0;margin-left:auto;}
+.tb-acct-email{font-size:11px;font-weight:500;font-family:'Noto Sans KR',sans-serif;color:rgba(255,255,255,.55);max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;}
+.tb-acct-btn{display:inline-flex;align-items:center;padding:5px 9px;border-radius:6px;border:1px solid rgba(255,255,255,.22);background:transparent;color:rgba(255,255,255,.75);font-size:11px;font-family:'Noto Sans KR',sans-serif;font-weight:700;line-height:1;white-space:nowrap;text-decoration:none;cursor:pointer;transition:all .14s;-webkit-tap-highlight-color:transparent;}
+@media(hover:hover){.tb-acct-btn:hover{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.42);color:#fff;}}
+@media(max-width:640px){.tb-acct-email{display:none;}.tb-acct{gap:6px;}.tb-acct-btn{padding:5px 7px;font-size:10px;}}
 .btn{display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border-radius:8px;font-size:12px;font-family:'Noto Sans KR',sans-serif;font-weight:700;cursor:pointer;border:1.5px solid;white-space:nowrap;transition:all .14s;}
 .bg2{border-color:#444;background:transparent;color:#ccc;}.bg2:hover{border-color:#aaa;color:#fff;}
 .bur{border-color:#475569;background:transparent;color:#94a3b8;font-size:14px;font-weight:700;padding:10px 16px;min-width:72px;justify-content:center;gap:6px;-webkit-tap-highlight-color:transparent;opacity:.28;cursor:default;pointer-events:none;}.bur.on{opacity:1;color:#1e293b;border-color:#475569;cursor:pointer;pointer-events:auto;font-weight:800;}@media(hover:hover){.bur.on:hover{background:rgba(148,163,184,.15);}}.bur:disabled{opacity:.28;cursor:default;}.bur.dim{opacity:.28;cursor:default;pointer-events:none;}.bp-group{display:flex;gap:6px;margin-left:auto;}
@@ -638,7 +644,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 @keyframes spin{to{transform:rotate(360deg);}}
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(6px);background:#18170f;color:#fff;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:500;z-index:999;opacity:0;pointer-events:none;transition:all .22s;white-space:nowrap;}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
-@media print{@page{size:A3 landscape;margin:8mm;}.tb .btn,.tabs,.ep,.ca,.cta,.rob{display:none!important;}.tb{position:static;background:#fff;color:#000;border-bottom:2px solid #000;}.lg em{color:#000;}#pc{display:block!important;}.pg:not(#pc){display:none!important;}.cs{overflow:visible!important;}.sc{position:static!important;}#_stickyWrap{display:none!important;}}
+@media print{@page{size:A3 landscape;margin:8mm;}.tb .btn,.tb-acct,.tabs,.ep,.ca,.cta,.rob{display:none!important;}.tb{position:static;background:#fff;color:#000;border-bottom:2px solid #000;}.lg em{color:#000;}#pc{display:block!important;}.pg:not(#pc){display:none!important;}.cs{overflow:visible!important;}.sc{position:static!important;}#_stickyWrap{display:none!important;}}
 
 .cal-wrap{background:var(--sf);border:1.5px solid var(--bd);border-radius:12px;overflow:hidden;margin-top:0;user-select:none;}
 .cal-nav{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--bd);}
@@ -1221,6 +1227,12 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
   <div class="tb-center">
     <span class="tb-label">CONSTRUCTION SCHEDULE</span>
     <span class="tb-site" id="tpn">(현장명 미입력)</span>
+  </div>
+  <!-- 공통 셸: 허브 / 로그인 계정 / 로그아웃 (사장 승인 2026-07-28) -->
+  <div class="tb-acct">
+    <a class="tb-acct-btn" href="https://home.igggstudio.com/" title="앱 허브로 이동">허브</a>
+    <span class="tb-acct-email" id="tbAcctEmail"></span>
+    <button class="tb-acct-btn" type="button" onclick="ismLogout()" title="로그아웃">로그아웃</button>
   </div>
 </div>
 <div class="tabs" id="tabs">
@@ -4430,6 +4442,33 @@ function calMPickSel(m){
 
 /* 서비스 계정 방식: OAuth 제거, /api/calendar 프록시 사용 */
 
+/* ─ SSO 계정(iggg_sso 쿠키 · .igggstudio.com 공용) ─────────────────
+   ig works 로그인 결과 {email, refreshToken}. 쿠키 파싱은 여기 한 곳 —
+   공통 셸(계정 표시/로그아웃)·작성자 기본값·Firestore 직원 인증이 공용한다. */
+function _ssoAccount(){
+  try{
+    var m = document.cookie.match(/(?:^|; )iggg_sso=([^;]*)/);
+    if(!m) return null;
+    return JSON.parse(decodeURIComponent(m[1]) || 'null');
+  }catch(e){ return null; }
+}
+function _ssoEmail(){ var a=_ssoAccount(); return (a && a.email) || ''; }
+/* 이메일 로컬파트(@ 앞) — 작성자 기본 이름. 모달 입력과 같은 20자 상한 */
+function _ssoNameHint(){ var e=_ssoEmail(); var i=e.indexOf('@'); return i>0 ? e.slice(0,i).slice(0,20) : ''; }
+
+/* ─ 공통 셸: 툴바 우측 계정 표시 / 로그아웃 ─ */
+function initShellAccount(){
+  var el = document.getElementById('tbAcctEmail');
+  if(el) el.textContent = _ssoEmail();
+}
+function ismLogout(){
+  if(!confirm('로그아웃하시겠습니까?')) return;
+  /* ig-links 규약: 공용 쿠키를 지우고 www 의 전역 로그아웃 진입점으로 이동.
+     (www 루트로만 가면 세션 정본이 쿠키를 재발급해 로그아웃이 무효가 된다) */
+  document.cookie = 'iggg_sso=; Path=/; Domain=.igggstudio.com; Max-Age=0';
+  location.href = 'https://www.igggstudio.com/?logout=1';
+}
+
 /* ─ 작성자(기기 별명) ─ */
 var _deviceName = '';
 
@@ -4488,8 +4527,15 @@ function _gcalEventTitle(pn, taskName, vendor){
 
 /* ─ 기기 별명 ─ */
 function initDeviceName(){
+  /* 1) 저장된 이름이 있으면 그대로(기존 동작 유지 — localStorage '_deviceName' 이 정본) */
   try{ _deviceName=localStorage.getItem('_deviceName')||''; }catch(e){}
-  if(!_deviceName) _showDeviceNameModal();
+  if(_deviceName) return;
+  /* 2) 없으면 SSO 계정 이메일의 로컬파트를 기본값으로(저장하지 않는다 —
+        저장은 모달 확인으로만. 계정이 바뀌면 작성자도 자연히 따라간다) */
+  var hint=_ssoNameHint();
+  if(hint){ _deviceName=hint; return; }
+  /* 3) 쿠키도 저장값도 없을 때만 모달(기존 폴백) */
+  _showDeviceNameModal();
 }
 function _showDeviceNameModal(){
   var old=document.getElementById('_deviceModalBg');
@@ -4506,7 +4552,13 @@ function _showDeviceNameModal(){
     +'</div>';
   document.body.appendChild(bg);
   var inp=document.getElementById('_deviceNameInput');
-  if(inp){ inp.focus(); inp.addEventListener('keydown',function(e){ if(e.key==='Enter')_submitDeviceName(); }); }
+  if(inp){
+    var hint=_ssoNameHint();          /* SSO 계정이 있으면 로컬파트 프리필 */
+    if(hint){ inp.value=hint; }
+    inp.focus();
+    if(hint&&inp.select) inp.select();
+    inp.addEventListener('keydown',function(e){ if(e.key==='Enter')_submitDeviceName(); });
+  }
 }
 function _submitDeviceName(){
   var inp=document.getElementById('_deviceNameInput');
@@ -5472,12 +5524,9 @@ var _cloudSnapshotUnsubscribe = null; /* 실시간 리스너 해제 함수 */
 var _STAFF_API = 'https://iggg-estimate-api-583239150535.asia-northeast3.run.app';
 
 function _ssoRefreshToken() {
-  try {
-    var m = document.cookie.match(/(?:^|; )iggg_sso=([^;]*)/);
-    if (!m) return '';
-    var d = JSON.parse(decodeURIComponent(m[1]) || 'null');
-    return (d && d.refreshToken) || '';
-  } catch(e) { return ''; }
+  /* 쿠키 파싱은 _ssoAccount() 단일 창구(위 script 블록에 정의 — 공통 셸과 공용) */
+  var d = _ssoAccount();
+  return (d && d.refreshToken) || '';
 }
 
 /* 쿠키 → id_token → 백엔드 커스텀 토큰(문자열). 어느 단계든 실패하면 reject. */
@@ -5743,6 +5792,7 @@ function _syncConfirmedWithCloud() {
 document.addEventListener('DOMContentLoaded', function(){
   initFirebase();
   initCalendarProxy();
+  initShellAccount();
   initDeviceName();
   /* 초기 로드 시 클라우드 현장 칩 표시 - 로딩 표시 후 Firebase 완료되면 렌더 */
   setTimeout(function(){
