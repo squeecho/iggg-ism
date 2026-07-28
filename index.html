@@ -5465,6 +5465,51 @@ var FIREBASE_CONFIG = {
 
 var _cloudSnapshotUnsubscribe = null; /* 실시간 리스너 해제 함수 */
 
+/* ── 실직원 신원 로그인 (보안 웨이브 2, 2026-07-28) ────────────────
+   iggg_sso 쿠키(.igggstudio.com 공용, {email, refreshToken})의 refreshToken 을
+   Firebase securetoken 으로 교환 → 백엔드가 승인 직원인지 대조하고 커스텀
+   토큰을 발급 → signInWithCustomToken. 익명 로그인을 대체한다. */
+var _STAFF_API = 'https://iggg-estimate-api-583239150535.asia-northeast3.run.app';
+
+function _ssoRefreshToken() {
+  try {
+    var m = document.cookie.match(/(?:^|; )iggg_sso=([^;]*)/);
+    if (!m) return '';
+    var d = JSON.parse(decodeURIComponent(m[1]) || 'null');
+    return (d && d.refreshToken) || '';
+  } catch(e) { return ''; }
+}
+
+/* 쿠키 → id_token → 백엔드 커스텀 토큰(문자열). 어느 단계든 실패하면 reject. */
+function _staffCustomToken() {
+  var rt = _ssoRefreshToken();
+  if (!rt) return Promise.reject(new Error('iggg_sso 쿠키 없음'));
+  return fetch('https://securetoken.googleapis.com/v1/token?key=' + FIREBASE_CONFIG.apiKey, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(rt)
+  })
+    .then(function(r){ if (!r.ok) throw new Error('securetoken ' + r.status); return r.json(); })
+    .then(function(j){
+      return fetch(_STAFF_API + '/api/staff/firestore-token', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + (j.id_token || '') }
+      });
+    })
+    .then(function(r){ if (!r.ok) throw new Error('firestore-token ' + r.status); return r.json(); })
+    .then(function(j){ if (!j || !j.token) throw new Error('커스텀 토큰 없음'); return j.token; });
+}
+
+/* 실직원 로그인, 실패 시 익명 폴백(전환기 — 규칙 잠금 전까지 무중단,
+   잠금 후에는 폴백도 자연 실패해 로그인 자체가 거부된다). */
+function _signInStaffOrAnon() {
+  return _staffCustomToken()
+    .then(function(t){ return firebase.auth().signInWithCustomToken(t); })
+    .catch(function(e){
+      console.warn('[ism] 직원 인증 실패 — 익명 폴백:', (e && e.message) || e);
+      return firebase.auth().signInAnonymously();
+    });
+}
+
 function initFirebase() {
   try {
     if (!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') return;
@@ -5475,11 +5520,11 @@ function initFirebase() {
     }
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     _db = firebase.firestore();
-    /* ── 익명 인증 후 Firestore 사용 ──
-       Firestore Rules가 `if request.auth != null`이므로, 익명 로그인이
-       완료된 뒤에 _fbReady=true로 올려 리스너/로드를 시작한다.
+    /* ── 인증(실직원 신원, 실패 시 익명 폴백) 후 Firestore 사용 ──
+       Firestore Rules가 인증된 요청만 허용하므로, 로그인이 완료된 뒤에
+       _fbReady=true로 올려 리스너/로드를 시작한다.
        (인증 전 호출은 기존 `if(!_fbReady) return` 가드로 자동 차단) */
-    firebase.auth().signInAnonymously()
+    _signInStaffOrAnon()
       .then(function(){
         _fbReady = true;
         /* 실시간 리스너 시작 — 다른 기기에서 삭제 시 즉시 감지 */
@@ -5491,7 +5536,7 @@ function initFirebase() {
           _loadExtScheduleFromCloud().catch(function(){});
         }, 0);
       })
-      .catch(function(e){ console.warn('익명 인증 실패:', e); });
+      .catch(function(e){ console.warn('Firestore 인증 실패(직원·익명 모두):', e); });
   } catch(e) { console.warn('Firebase init error:', e); }
 }
 
