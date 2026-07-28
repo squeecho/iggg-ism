@@ -1,6 +1,8 @@
 {
   "rewrites": [
-    { "source": "/api/calendar", "destination": "/api/calendar" }
+    { "source": "/api/calendar", "destination": "/api/calendar" },
+    { "source": "/calendar.ics", "destination": "/api/calendar?action=ics&cal=detail" },
+    { "source": "/calendar-simple.ics", "destination": "/api/calendar?action=ics&cal=simple" }
   ],
   "functions": {
     "api/calendar.js": {

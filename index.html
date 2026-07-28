@@ -2724,7 +2724,12 @@ window.addEventListener('popstate', function(e) {
   var bpOv = document.getElementById('igBarpickOv');
   if (bpOv && bpOv.style.display !== 'none') { bpOv.style.display = 'none'; return; }
   var cfOv = document.getElementById('igConfirmOv');
-  if (cfOv && cfOv.style.display !== 'none') { cfOv.style.display = 'none'; return; }
+  if (cfOv && cfOv.style.display !== 'none') {
+    /* 그냥 숨기면 대기 중인 콜백(=Promise)이 영영 해소되지 않는다 → '취소'로 종결.
+       기존 2인자 호출은 cancelCb가 없어 동작 불변(아무 일도 안 함). */
+    if (_igConfirmCb) _igConfirmCb(false); else cfOv.style.display = 'none';
+    return;
+  }
 });
 
 window.addEventListener('beforeunload',function(){
@@ -4190,18 +4195,23 @@ var _tt=null;
 
 /* ── 인앱 확인 다이얼로그 (모바일 confirm() 대체) ── */
 var _igConfirmCb=null;
-function igConfirm(msg, okCb){
+/* cancelCb·okLabel 은 선택 인자 — 기존 2인자 호출은 동작 불변(확인 버튼 '삭제') */
+function igConfirm(msg, okCb, cancelCb, okLabel){
   var ov=document.getElementById('igConfirmOv');
   var msgEl=document.getElementById('igConfirmMsg');
   var okBtn=document.getElementById('igConfirmOk');
   var cancelBtn=document.getElementById('igConfirmCancel');
-  if(!ov||!msgEl||!okBtn||!cancelBtn){/* fallback */if(window.confirm(msg))okCb();return;}
+  if(!ov||!msgEl||!okBtn||!cancelBtn){/* fallback */if(window.confirm(msg))okCb();else if(cancelCb)cancelCb();return;}
+  /* 이전 확인이 아직 열려 있으면 '취소'로 종결한 뒤 교체 — 콜백/Promise 유실 방지 */
+  if(_igConfirmCb){var _prevCb=_igConfirmCb;_igConfirmCb=null;try{_prevCb(false);}catch(e){}}
   msgEl.textContent=msg;
+  okBtn.textContent=okLabel||'삭제';  /* 호출마다 초기화 — 라벨이 다음 호출로 새지 않게 */
   ov.style.display='flex';
   _igConfirmCb=function(yes){
     ov.style.display='none';
     _igConfirmCb=null;
     if(yes)okCb();
+    else if(cancelCb)cancelCb();
   };
   okBtn.onclick=function(){if(_igConfirmCb)_igConfirmCb(true);};
   cancelBtn.onclick=function(){if(_igConfirmCb)_igConfirmCb(false);};
@@ -5690,10 +5700,40 @@ function sanitizeKey(pn) {
   return (pn||'').replace(/[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ\-_]/g,'_').substring(0,100);
 }
 
+/* ── 문서키 정규화 충돌 가드 ──
+   sanitizeKey 는 공백·괄호·슬래시 등 특수문자를 모두 '_' 로 접고 100자에서 자른다.
+   → '강남 A동' 과 '강남/A동' 이 같은 문서 ID('강남_A동') 로 수렴해, 서로 다른
+   현장이 아무 경고 없이 상대 기록을 덮어쓴다. 저장 직전 기존 문서의 pn '원문'을
+   읽어 현재 현장명과 다르면 사용자 확인을 받는다.
+   (신규 문서·동일 현장명 재저장은 확인 없이 통과 — 기존 UX 불변) */
+function _confirmKeyCollision(existingPn, newPn) {
+  return new Promise(function(resolve){
+    var msg = '다른 현장 "' + existingPn + '" 기록을 덮어씁니다. 계속?';
+    if (typeof igConfirm === 'function') {
+      igConfirm(msg, function(){ resolve(true); }, function(){ resolve(false); }, '덮어쓰기');
+    } else {
+      resolve(!!window.confirm(msg));
+    }
+  });
+}
+
 async function saveToCloud(siteSnap) {
   if (!_fbReady || !_db) return;
   try {
     var key = sanitizeKey(siteSnap.pn);
+    /* ★ 문서키 충돌 확인 (조회 실패는 저장을 막지 않는다 — 기존 동작 유지) */
+    var _prevPn = null;
+    try {
+      var _prev = await _db.collection('sites').doc(key).get();
+      if (_prev && _prev.exists) {
+        var _pd = _prev.data() || {};
+        _prevPn = _pd.pn || null;
+      }
+    } catch(e) { _prevPn = null; }
+    if (_prevPn && String(_prevPn).trim() !== String(siteSnap.pn||'').trim()) {
+      var _ok = await _confirmKeyCollision(_prevPn, siteSnap.pn);
+      if (!_ok) { toast('저장 취소됨 — 현장명을 바꿔주세요'); return; }
+    }
     /* ★ 저장 전 업체 정규화: task.contractors는 최대 1개(주 배정)만 유지
        mergeGlobalCtorsToTasks()로 오염된 여분 업체 제거 */
     var cleanSnap = JSON.parse(JSON.stringify(siteSnap));

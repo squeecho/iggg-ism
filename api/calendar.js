@@ -169,14 +169,229 @@ function resolveCalendarId(alias) {
   return null;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   ICS(iCalendar) 구독 피드 — RFC 5545
+   캘린더 앱(iOS/구글/아웃룩)이 주기적으로 GET 하는 읽기 전용 공개 피드.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* 쿼리 파싱: Vercel 은 req.query 를 채워주지만, rewrite 목적지 쿼리·로컬 실행
+   양쪽에서 안전하도록 URL 파싱 결과와 병합한다. */
+function parseQuery(req) {
+  const out = {};
+  try {
+    const u = new URL(req.url || '/', 'http://localhost');
+    u.searchParams.forEach(function (v, k) { out[k] = v; });
+  } catch (e) { /* ignore */ }
+  if (req.query && typeof req.query === 'object' && !Array.isArray(req.query)) {
+    Object.keys(req.query).forEach(function (k) {
+      const v = req.query[k];
+      out[k] = Array.isArray(v) ? v[0] : v;
+    });
+  }
+  return out;
+}
+
+/* TEXT 값 이스케이프 (RFC 5545 §3.3.11): \ ; , 개행 */
+function icsEscape(v) {
+  return String(v == null ? '' : v)
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r\n|\r|\n/g, '\\n');
+}
+
+/* 줄 접기 (RFC 5545 §3.1): 한 줄 75 옥텟 초과 시 CRLF + 공백 1칸으로 이어붙인다.
+   한글(UTF-8 3바이트)이 옥텟 경계에서 쪼개지면 캘린더 앱이 깨진 글자를 보이므로
+   길이는 옥텟으로 세되 끊는 단위는 문자(코드포인트)로 한다. */
+function icsFold(line) {
+  if (Buffer.byteLength(line, 'utf8') <= 75) return line;
+  const chars = Array.from(line);
+  const out = [];
+  let cur = '';
+  let curBytes = 0;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    const n = Buffer.byteLength(ch, 'utf8');
+    if (curBytes + n > 75) {
+      out.push(cur);
+      cur = ' ' + ch;      /* 이어지는 줄은 반드시 공백 1칸으로 시작 */
+      curBytes = 1 + n;
+    } else {
+      cur += ch;
+      curBytes += n;
+    }
+  }
+  if (cur) out.push(cur);
+  return out.join('\r\n');
+}
+
+/* 2026-07-28 → 20260728 */
+function icsDateOnly(d) {
+  return String(d || '').slice(0, 10).replace(/-/g, '');
+}
+
+/* ISO 문자열/Date → 20260728T003000Z (UTC 고정 → VTIMEZONE 불필요) */
+function icsUtc(dt) {
+  const d = new Date(dt);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+}
+
+/* YYYY-MM-DD + n일 */
+function icsAddDays(dateStr, n) {
+  const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return dateStr;
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/* Google Calendar events.list 아이템 배열 → VCALENDAR 텍스트 */
+function buildIcs(events, opts) {
+  opts = opts || {};
+  const stamp = icsUtc(opts.now == null ? Date.now() : opts.now);
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//iggg studio//IG ISM Schedule//KO',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:' + icsEscape(opts.calName || '!G 공정표'),
+    'X-WR-CALDESC:' + icsEscape(opts.calDesc || '이견공간기획사무소 현장 공정표'),
+    'X-WR-TIMEZONE:Asia/Seoul',
+    'REFRESH-INTERVAL;VALUE=DURATION:PT1H',
+    'X-PUBLISHED-TTL:PT1H',
+  ];
+
+  (events || []).forEach(function (ev, idx) {
+    if (!ev || ev.status === 'cancelled') return;
+    const st = ev.start || {};
+    const en = ev.end || {};
+    let dtStart, dtEnd;
+
+    if (st.date) {
+      /* 종일 일정 — DTEND 는 배타적(exclusive). 구글도 배타적으로 준다. */
+      dtStart = 'DTSTART;VALUE=DATE:' + icsDateOnly(st.date);
+      dtEnd = 'DTEND;VALUE=DATE:' + icsDateOnly(en.date || icsAddDays(st.date, 1));
+    } else if (st.dateTime) {
+      const s = icsUtc(st.dateTime);
+      if (!s) return;
+      const e = en.dateTime ? icsUtc(en.dateTime) : null;
+      dtStart = 'DTSTART:' + s;
+      dtEnd = 'DTEND:' + (e || s);
+    } else {
+      return; /* 시작 없는 이벤트는 건너뜀 */
+    }
+
+    /* UID: 구독 갱신 시 같은 일정으로 인식되도록 안정적인 값 사용 */
+    const uid = String(ev.iCalUID || (ev.id ? ev.id + '@ism.igggstudio.com' : 'ism-' + idx + '@ism.igggstudio.com'))
+      .replace(/[\r\n]/g, '');
+
+    lines.push('BEGIN:VEVENT');
+    lines.push('UID:' + uid);
+    lines.push('DTSTAMP:' + stamp);
+    lines.push(dtStart);
+    lines.push(dtEnd);
+    lines.push('SUMMARY:' + icsEscape(ev.summary || '(제목 없음)'));
+    if (ev.description) lines.push('DESCRIPTION:' + icsEscape(ev.description));
+    if (ev.location) lines.push('LOCATION:' + icsEscape(ev.location));
+    if (ev.updated) {
+      const lm = icsUtc(ev.updated);
+      if (lm) lines.push('LAST-MODIFIED:' + lm);
+    }
+    lines.push('END:VEVENT');
+  });
+
+  lines.push('END:VCALENDAR');
+  return lines.map(icsFold).join('\r\n') + '\r\n';
+}
+
+/* 이벤트 전량 수집 (페이지네이션) */
+async function fetchAllEvents(token, calId, timeMin, timeMax) {
+  const events = [];
+  let pageToken = '';
+  for (let i = 0; i < 10; i++) {
+    let q = 'timeMin=' + encodeURIComponent(timeMin)
+      + '&timeMax=' + encodeURIComponent(timeMax)
+      + '&singleEvents=true&orderBy=startTime&showDeleted=false&maxResults=2500';
+    if (pageToken) q += '&pageToken=' + encodeURIComponent(pageToken);
+    const result = await callCalendarAPI(
+      token, 'GET', 'calendars/' + encodeURIComponent(calId) + '/events?' + q, null
+    );
+    if (result.status !== 200) {
+      throw new Error('Calendar API ' + result.status + ': ' + String(result.body).slice(0, 300));
+    }
+    const json = JSON.parse(result.body);
+    (json.items || []).forEach(function (it) { events.push(it); });
+    if (!json.nextPageToken) break;
+    pageToken = json.nextPageToken;
+  }
+  return events;
+}
+
+/* GET /api/calendar?action=ics&cal=detail|simple
+   ※ Origin 게이트 예외 — 캘린더 앱 구독 요청에는 Origin 헤더가 없다.
+     읽기 전용(쓰기·삭제 불가)이라 공개해도 조작 위험이 없으며,
+     POST 프록시 게이트는 그대로 유지된다. */
+async function handleIcs(req, res, q) {
+  const alias = q.cal === 'simple' ? 'simple' : 'detail';
+  try {
+    const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const privateKeyRaw = process.env.GOOGLE_PRIVATE_KEY;
+    if (!email || !privateKeyRaw) {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.status(500).send('Service account not configured');
+    }
+    const calId = alias === 'simple' ? process.env.GCAL_ID_SIMPLE : process.env.GCAL_ID_DETAIL;
+    if (!calId) {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.status(500).send('Calendar not configured: ' + alias);
+    }
+
+    const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
+    const now = Date.now();
+    const DAY = 86400000;
+    const timeMin = new Date(now - 30 * DAY).toISOString();
+    const timeMax = new Date(now + 180 * DAY).toISOString();
+
+    const token = await getAccessToken(email, privateKey);
+    const events = await fetchAllEvents(token, calId, timeMin, timeMax);
+
+    const ics = buildIcs(events, {
+      now: now,
+      calName: alias === 'simple' ? '!G 공정표 (요약)' : '!G 공정표 (상세)',
+      calDesc: alias === 'simple'
+        ? '이견공간기획사무소 — 현장별 전체 공사기간'
+        : '이견공간기획사무소 — 현장 공종별 일정',
+    });
+
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=300, stale-while-revalidate=600');
+    res.setHeader('Content-Disposition',
+      'inline; filename="' + (alias === 'simple' ? 'calendar-simple.ics' : 'calendar.ics') + '"');
+    res.setHeader('Access-Control-Allow-Origin', '*'); /* 읽기 전용 공개 피드 */
+    return res.status(200).send(ics);
+  } catch (err) {
+    console.error('[api/calendar][ics] Error:', err);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    return res.status(500).send('ICS generation failed');
+  }
+}
+
 /* ── Vercel Serverless Handler ── */
 module.exports = async (req, res) => {
+  const query = parseQuery(req);
+
+  /* ICS 구독 피드는 Origin 게이트 이전에 처리 (읽기 전용 공개) */
+  if (req.method === 'GET' && query.action === 'ics') {
+    return handleIcs(req, res, query);
+  }
+
   // CORS 헤더
   const origin = req.headers.origin || '';
   if (isAllowedOrigin(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   // Preflight
@@ -263,3 +478,9 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: err.message || 'Internal error' });
   }
 };
+
+/* ── 로컬 검증용 내보내기 (Vercel 핸들러 동작에는 영향 없음) ── */
+module.exports.buildIcs = buildIcs;
+module.exports.icsFold = icsFold;
+module.exports.icsEscape = icsEscape;
+module.exports.parseQuery = parseQuery;
