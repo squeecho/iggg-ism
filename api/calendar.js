@@ -157,6 +157,186 @@ function isAllowedOrigin(origin) {
   return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   SSO 실인증 게이트 — ig works 승인 직원만 캘린더 조작 허용
+   (전수감사 2026-07-29 H4 / 사장 승인)
+
+   왜: Origin 헤더는 `curl -H "Origin: https://ism.igggstudio.com"` 로 자명하게
+   위조된다. 그것만이 관문이면 누구나 서비스 계정 토큰으로 회사 구글 캘린더를
+   읽고·쓰고·지울 수 있다. Origin 검사는 CSRF 보조로만 남기고, 신원은 아래
+   전 앱 공통 SSO 체인으로 실검증한다(새 인증 체계를 만들지 않는다).
+
+   공통 규약 — sso-gate.js / ig-site-report/api/cloudinary-delete.js /
+   ig-proposal/api/sso-login.js 와 동일한 체인:
+     iggg_sso 쿠키({email, refreshToken}) → securetoken 교환 → id_token
+     → 백엔드 GET /api/staff/me → status==='approved' 만 통과(fail-closed).
+   ※ 쿠키의 email 은 표시 전용 — 권한 판정에 쓰지 않는다(위조 가능).
+
+   자격증명은 두 경로로 받되 검증은 하나로 수렴한다:
+     ① Authorization: Bearer <id_token>  — 프론트가 명시 첨부(정본 경로)
+     ② iggg_sso 쿠키                      — 동일 출처 요청에 브라우저가 자동
+        첨부하는 폴백. ①이 어떤 이유로든 비어도 실사용자가 막히지 않게 하는
+        안전망(현장 공정이 멈추면 안 된다). 쿠키는 SameSite=Lax 라 교차사이트
+        POST 에는 붙지 않으므로 이 폴백이 CSRF 창구가 되지 않는다.
+
+   ⚠ ICS 구독 피드(action=ics)는 이 게이트보다 앞에서 처리된다 — 캘린더 앱은
+     인증 없이 GET 하므로 공개 유지(읽기 전용이라 조작 위험 없음).
+   ⚠ action='config' 는 캘린더 ID 두 개만 돌려주는 읽기라 Origin 게이트만
+     유지한다(부팅 경로를 인증에 묶으면 초기 로드가 인증 장애에 연동된다).
+   ══════════════════════════════════════════════════════════════════ */
+
+const STAFF_API = (process.env.IGGG_API_URL
+  || 'https://iggg-estimate-api-583239150535.asia-northeast3.run.app').replace(/\/+$/, '');
+/* ig works(iggg-schedule) 공개 웹 키 — sso-gate.js·타 앱과 동일한 이미 공개된 값 */
+const SSO_WEB_KEY = process.env.IGGG_SSO_WEB_KEY || 'AIzaSyAks6Jg7KiIOv9rWmAlnXcC8vEnNZvDbDo';
+
+/* 인증 결과 캐시(서버리스 인스턴스 수명) — 동기화 1회가 프록시 호출 수십 건이라
+   매 건 Cloud Run 왕복은 느리고 백엔드에 부하가 된다. 키는 자격증명의 sha256
+   (토큰 원문은 저장하지 않는다). 성공 5분 / 거절 30초, 장애(503)는 캐시 안 함. */
+const _authCache = new Map();
+const AUTH_OK_TTL_MS = 5 * 60 * 1000;
+const AUTH_NG_TTL_MS = 30 * 1000;
+
+function _cacheAuth(key, result, ttl) {
+  if (_authCache.size > 500) _authCache.clear();   /* 무한 증식 방지 */
+  _authCache.set(key, { result: result, until: Date.now() + ttl });
+}
+
+/* 로그용 이메일 마스킹 — 감사 추적은 되되 로그에 전체 주소를 남기지 않는다 */
+function _maskEmail(e) {
+  const s = String(e || '');
+  const i = s.indexOf('@');
+  if (i <= 0) return s ? '***' : '-';
+  return s.slice(0, Math.min(3, i)) + '***' + s.slice(i);
+}
+
+/* https 요청 → {status, body}. (fetch 대신 https 모듈 — 이 파일의 기존 방식과
+   동일하게 두어 런타임 Node 버전에 좌우되지 않게 한다) */
+function httpsRequest(urlStr, opts) {
+  opts = opts || {};
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(urlStr); } catch (e) { return reject(e); }
+    const payload = opts.body || '';
+    const headers = Object.assign({}, opts.headers || {});
+    if (payload) headers['Content-Length'] = Buffer.byteLength(payload);
+    const req = https.request({
+      hostname: u.hostname,
+      port: u.port || 443,
+      path: u.pathname + u.search,
+      method: opts.method || 'GET',
+      headers: headers,
+    }, (res) => {
+      res.setEncoding('utf8');
+      let data = '';
+      res.on('data', (c) => (data += c));
+      res.on('end', () => resolve({ status: res.statusCode, body: data }));
+    });
+    req.setTimeout(opts.timeoutMs || 8000, () => { req.destroy(new Error('timeout')); });
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+function parseCookies(header) {
+  const out = {};
+  String(header || '').split(';').forEach(function (part) {
+    const i = part.indexOf('=');
+    if (i < 0) return;
+    const k = part.slice(0, i).trim();
+    if (k) out[k] = part.slice(i + 1).trim();
+  });
+  return out;
+}
+
+/* 자격증명 추출 — Bearer id_token 우선, 없으면 iggg_sso 쿠키의 refreshToken */
+function readCredential(req) {
+  const authz = String(req.headers.authorization || req.headers.Authorization || '');
+  const m = authz.match(/^Bearer\s+(.+)$/i);
+  if (m && m[1].trim()) return { kind: 'id', value: m[1].trim() };
+  const raw = parseCookies(req.headers.cookie).iggg_sso || '';
+  if (raw) {
+    try {
+      const d = JSON.parse(decodeURIComponent(raw) || 'null') || {};
+      if (d.refreshToken) return { kind: 'refresh', value: String(d.refreshToken) };
+    } catch (e) { /* 손상된 쿠키 — 무자격으로 처리 */ }
+  }
+  return null;
+}
+
+/* 승인 직원 검증 — {ok:true, email, role} | {ok:false, status, error, reason}.
+   어떤 예외·불명확 응답도 통과시키지 않는다(fail-closed). */
+async function verifyStaff(req) {
+  const cred = readCredential(req);
+  if (!cred) {
+    return { ok: false, status: 401, reason: 'no-credential',
+             error: 'ig works 로그인이 필요합니다' };
+  }
+
+  const key = crypto.createHash('sha256').update(cred.kind + ':' + cred.value).digest('hex');
+  const hit = _authCache.get(key);
+  if (hit && hit.until > Date.now()) return hit.result;
+
+  try {
+    let idToken = cred.value;
+
+    /* 쿠키 폴백 경로: refreshToken → id_token 교환 */
+    if (cred.kind === 'refresh') {
+      const ex = await httpsRequest('https://securetoken.googleapis.com/v1/token?key=' + SSO_WEB_KEY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(cred.value),
+      });
+      let j = null;
+      try { j = JSON.parse(ex.body); } catch (e) { /* noop */ }
+      if (ex.status !== 200 || !j || !j.id_token) {
+        const bad = { ok: false, status: 401, reason: 'refresh-rejected',
+                      error: '로그인이 만료됐습니다 — 다시 로그인해 주세요' };
+        _cacheAuth(key, bad, AUTH_NG_TTL_MS);
+        return bad;
+      }
+      idToken = j.id_token;
+    }
+
+    /* 신원·승인 판정 정본은 백엔드 한 곳 (X-API-Key 불필요 — Bearer 전용 창구) */
+    const me = await httpsRequest(STAFF_API + '/api/staff/me', {
+      headers: { Authorization: 'Bearer ' + idToken },
+    });
+
+    if (me.status === 401 || me.status === 403) {
+      const bad = { ok: false, status: 401, reason: 'me-' + me.status,
+                    error: '유효하지 않은 로그인입니다 — 다시 로그인해 주세요' };
+      _cacheAuth(key, bad, AUTH_NG_TTL_MS);
+      return bad;
+    }
+    if (me.status !== 200) {
+      /* 백엔드 장애 — 조작 창구이므로 통과시키지 않는다(sso-gate 의 5xx 관용은
+         화면 진입용 규약이라 서버 게이트로 복사하지 않는다). 캐시도 안 한다. */
+      return { ok: false, status: 503, reason: 'me-' + me.status,
+               error: '직원 확인 서버에 연결할 수 없습니다 — 잠시 후 다시 시도해 주세요' };
+    }
+
+    let who = null;
+    try { who = JSON.parse(me.body); } catch (e) { /* noop */ }
+    if (!who || who.status !== 'approved') {
+      const bad = { ok: false, status: 403, reason: 'not-approved',
+                    error: '승인된 직원만 사용할 수 있습니다' };
+      _cacheAuth(key, bad, AUTH_NG_TTL_MS);
+      return bad;
+    }
+
+    const ok = { ok: true, status: 200,
+                 email: String(who.email || ''), role: String(who.role || '') };
+    _cacheAuth(key, ok, AUTH_OK_TTL_MS);
+    return ok;
+  } catch (e) {
+    console.warn('[api/calendar][auth] 검증 오류:', (e && e.message) || e);
+    return { ok: false, status: 503, reason: 'verify-error',
+             error: '직원 확인 중 오류가 발생했습니다 — 잠시 후 다시 시도해 주세요' };
+  }
+}
+
 /* ── 캘린더 ID 매핑 ── */
 function resolveCalendarId(alias) {
   if (alias === 'detail') return process.env.GCAL_ID_DETAIL || 'primary';
@@ -390,9 +570,16 @@ module.exports = async (req, res) => {
   const origin = req.headers.origin || '';
   if (isAllowedOrigin(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    /* 쿠키 폴백(iggg_sso)이 교차출처에서도 살아있게 — isAllowedOrigin 은 빈 Origin 을
+       거부하므로 여기서 '*' 가 나올 수 없다(credentials 와 '*' 는 공존 불가). */
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  /* ⚠ Authorization 을 빠뜨리면 교차출처(로컬 개발 등) 프리플라이트가 실패한다 */
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  /* 프론트가 응답 본문을 소비하지 않고 인증 실패를 구분하기 위한 표식 */
+  res.setHeader('Access-Control-Expose-Headers', 'X-Auth-Denied');
 
   // Preflight
   if (req.method === 'OPTIONS') {
@@ -409,6 +596,25 @@ module.exports = async (req, res) => {
   }
 
   try {
+    const { action, calendarId, method, path, body: reqBody, bodyB64, query } = req.body || {};
+
+    /* ── SSO 실인증 게이트 — 조작 경로(proxy)는 승인 직원만 ──
+       ⚠ 환경변수 점검보다 앞에 둔다: 비인증 호출에 서버 설정 상태를 흘리지
+         않기 위함(ig-site-report/api/cloudinary-delete.js 와 같은 규약).
+       ⚠ Origin 통과만으로는 여기서 막힌다 — Origin 은 CSRF 보조일 뿐이다. */
+    let auth = null;
+    if (action === 'proxy') {
+      auth = await verifyStaff(req);
+      if (!auth.ok) {
+        console.warn('[api/calendar][auth] 프록시 거부:', auth.reason,
+          '| origin=' + (origin || '-'),
+          '| method=' + String(method || 'GET').toUpperCase(),
+          '| path=' + String(path || '/events').slice(0, 60));
+        res.setHeader('X-Auth-Denied', '1');
+        return res.status(auth.status).json({ error: auth.error, reason: auth.reason });
+      }
+    }
+
     const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     const privateKeyRaw = process.env.GOOGLE_PRIVATE_KEY;
 
@@ -418,8 +624,6 @@ module.exports = async (req, res) => {
 
     // Vercel 환경변수의 \n 문자열을 실제 줄바꿈으로 변환
     const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
-
-    const { action, calendarId, method, path, body: reqBody, bodyB64, query } = req.body;
 
     /* bodyB64: 프론트가 이벤트 본문을 base64(ASCII)로 무장해 전송 —
        전송/파싱 계층의 멀티바이트 분절로 한글이 U+FFFD로 오염되는 것을 차단 */
@@ -440,7 +644,7 @@ module.exports = async (req, res) => {
       });
     }
 
-    /* ── action: 'proxy' — Calendar API 프록시 ── */
+    /* ── action: 'proxy' — Calendar API 프록시 (인증은 위 게이트에서 완료) ── */
     if (action === 'proxy') {
       // 캘린더 ID 검증
       const resolvedCalId = resolveCalendarId(calendarId);
@@ -460,6 +664,11 @@ module.exports = async (req, res) => {
 
       // Calendar API 호출
       const apiMethod = (method || 'GET').toUpperCase();
+      /* 조작(쓰기·삭제)은 누가 했는지 로그에 남긴다 — 조회는 양이 많아 제외 */
+      if (apiMethod !== 'GET') {
+        console.log('[api/calendar][proxy]', _maskEmail(auth.email), apiMethod,
+          String(path || '/events').slice(0, 60), '| cal=' + String(calendarId || ''));
+      }
       const result = await callCalendarAPI(token, apiMethod, apiPath, proxyBody);
 
       // 응답 전달

@@ -4466,6 +4466,37 @@ function _ssoEmail(){ var a=_ssoAccount(); return (a && a.email) || ''; }
 /* 이메일 로컬파트(@ 앞) — 작성자 기본 이름. 모달 입력과 같은 20자 상한 */
 function _ssoNameHint(){ var e=_ssoEmail(); var i=e.indexOf('@'); return i>0 ? e.slice(0,i).slice(0,20) : ''; }
 
+/* ─ 직원 id_token (교환 창구 단일화) ────────────────────────────────
+   쿠키의 refreshToken 을 Firebase securetoken 으로 교환한 1시간짜리 신원 토큰.
+   전 앱 공통 규약(sso-gate.js·ig-site-report 와 동일 체인)이며 이 앱에서는
+     ① Firestore 커스텀 토큰 발급(/api/staff/firestore-token)
+     ② 캘린더 프록시 인증(/api/calendar action=proxy)
+   두 곳이 공용한다 — 교환 코드는 여기 하나뿐(같은 목적 병행 구현 금지).
+   만료 5분 전 재교환하고, 실패는 캐시하지 않는다(다음 호출에서 재시도). */
+var SSO_TOKEN_KEY = 'AIzaSyAks6Jg7KiIOv9rWmAlnXcC8vEnNZvDbDo'; /* ig works(iggg-schedule) 공개 웹 키 */
+var _ssoIdTokenP = null, _ssoIdTokenExp = 0;
+function _ssoIdToken(){
+  if(_ssoIdTokenP && Date.now() < _ssoIdTokenExp) return _ssoIdTokenP;
+  _ssoIdTokenExp = Date.now() + 60000;   /* 교환 진행 중 중복 호출 방지(성공 시 실만료로 교체) */
+  var rt = (_ssoAccount() || {}).refreshToken || '';
+  _ssoIdTokenP = (rt
+    ? fetch('https://securetoken.googleapis.com/v1/token?key=' + SSO_TOKEN_KEY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(rt)
+      }).then(function(r){
+        if(!r.ok) throw new Error('securetoken ' + r.status);
+        return r.json();
+      }).then(function(j){
+        if(!j || !j.id_token) throw new Error('id_token 없음');
+        _ssoIdTokenExp = Date.now() + Math.max(60, (Number(j.expires_in) || 3600) - 300) * 1000;
+        return j.id_token;
+      })
+    : Promise.reject(new Error('iggg_sso 쿠키 없음'))
+  ).catch(function(err){ _ssoIdTokenP = null; _ssoIdTokenExp = 0; throw err; });
+  return _ssoIdTokenP;
+}
+
 /* ─ 공통 셸: 툴바 우측 계정 표시 / 로그아웃 ─ */
 function initShellAccount(){
   var el = document.getElementById('tbAcctEmail');
@@ -4604,11 +4635,38 @@ function _gcalApiCall(method, calIdAlias, path, body, query){
       payload.body = body; /* 인코딩 실패 시 구방식 폴백 */
     }
   }
-  return fetch('/api/calendar', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+  /* ── SSO 인증 첨부(서버 게이트 대응, 2026-07-29) ──
+     프록시는 서비스 계정으로 캘린더를 쓰고 지우는 창구라 서버가 승인 직원만
+     통과시킨다. 정본은 Authorization: Bearer <id_token>.
+     토큰 교환이 실패해도 요청 자체는 보낸다 — 서버가 동일 출처로 자동 전송된
+     iggg_sso 쿠키로 폴백 검증하고, 그마저 없으면 명확한 401 을 돌려준다. */
+  return _ssoIdToken().catch(function(){ return ''; }).then(function(idt){
+    var headers = { 'Content-Type': 'application/json' };
+    if(idt) headers['Authorization'] = 'Bearer ' + idt;
+    return fetch('/api/calendar', {
+      method: 'POST',
+      credentials: 'same-origin',   /* 쿠키 폴백 경로 — 브라우저 기본값이지만 명시 */
+      headers: headers,
+      body: JSON.stringify(payload)
+    });
+  }).then(function(r){
+    /* 인증 거부는 본문을 소비하지 않고 헤더로 구분(호출부가 r.json() 을 쓴다) */
+    if(!r.ok && r.headers && r.headers.get('X-Auth-Denied')) _gcalAuthDenied(r.status);
+    return r;
   });
+}
+
+/* 인증 게이트 응답 안내 — 재시도 폭주 시 토스트가 도배되지 않도록 60초 1회.
+   401=로그인 없음/만료, 403=승인 직원 아님, 503=직원 확인 서버 장애(내 잘못 아님) */
+var _gcalAuthNoticeAt = 0;
+function _gcalAuthDenied(status){
+  if(Date.now() - _gcalAuthNoticeAt < 60000) return;
+  _gcalAuthNoticeAt = Date.now();
+  var msg;
+  if(status === 403)      msg = '🔒 캘린더 연동은 승인된 직원만 사용할 수 있어요';
+  else if(status === 503) msg = '⚠️ 직원 확인 서버 응답이 없어 캘린더 연동을 잠시 건너뛰었어요';
+  else                    msg = '🔒 로그인이 만료됐어요 — 다시 로그인하면 캘린더 연동이 재개됩니다';
+  try{ toast(msg); }catch(e){ console.warn('[gcal]', msg); }
 }
 
 /* ── 서버에서 캘린더 설정 로드 (cb: 완료 후 성공여부(boolean)와 함께 호출 — 재시도 경로용) ── */
@@ -4617,8 +4675,12 @@ function initCalendarProxy(cb){
     _gcalEnabled = localStorage.getItem('_gcalEnabled') === '1';
   }catch(e){}
 
+  /* config 은 캘린더 ID 두 개를 돌려주는 읽기 — 인증 게이트 대상이 아니다
+     (부팅 경로를 인증에 묶으면 초기 로드가 인증 장애에 연동된다).
+     조작 경로(action='proxy')만 서버에서 승인 직원 검증을 받는다. */
   fetch('/api/calendar', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'config' })
   }).then(function(r){ if(!r.ok) throw new Error('config HTTP '+r.status); return r.json(); })
@@ -5064,7 +5126,9 @@ function _gcalDoUpload(snap, calAlias, onDone){
             }).catch(function(){});
             _evtDone++;
             setTimeout(_sendNext, INTERVAL);
-          } else if((r.status===429||r.status===403) && retries>0){
+          /* 429·구글 403(쿼터)은 재시도 가치가 있지만, 인증 거부 403 은
+             재시도해도 같은 결과라 즉시 실패 처리한다(재시도 폭주 방지) */
+          } else if((r.status===429 || (r.status===403 && !(r.headers && r.headers.get('X-Auth-Denied')))) && retries>0){
             var delay = INTERVAL * (4 - retries) * 3;
             setTimeout(function(){ doPost(retries-1); }, delay);
           } else {
@@ -5129,7 +5193,9 @@ function _gcalDeleteSiteEvents(pns, calAlias, cb){
 
   /* 2) 태그 검색으로 이벤트 ID 추가 수집 */
   _gcalApiCall('GET', calAlias, '/events', null, 'privateExtendedProperty=src%3Diggg-ism&maxResults=2500&showDeleted=false')
-    .then(function(r){return r.json();})
+    /* ⚠ r.ok 확인 필수 — 401/5xx 본문도 JSON 이라 그냥 파싱하면 items 가 비고,
+       아래에서 로컬 ID 목록만 지워져 캘린더에 고아 일정이 남는다(정리 불가). */
+    .then(function(r){ if(!r.ok) throw new Error('gcal list '+r.status); return r.json(); })
     .then(function(data){
       var items=(data.items||[]).filter(function(ev){
         var priv=(ev.extendedProperties&&ev.extendedProperties.private)||{};
@@ -5196,7 +5262,9 @@ function _gcalDeleteIgEvents(calAlias, cb){
   var calId = (calAlias==='simple') ? _gcalCalIdSimple : _gcalCalIdDetail;
 
   _gcalApiCall('GET', calAlias, '/events', null, 'privateExtendedProperty=src%3Diggg-ism&maxResults=2500&showDeleted=false')
-    .then(function(r){return r.json();})
+    /* ⚠ r.ok 확인 필수 — 위와 동일(실패 응답을 목록 0건으로 오인하면
+       _gcalSaveIds([]) 가 로컬 ID 만 지운다) */
+    .then(function(r){ if(!r.ok) throw new Error('gcal list '+r.status); return r.json(); })
     .then(function(data){
       var allIds=(data.items||[]).map(function(x){return x.id;});
       /* localStorage 저장 ID도 합침 */
@@ -5533,25 +5601,17 @@ var _cloudSnapshotUnsubscribe = null; /* 실시간 리스너 해제 함수 */
    토큰을 발급 → signInWithCustomToken. 익명 로그인을 대체한다. */
 var _STAFF_API = 'https://iggg-estimate-api-583239150535.asia-northeast3.run.app';
 
-function _ssoRefreshToken() {
-  /* 쿠키 파싱은 _ssoAccount() 단일 창구(위 script 블록에 정의 — 공통 셸과 공용) */
-  var d = _ssoAccount();
-  return (d && d.refreshToken) || '';
-}
+/* ※ 구 _ssoRefreshToken() 제거 — 쿠키 파싱은 _ssoAccount(), securetoken 교환은
+     _ssoIdToken() 이 단일 창구다(2026-07-29 프록시 인증 정리 시 호출부 소멸). */
 
-/* 쿠키 → id_token → 백엔드 커스텀 토큰(문자열). 어느 단계든 실패하면 reject. */
+/* 쿠키 → id_token → 백엔드 커스텀 토큰(문자열). 어느 단계든 실패하면 reject.
+   ※ securetoken 교환은 _ssoIdToken() 단일 창구를 쓴다(캘린더 프록시 인증과
+     공용 — 같은 목적의 교환 코드를 두 벌 두지 않는다). */
 function _staffCustomToken() {
-  var rt = _ssoRefreshToken();
-  if (!rt) return Promise.reject(new Error('iggg_sso 쿠키 없음'));
-  return fetch('https://securetoken.googleapis.com/v1/token?key=' + FIREBASE_CONFIG.apiKey, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(rt)
-  })
-    .then(function(r){ if (!r.ok) throw new Error('securetoken ' + r.status); return r.json(); })
-    .then(function(j){
+  return _ssoIdToken()
+    .then(function(idt){
       return fetch(_STAFF_API + '/api/staff/firestore-token', {
-        method: 'POST', headers: { Authorization: 'Bearer ' + (j.id_token || '') }
+        method: 'POST', headers: { Authorization: 'Bearer ' + idt }
       });
     })
     .then(function(r){ if (!r.ok) throw new Error('firestore-token ' + r.status); return r.json(); })
