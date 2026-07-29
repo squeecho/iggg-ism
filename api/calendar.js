@@ -329,7 +329,10 @@ async function verifyStaff(req) {
     const ok = { ok: true, status: 200,
                  email: String(who.email || ''), role: String(who.role || '') };
     _cacheAuth(key, ok, AUTH_OK_TTL_MS);
-    return ok;
+    /* ⚠캐시에 넣은 **뒤에** 토큰을 붙인다 — 캐시는 인스턴스 수명 내내 살아서
+       토큰 원문을 남기면 안 된다. 이 요청 범위에서만 자가점검 신고에 쓴다.
+       쿠키 폴백 경로도 여기서 교환된 id_token 을 그대로 쓸 수 있다. */
+    return Object.assign({}, ok, { _idToken: idToken });
   } catch (e) {
     console.warn('[api/calendar][auth] 검증 오류:', (e && e.message) || e);
     return { ok: false, status: 503, reason: 'verify-error',
@@ -340,14 +343,19 @@ async function verifyStaff(req) {
 /* ── 캘린더 ID 매핑 ── */
 /* 동기화 성공·실패를 백엔드 자가점검에 신고 — 실패가 쌓이면 사장에게 메일이 간다.
    fire-and-forget: 신고 실패가 캘린더 동작을 막지 않는다(await 하지 않는다). */
-function reportSyncOutcome(req, ok, reason) {
+function reportSyncOutcome(req, ok, reason, idToken) {
   try {
+    /* 백엔드 창구는 **id_token Bearer** 만 받는다.
+       ⚠처음엔 cred.kind 를 'bearer' 로 착각해 신고가 조용히 안 나갔다(실제는 'id').
+         지금은 인증 단계에서 확보·교환된 토큰을 그대로 받아 쓴다 — 쿠키 폴백
+         경로도 신고가 나간다. */
     const cred = readCredential(req);
-    if (!cred || cred.kind !== 'bearer') return;   /* 토큰 없으면 신고 자격도 없다 */
+    const tok = idToken || (cred && cred.kind === 'id' ? cred.value : '');
+    if (!tok) return;                     /* 쓸 토큰이 없으면 신고도 못 한다 */
     httpsRequest(STAFF_API + '/api/syscheck/report-failure', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json',
-                 Authorization: 'Bearer ' + cred.value },
+                 Authorization: 'Bearer ' + tok },
       body: JSON.stringify({ key: 'ism_calendar_sync', ok: !!ok,
                              reason: String(reason).slice(0, 120) }),
     }).catch(function () { /* 신고 실패는 삼킨다 — 본업이 우선 */ });
@@ -628,7 +636,8 @@ module.exports = async (req, res) => {
          자가점검의 실패 카운터에 적어 3회 연속이면 메일 경보가 나간다.
          자격증명이 없으면(no-credential) 신고도 못 하니 건너뛴다 — 그 경우는
          애초에 로그인이 안 된 상태라 사장에게 알릴 사고가 아니다. */
-      reportSyncOutcome(req, auth.ok, auth.ok ? '' : String(auth.reason || ''));
+      reportSyncOutcome(req, auth.ok, auth.ok ? '' : String(auth.reason || ''),
+                        auth._idToken);
       if (!auth.ok) {
         console.warn('[api/calendar][auth] 프록시 거부:', auth.reason,
           '| origin=' + (origin || '-'),
