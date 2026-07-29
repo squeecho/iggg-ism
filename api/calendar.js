@@ -338,6 +338,22 @@ async function verifyStaff(req) {
 }
 
 /* ── 캘린더 ID 매핑 ── */
+/* 동기화 성공·실패를 백엔드 자가점검에 신고 — 실패가 쌓이면 사장에게 메일이 간다.
+   fire-and-forget: 신고 실패가 캘린더 동작을 막지 않는다(await 하지 않는다). */
+function reportSyncOutcome(req, ok, reason) {
+  try {
+    const cred = readCredential(req);
+    if (!cred || cred.kind !== 'bearer') return;   /* 토큰 없으면 신고 자격도 없다 */
+    httpsRequest(STAFF_API + '/api/syscheck/report-failure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json',
+                 Authorization: 'Bearer ' + cred.value },
+      body: JSON.stringify({ key: 'ism_calendar_sync', ok: !!ok,
+                             reason: String(reason).slice(0, 120) }),
+    }).catch(function () { /* 신고 실패는 삼킨다 — 본업이 우선 */ });
+  } catch (e) { /* 같은 이유 */ }
+}
+
 function resolveCalendarId(alias) {
   if (alias === 'detail') return process.env.GCAL_ID_DETAIL || 'primary';
   if (alias === 'simple') return process.env.GCAL_ID_SIMPLE || 'primary';
@@ -605,6 +621,14 @@ module.exports = async (req, res) => {
     let auth = null;
     if (action === 'proxy') {
       auth = await verifyStaff(req);
+      /* ⚠실패를 **서버에 남긴다**(사장 지시 2026-07-30).
+         캘린더 동기화는 브라우저에서 도는 작업이라 서버 크론이 아니고, 그래서 멈춰도
+         자가점검이 볼 대상이 없었다 — 알림이 아예 없었다. 화면의 🔒 토스트뿐이고
+         그것도 60초 1회, 사장이 그 순간 화면을 보고 있어야 했다.
+         자가점검의 실패 카운터에 적어 3회 연속이면 메일 경보가 나간다.
+         자격증명이 없으면(no-credential) 신고도 못 하니 건너뛴다 — 그 경우는
+         애초에 로그인이 안 된 상태라 사장에게 알릴 사고가 아니다. */
+      reportSyncOutcome(req, auth.ok, auth.ok ? '' : String(auth.reason || ''));
       if (!auth.ok) {
         console.warn('[api/calendar][auth] 프록시 거부:', auth.reason,
           '| origin=' + (origin || '-'),
