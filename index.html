@@ -2483,7 +2483,16 @@ function rCloudChips() {
   if (!_fbReady) {
     if(body)body.style.display = '';
     el.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:4px 0">Firebase 연결 대기 중...</div>';
-    setTimeout(function(){ loadCloudSites().then(rCloudChips); }, 1500);
+    setTimeout(function(){ loadCloudSites().then(function(){
+      rCloudChips();
+      /* 딥링크 현장이 로컬엔 없고 클라우드(확정)에 있으면 그쪽을 연다(#224) */
+      try{
+        if(_hubDeep.site && !_open && !S.tasks.length
+           && (_cloudSites||[]).some(function(x){return x.pn===_hubDeep.site;})){
+          loadCloudProject(_hubDeep.site);
+        }
+      }catch(e){}
+    }); }, 1500);
     return;
   }
 
@@ -4319,8 +4328,32 @@ function _migrateCtorsToGlobal(){
 }
 
 loadH();calInit();
+/* ── 허브 딥링크 수신(감사 2026-07-29 #224) ─────────────────────────
+   현장관리(ig-site-hub)의 「편집 새창 ↗」이 ?siteId=&site= 를 붙여 여는데,
+   예전엔 **아무도 안 읽어서** 매번 수동으로 현장을 다시 찾아야 했다.
+   ism 의 현장 키는 pn(현장명)이므로 site 로 잇는다. siteId 는 ism 스키마에
+   대응물이 없어 회신용으로 보관만 한다(현장ID 전환안 W2 의 발판).
+   우선순위: #d= 공유 해시 > 딥링크 > cs_last 복원 — 해시 공유가 항상 이긴다.
+   미등록 현장명이면 데이터를 만들지 않고 **이름 프리필만** 한다(오타 딥링크가
+   빈 현장을 양산하면 안 된다). */
+var _hubDeep=(function(){
+  try{
+    var q=new URLSearchParams(location.search);
+    return {site:(q.get('site')||'').trim(), siteId:(q.get('siteId')||'').trim()};
+  }catch(e){return {site:'',siteId:''};}
+})();
+window._hubSiteId=_hubDeep.siteId||'';
 (function(){
   if(location.hash&&location.hash.indexOf('d=')>=0)return;
+  if(_hubDeep.site){
+    if(getRecent().some(function(x){return x.pn===_hubDeep.site;})){
+      loadProject(_hubDeep.site);return;
+    }
+    /* 로컬에 없음 — 클라우드(확정 현장)는 목록 로드 후 아래 후속 훅이 잇는다 */
+    S.pn=_hubDeep.site;
+    var _fn=document.getElementById('fn');if(_fn)_fn.value=_hubDeep.site;
+    return;
+  }
   try{var last=localStorage.getItem('cs_last');if(!last)return;var arr=getRecent();var item=arr.find(function(x){return x.pn===last;});if(!item)return;S=JSON.parse(item.snap);normalizeTasks();_open=null;_origPn=last;IS_RO=!!item.confirmed;}catch(e){}
   /* 기존 현장 데이터 → 글로벌 업체 저장소 일괄 백필 (최초 1회) */
   try{_migrateCtorsToGlobal();}catch(e){console.warn('migrate ctors fail:',e);}
