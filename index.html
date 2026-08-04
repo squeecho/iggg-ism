@@ -2132,6 +2132,15 @@ function toggleArchive(){
    비밀번호: SHA-256 해시로만 저장
 ═══════════════════════════════════════ */
 var _MASTER_HASH='48f225b82a33834d1850cff0faa53e44023775822fe9fcd200ece404d82ebc01';
+/* 사장 SSO 자동 마스터(사장 지시 2026-08-04) — SSO 로그인이 사장 계정이면
+   비밀번호 모달을 생략하고 접속 즉시 마스터(전체 수정·삭제). 이 게이트는
+   원래 클라이언트 UI 잠금이라(해시가 소스에 있음) 보안 등급은 동일하다 —
+   실제 쓰기 권한은 Firestore 규칙(직원 세션)이 가른다. */
+var _MASTER_SSO_EMAILS=['shinnize@gmail.com'];
+function _ssoIsMaster(){
+  try{ return _MASTER_SSO_EMAILS.indexOf((_ssoEmail()||'').toLowerCase())>=0; }
+  catch(e){ return false; }
+}
 var _masterMode=false;
 var _masterFailCount=0;
 var _masterLockUntil=0;
@@ -2152,12 +2161,17 @@ async function _sha256(str){
 }
 
 function _showMasterModal(){
+  if(_masterMode){ _exitMasterMode(); return; }
+  if(_ssoIsMaster()){    /* 사장 계정 — 비번 생략 즉시 활성 */
+    _enterMasterMode(true);
+    toast('🔑 마스터 모드 — 사장 계정 자동 인증');
+    return;
+  }
   if(Date.now()<_masterLockUntil){
     var remain=Math.ceil((_masterLockUntil-Date.now())/60000);
     toast('⛔ '+remain+'분 후에 다시 시도하세요');
     return;
   }
-  if(_masterMode){ _exitMasterMode(); return; }
 
   var bg=document.createElement('div');
   bg.className='master-modal-bg';
@@ -2190,19 +2204,8 @@ async function _submitMaster(){
   var hash=await _sha256(inp.value);
   if(!hash)return; /* _sha256 실패 시 조용히 중단 */
   if(hash===_MASTER_HASH){
-    _masterFailCount=0;
-    _masterMode=true;
     _closeMasterModal();
-    var badge=document.getElementById('masterBadge');
-    if(badge)badge.style.display='';
-    var mbtn=document.getElementById('masterToggleBtn');
-    if(mbtn){mbtn.textContent='🔓';mbtn.style.opacity='1';mbtn.title='마스터 모드 해제';}
-    toast('🔑 마스터 모드 활성화 — 클라우드 삭제 가능');
-    var ccBtn=document.getElementById('clearCacheBtn');if(ccBtn)ccBtn.style.display='';
-    var gcalDelBtn=document.getElementById('gcalDeleteAllBtn');if(gcalDelBtn&&_gcalEnabled)gcalDelBtn.style.display='block';
-    loadCloudSites().then(rCloudChips);
-    /* 5분 후 자동 해제 */
-    setTimeout(_exitMasterMode, 5*60*1000);
+    _enterMasterMode(false);
   } else {
     _masterFailCount++;
     var errEl=document.getElementById('masterErr');
@@ -2215,6 +2218,24 @@ async function _submitMaster(){
       if(errEl)errEl.textContent='비밀번호가 틀렸습니다 ('+_masterFailCount+'/5)';
       if(inp){inp.value='';inp.focus();}
     }
+  }
+}
+
+/* 마스터 활성 공용 경로 — auto=true(사장 SSO): 토스트·5분 자동해제 없음(세션 내내),
+   auto=false(비밀번호): 종전 동작 그대로(공용 기기 가정 5분 자동 해제). */
+function _enterMasterMode(auto){
+  _masterFailCount=0;
+  _masterMode=true;
+  var badge=document.getElementById('masterBadge');
+  if(badge)badge.style.display='';
+  var mbtn=document.getElementById('masterToggleBtn');
+  if(mbtn){mbtn.textContent='🔓';mbtn.style.opacity='1';mbtn.title='마스터 모드 해제';}
+  var ccBtn=document.getElementById('clearCacheBtn');if(ccBtn)ccBtn.style.display='';
+  var gcalDelBtn=document.getElementById('gcalDeleteAllBtn');if(gcalDelBtn&&_gcalEnabled)gcalDelBtn.style.display='block';
+  loadCloudSites().then(rCloudChips);
+  if(!auto){
+    toast('🔑 마스터 모드 활성화 — 클라우드 삭제 가능');
+    setTimeout(_exitMasterMode, 5*60*1000);
   }
 }
 
@@ -5945,6 +5966,9 @@ document.addEventListener('DOMContentLoaded', function(){
   initFirebase();
   initCalendarProxy();
   initShellAccount();
+  /* 사장 SSO = 접속 즉시 마스터(비번 모달 생략, 사장 지시 2026-08-04).
+     아래 400ms 지연 클라우드 칩 로드보다 먼저 켜져 첫 렌더부터 편집 가능. */
+  if(_ssoIsMaster()) _enterMasterMode(true);
   initDeviceName();
   /* 초기 로드 시 클라우드 현장 칩 표시 - 로딩 표시 후 Firebase 완료되면 렌더 */
   setTimeout(function(){
