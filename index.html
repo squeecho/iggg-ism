@@ -2712,15 +2712,35 @@ async function _cloudEditSave() {
   /* S를 클라우드에 저장 */
   var snap = JSON.parse(JSON.stringify(S));
   snap.confirmed = true; /* 확정 유지 */
-  await saveToCloud(snap);
+  var saved = await saveToCloud(snap);
+  if (!saved) {
+    /* 키충돌 취소·연결 실패 — 예전엔 그래도 '저장 완료' 토스트+편집 종료라
+       저장 안 된 걸 알 수 없었다. 편집 상태를 유지해 다시 시도하게 한다. */
+    toast('⚠️ 클라우드에 저장되지 않았어요 — 편집 상태를 유지합니다');
+    return;
+  }
+  var newPn = snap.pn || pn;
+  /* ★개명 저장 = 이동(사장 실측 2026-08-04: '뚝섬 곳간'→'성수 곳간' 개명이
+     복사로 남아 현장이 둘이 됐다). 문서 키가 현장명 파생이라 새 키 저장 성공
+     후 옛 문서·옛 이름 캘린더를 정리한다 — 로컬 개명(pnRename)과 같은 레시피. */
+  if (sanitizeKey(newPn) !== sanitizeKey(pn)) {
+    deleteFromCloud(pn);
+    if (_cloudSites) _cloudSites = _cloudSites.filter(function(x){ return x.pn !== pn; });
+    _gcalAddPendingDelete(pn);
+    if (_gcalEnabled) {
+      if (_gcalReady) _gcalAutoDelete(pn);
+      else initCalendarProxy(function(ok){ if (ok) _gcalAutoDelete(pn); });
+    }
+    toast('✏️ "' + pn + '" → "' + newPn + '" 이름 변경(옛 현장 정리됨)');
+  }
   /* 확정 현장 수정 → 캘린더 자동 반영 */
-  _gcalQueueAutoSync(snap.pn || pn);
+  _gcalQueueAutoSync(newPn);
   /* _cloudSites 캐시도 업데이트 */
   if (_cloudSites) {
-    var ci = _cloudSites.findIndex(function(x){ return x.pn === pn; });
-    if (ci >= 0) _cloudSites[ci] = snap;
+    var ci = _cloudSites.findIndex(function(x){ return x.pn === newPn; });
+    if (ci >= 0) _cloudSites[ci] = snap; else _cloudSites.push(snap);
   }
-  toast('☁️ ' + pn + ' 클라우드 저장 완료!');
+  toast('☁️ ' + newPn + ' 클라우드 저장 완료!');
   _cloudEditCancel(true); /* 조용히 복원 */
   /* 클라우드 칩 갱신 */
   loadCloudSites(true).then(rCloudChips);
@@ -5851,7 +5871,9 @@ function _confirmKeyCollision(existingPn, newPn) {
 }
 
 async function saveToCloud(siteSnap) {
-  if (!_fbReady || !_db) return;
+  /* 반환: true=저장됨 / false=저장 안 됨(미연결·키충돌 취소·실패).
+     기존 호출부는 반환값을 안 보므로 하위호환 — _cloudEditSave 만 판정에 쓴다. */
+  if (!_fbReady || !_db) return false;
   try {
     var key = sanitizeKey(siteSnap.pn);
     /* ★ 문서키 충돌 확인 (조회 실패는 저장을 막지 않는다 — 기존 동작 유지) */
@@ -5865,7 +5887,7 @@ async function saveToCloud(siteSnap) {
     } catch(e) { _prevPn = null; }
     if (_prevPn && String(_prevPn).trim() !== String(siteSnap.pn||'').trim()) {
       var _ok = await _confirmKeyCollision(_prevPn, siteSnap.pn);
-      if (!_ok) { toast('저장 취소됨 — 현장명을 바꿔주세요'); return; }
+      if (!_ok) { toast('저장 취소됨 — 현장명을 바꿔주세요'); return false; }
     }
     /* ★ 저장 전 업체 정규화: task.contractors는 최대 1개(주 배정)만 유지
        mergeGlobalCtorsToTasks()로 오염된 여분 업체 제거 */
@@ -5876,7 +5898,8 @@ async function saveToCloud(siteSnap) {
       t.contractors = valid.length ? [valid[0]] : [];
     });
     await _db.collection('sites').doc(key).set(Object.assign({}, cleanSnap, {_updatedAt: Date.now(), _author: getDeviceName(), author: siteSnap.author || getDeviceName()}));
-  } catch(e) { console.warn('Cloud save failed:', e); }
+    return true;
+  } catch(e) { console.warn('Cloud save failed:', e); return false; }
 }
 
 async function deleteFromCloud(pn) {
