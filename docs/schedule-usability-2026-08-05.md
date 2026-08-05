@@ -27,12 +27,12 @@
 
 | ID | 목표 | 상태 | 우선순위 | 코드 근거 | 구현/검증 기준 |
 |---|---|---:|---:|---|---|
-| W1-01 | 확정 해제 후 기간 변경 시 자동 공종만 즉시 재배치 | missing | P0 | `index.html:2915-3104`, `3808-4119`, `4404-4477`, `7202-7630` | 모든 기간 변경을 단일 함수로 수렴한다. phase별 자동/수동 표식을 저장하고 수동 범위는 보존한다. |
-| W1-02 | 기간 선택을 원자적으로 적용 | deviant | P0 | `index.html:3033-3057` | 첫 날짜 클릭은 미완성 기간을 상태에 반영하지 않고, 둘째 클릭 때 이전/신규 기간을 기준으로 한 번만 적용한다. |
-| W1-03 | 로컬 진행·보관·클라우드 전체의 정규화 현장명 중복 차단 | partial | P0 | `index.html:1697-1794`, `1984-2045`, `2353-2364`, `5873-5902` | NFKC, trim, 연속 공백 축약, 대소문자 정규화를 한 helper로 처리한다. 모든 저장소를 검색하고 신규 생성은 fail-closed로 차단한다. |
-| W1-04 | 신규 생성 시 기존 현장 덮어쓰기 제거 | deviant | P0 | `index.html:1726-1745`, `5852-5902` | 덮어쓰기 확인창을 제거하고 기존 현장 열기/이름 변경만 제공한다. 문서 키 충돌도 덮어쓰지 않는다. |
-| W1-05 | rename/save 회귀 방지 | partial | P1 | `index.html:1749-1864`, `2677-2724` | 현재 현장은 충돌 검색에서 제외한다. 이름 변경은 새 저장 성공 후 이전 키를 정리한다. |
-| W1-06 | 이름 입력 중 autosave가 동명 현장을 덮어쓰지 않음 | deviant | P0 | `index.html:1263-1269`, `2804-2855` | 저장 identity는 편집 가능한 `S.pn`이 아니라 `_origPn`으로 고정한다. 명시적 rename 검증 전에는 이름 변경을 커밋하지 않는다. |
+| W1-01 | 확정 해제 후 기간 변경 시 자동 공종만 즉시 재배치 | parity | P0 | `index.html`의 `setProjectPeriod`, `autoTaskDates`; `schedule-core.js`의 `applyConstructionPeriod` | phase별 자동/수동 표식을 저장하고 legacy는 이전 자동 결과와 일치할 때만 자동으로 추론한다. |
+| W1-02 | 기간 선택을 원자적으로 적용 | parity | P0 | `index.html`의 `calClick`, `_cPendingSd` | 첫 날짜는 pending 상태에만 두고 둘째 날짜 선택 시 한 번만 기간과 공종을 반영한다. |
+| W1-03 | 로컬 진행·보관·클라우드 전체의 정규화 현장명 중복 차단 | parity | P0 | `schedule-core.js`의 `canonicalSiteName`, `findSiteNameConflict`; `index.html`의 `_ensureCloudInventory` | NFKC, trim, 연속 공백 축약, 대소문자 정규화를 한 helper로 처리하며 cloud inventory 미확인 시 저장을 차단한다. |
+| W1-04 | 신규 생성 시 기존 현장 덮어쓰기 제거 | parity | P0 | `index.html`의 `pnBtnClick`, `_showConflictModal`, `saveToCloud` | 덮어쓰기 확인창을 제거하고 기존 현장 열기/이름 변경만 제공한다. 문서 키 조회 실패와 충돌은 fail-closed다. |
+| W1-05 | rename/save 회귀 방지 | parity | P1 | `index.html`의 `renameProject`, `_cloudEditSave` | 현재 현장을 제외해 검사하고 새 cloud 저장 성공 후 이전 키를 삭제한다. 이전 키 삭제 실패 시 새 키를 정리하고 편집 상태를 유지한다. |
+| W1-06 | 이름 입력 중 autosave가 동명 현장을 덮어쓰지 않음 | parity | P0 | `schedule-core.js`의 `snapshotForIdentity`, `updateLocalDraft`; `index.html`의 `_persistCurrentLocalDraft` | autosave, unload, 현장 전환 모두 `_origPn` identity로만 현재 draft를 저장한다. |
 | W2-01 | 기본 1차, 명시적 추가로 최대 5차 | missing | P0 | `index.html:1674`, `1679`, `2993-3008`, `3187-3567` | 기존 flat 필드를 유지하고 4·5차 필드를 추가한다. 마지막 차수부터만 제거하며 저장된 2·3차는 보존한다. |
 | W2-02 | phase 이름·기간 독립 편집 | deviant | P0 | `index.html:3235-3241` | `name2`~`name5`를 독립 저장하고 없는 기존 값은 기본 공종명으로 fallback한다. |
 | W2-03 | 모든 소비 경로가 1~5차를 포함 | missing | P0 | `index.html:1594-1625`, `3710-4119`, `5141-5270`, `6035-7630`, `8070-9650` | 공통 phase/range helper를 차트, 충돌, 통합 일정, 자동배치, 내보내기, Calendar에 적용한다. |
@@ -66,6 +66,18 @@
 | 1 | W1-01~W1-05 | 기간 변경 자동/수동 회귀, local/cloud 정규화 충돌, rename/save 테스트 통과 후 별도 커밋 |
 | 2 | W2-01~W2-07 | 1~5차 CRUD/저장/재로드/전 소비 경로, 사용자 공종 CRUD, 특별 날짜 자동/수동 테스트 통과 후 별도 커밋 |
 | 3 | W3-01~W3-03 | 데스크톱/모바일 차트 실제 렌더, 선택/드래그 가이드, overlap 검사 통과 후 별도 커밋 |
+
+## Wave 1 체크포인트
+
+- 순수 회귀: Node test 7건 통과(이름 정규화/로컬·보관·cloud 충돌, pending rename identity, legacy 원문 identity, 기존 `split` 2차, 자동·수동 기간 재배치, legacy 추론, 단축 기간 clamp).
+- 격리 UI: 실제 확정 해제 버튼과 기간 달력을 조작해 `2026-08-10 ~ 2026-09-10`을 적용했다. 자동 공종은 새 기간 안으로 이동했고 수동 공종은 `2026-07-20`에 고정됐다. 수동 타일이 종료일에 끝나는 경계에서도 자동 전기·공조 2차의 날짜 역전이 없었다.
+- 저장 안전성: `Site A` 편집 중 `Site B`를 입력하고 debounce를 기다린 뒤 `Site B`의 합성 marker가 유지됨을 확인했다.
+- 전역 중복: cloud 합성 이름 `ＳＥＯＵＬ　Site`와 입력 `seoul site`의 충돌을 차단하고 기존 현장 열기/이름 변경 동작만 노출했다.
+- 네트워크: 새 incognito context에서 Calendar config 1건은 route로 합성 응답했고, 외부로 통과한 mutation 0건, console error 0건, page error 0건이었다.
+- 입력 무변경: 자동 막대에서 mouse down/up만 수행한 경우 `scheduleMode: auto`가 수동으로 바뀌지 않음을 확인했다.
+- 확정 전환 안전성: cloud 삭제 실패 시 확정 잠금을 유지하며, cloud 저장 실패 시 미확정 상태를 유지하고 정리 삭제를 호출하지 않음을 확인했다.
+- 비동기 저장 안전성: 확정 해제의 지연된 cloud 삭제 사이에 다른 현장을 저장해도 최신 local snap이 되돌아가지 않음을 확인했다.
+- 이름 변경 회귀: `Site A`를 `site a`로 변경하는 정규화 동등 self-rename은 허용하되, 다른 local/cloud 현장과의 동등 이름은 신규·마스터 편집 모두 차단했다.
 
 ## 범위 밖 백로그
 

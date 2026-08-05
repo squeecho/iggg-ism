@@ -25,6 +25,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="/schedule-core.js"></script>
 <!-- Google OAuth 제거 — 서비스 계정 방식 사용 -->
 <style>:root{--bg:#f2f0eb;--sf:#fff;--bd:#e0dbd2;--bmd:#ccc7bc;--tx:#18170f;--mu:#7a7870;--mu2:#b5b0a8;
 --bar:#cbd5e1;--barh:#94a3b8;--al:#eef2fd;
@@ -1499,6 +1500,7 @@ var WK=['일','월','화','수','목','금','토'];
 var _db = null;
 var _cloudSites = [];
 var _fbReady = false;
+var _cloudInventoryReady = false;
 var _cloudView = null; /* 공유 현장 보기 전용 - S를 덮어쓰지 않음 */
 var _open=null,IS_RO=false,_origPn=null,_cancelPn=null;
 var RK='cs_recent';
@@ -1664,7 +1666,7 @@ function defaultState(){
      타일 57~78%=15~21(+설비완료+2일양생), 공조1차 27~42%=7~11,
      공조2차 70~83%=19~22, 필름 42~60%=11~16, 가스 85~95%=23~26,
      기타 83~100%=22~26, 준공청소 마지막날 */
-  return {
+  var state = {
     pn:'',sd:td,ed:te,
     tasks:[
       {id:1, name:'가설공사',   desc:'자재입고 등',     sd:td,          ed:addD(td,3),  on:true, canSplit:true, split:false,sd2:'',ed2:'',split3:false,sd3:'',ed3:'',contractors:['','','']},
@@ -1690,6 +1692,11 @@ function defaultState(){
       {id:3,label:'이동식 가구',     type:'auto',    dt:'',chk:false}
     ]
   };
+  state.tasks.forEach(function(task){
+    task.scheduleMode='auto';
+    if(task.split)task.scheduleMode2='auto';
+  });
+  return state;
 }
 var S=defaultState();
 
@@ -1699,96 +1706,112 @@ function setRecent(arr){
   try{localStorage.setItem(RK,JSON.stringify(arr));}
   catch(e){console.error('setRecent fail:',e);toast('저장 오류: '+e.message);}
 }
-function pnBtnClick(){
-  /* fn.value와 S.pn 동기화 보장 */
-  var fn=document.getElementById('fn');if(fn&&fn.value&&!S.pn)S.pn=fn.value;
-  var newNm=S.pn.trim();
+function _findSiteNameConflict(name,excludeExactName){
+  var local=getRecent().filter(function(site){return !excludeExactName||site.pn!==excludeExactName;});
+  var cloud=(_cloudSites||[]).filter(function(site){return !excludeExactName||site.pn!==excludeExactName;});
+  var conflict=ScheduleCore.findSiteNameConflict(local,cloud,name);
+  if(conflict)return conflict;
+  var key=sanitizeKey(name);
+  var keyed=local.map(function(site){return {source:'local',site:site};})
+    .concat(cloud.map(function(site){return {source:'cloud',site:site};}))
+    .find(function(entry){return sanitizeKey(entry.site.pn)===key;});
+  return keyed?{source:keyed.source,site:keyed.site,name:keyed.site.pn,reason:'storage-key'}:null;
+}
+async function _ensureCloudInventory(){
+  if(_cloudInventoryReady)return true;
+  var deadline=Date.now()+5000;
+  while(Date.now()<deadline){
+    if(_cloudInventoryReady)return true;
+    if(_fbReady&&_db){
+      if(await loadCloudSites())return true;
+    }
+    await new Promise(function(resolve){setTimeout(resolve,100);});
+  }
+  toast('클라우드 현장명을 확인할 수 없어 저장하지 않았어요. 연결 후 다시 시도해주세요.');
+  return false;
+}
+function _persistCurrentLocalDraft(){
+  if(_cloudEditing||!_origPn)return false;
+  var arr=getRecent();
+  var ci=arr.findIndex(function(item){return item.pn===_origPn;});
+  if(ci<0||arr[ci].confirmed)return false;
+  var result=ScheduleCore.updateLocalDraft(arr,S,_origPn,nowTS(),getDeviceName());
+  if(!result.updated)return false;
+  setRecent(result.records);
+  try{localStorage.setItem('cs_last',_origPn);}catch(e){}
+  return true;
+}
+var _nameValidationBusy=false;
+async function pnBtnClick(){
+  if(_nameValidationBusy)return;
+  var fn=document.getElementById('fn');
+  if(fn)S.pn=fn.value;
+  var newNm=ScheduleCore.normalizeSiteName(S.pn);
   if(!newNm){toast('현장명을 먼저 입력해주세요');return;}
+  S.pn=newNm;if(fn)fn.value=newNm;
   var arr=getRecent();
   /* _origPn: 현재 편집 중인 현장의 원래 이름 */
-  var orig=_origPn&&_origPn.trim();
+  var orig=_origPn;
   var isExisting=orig&&arr.some(function(x){return x.pn===orig;});
 
   if(isExisting){
     if(newNm===orig){
       /* 이름 변경 없음 → 저장 후 새 현장 모드 */
-      var ci=arr.findIndex(function(x){return x.pn===orig;});
-      var now=nowTS();
-      if(ci>=0){arr[ci]=Object.assign({},arr[ci],{pn:orig,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});setRecent(arr);try{localStorage.setItem('cs_last',orig);}catch(e){}}
+      _persistCurrentLocalDraft();
       _cancelPn=orig; /* 취소 시 돌아올 현장 */
       S=defaultState();autoTaskDates();_open=null;_origPn=null;calInit();sync();rEdit();rChips();rChart();
       setTimeout(function(){var fn=document.getElementById('fn');if(fn){fn.focus();fn.select();}},50);
     } else {
       /* 이름이 바뀜 → rename */
-      renameProject(orig,newNm);
+      _nameValidationBusy=true;
+      try{await renameProject(orig,newNm);}finally{_nameValidationBusy=false;}
     }
   } else {
-    /* 새 현장 추가 — 중복 이름 차단 */
-    if(arr.some(function(x){return x.pn===newNm;})){
-      toast('"'+newNm+'" 이름의 현장이 이미 있어요 👆 위를 확인해주세요');
-      /* 기존 칩 찾아서 하이라이트 + 스크롤 */
-      setTimeout(function(){
-        var allChips=document.querySelectorAll('#pnchips .pnchip, #archiveChips .pnchip');
-        for(var i=0;i<allChips.length;i++){
-          if(allChips[i].dataset.pn===newNm){
-            window.scrollTo({top:0,behavior:'smooth'});
-            setTimeout(function(el){
-              el.scrollIntoView({behavior:'smooth',block:'center'});
-              el.classList.add('chip-dupe');
-              setTimeout(function(){el.classList.remove('chip-dupe');},1000);
-            }.bind(null,allChips[i]),250);
-            break;
-          }
-        }
-      },50);
-      return;
-    }
-    saveProject();
+    _nameValidationBusy=true;
+    try{
+      if(!await _ensureCloudInventory())return;
+      var conflict=_findSiteNameConflict(newNm,null);
+      if(conflict){_showConflictModal(newNm,conflict);return;}
+      saveProject({nameValidated:true});
+    }finally{_nameValidationBusy=false;}
   }
 }
-function renameProject(oldNm,newNm){
+async function renameProject(oldNm,newNm){
+  newNm=ScheduleCore.normalizeSiteName(newNm);
   if(!newNm){toast('현장명을 입력해주세요');return;}
+  if(!await _ensureCloudInventory())return;
   var arr=getRecent();
-  /* 새 이름 중복 체크 */
-  if(arr.some(function(x){return x.pn===newNm;})){
-    toast('"'+newNm+'" 이름이 이미 존재합니다 👆 위를 확인해주세요');
-    setTimeout(function(){
-      var allChips=document.querySelectorAll('#pnchips .pnchip, #archiveChips .pnchip');
-      for(var i=0;i<allChips.length;i++){
-        if(allChips[i].dataset.pn===newNm){
-          window.scrollTo({top:0,behavior:'smooth'});
-          setTimeout(function(el){
-            el.scrollIntoView({behavior:'smooth',block:'center'});
-            el.classList.add('chip-dupe');
-            setTimeout(function(){el.classList.remove('chip-dupe');},1000);
-          }.bind(null,allChips[i]),250);
-          break;
-        }
-      }
-    },50);
-    return;
-  }
+  var conflict=_findSiteNameConflict(newNm,oldNm);
+  if(conflict){_showConflictModal(newNm,conflict);return;}
   var ci=arr.findIndex(function(x){return x.pn===oldNm;});
   if(ci<0)return;
   var now=nowTS();
-  S.pn=newNm;
-  arr[ci]=Object.assign({},arr[ci],{pn:newNm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});
-  setRecent(arr);
-  try{localStorage.setItem('cs_last',newNm);}catch(e){}
-  _origPn=newNm;
-  /* 확정 현장이면 Firebase도 갱신 */
+  var nextState=ScheduleCore.clone(S);nextState.pn=newNm;
+  /* 확정 현장은 새 문서 저장 성공 후 이전 문서를 제거한다. */
   if(arr[ci].confirmed){
-    deleteFromCloud(oldNm);
-    var snap=arr[ci].snap?JSON.parse(arr[ci].snap):null;
-    if(snap){snap.pn=newNm;snap.confirmed=true;saveToCloud(snap);}
+    var cloudState=ScheduleCore.clone(nextState);cloudState.confirmed=true;
+    if(!await saveToCloud(cloudState,{expectedPn:oldNm})){
+      toast('클라우드 저장에 실패해 이름을 변경하지 않았어요');return;
+    }
+    if(sanitizeKey(oldNm)!==sanitizeKey(newNm)){
+      if(!await deleteFromCloud(oldNm)){
+        await deleteFromCloud(newNm);
+        toast('이전 클라우드 기록을 정리하지 못해 이름을 변경하지 않았어요');return;
+      }
+    }
     /* 캘린더: 옛 이름 이벤트 삭제 + 새 이름으로 재업로드 */
     _gcalAddPendingDelete(oldNm);
     if(_gcalEnabled){
       if(_gcalReady) _gcalAutoDelete(oldNm);
       else initCalendarProxy(function(ok){ if(ok) _gcalAutoDelete(oldNm); });
     }
-    if(snap) _gcalQueueAutoSync(newNm);
+    _gcalQueueAutoSync(newNm);
   }
+  S=nextState;
+  arr[ci]=Object.assign({},arr[ci],{pn:newNm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});
+  setRecent(arr);
+  try{localStorage.setItem('cs_last',newNm);}catch(e){}
+  _origPn=newNm;
   sync();rChips();rChart();
   toast('"'+oldNm+'" → "'+newNm+'" 이름이 변경됐어요!');
 }
@@ -1809,7 +1832,7 @@ function pnCancelRename(){
   sync();
   toast('이름 변경이 취소됐어요');
 }
-function saveProject(){
+function saveProject(options){
   if(_cloudEditing)return; /* 마스터 클라우드 편집 중 로컬 저장 차단 */
   if(!S.pn.trim()){toast('현장명을 먼저 입력해주세요');return;}
   /* cloud 현장 보기 중이었다면 해제 후 새 현장으로 전환 */
@@ -1821,10 +1844,14 @@ function saveProject(){
     var _pcEl=document.getElementById('pnchips');if(_pcEl)_pcEl.classList.remove('cloud-viewing');
     rCloudChips();
   }
-  var nm=S.pn.trim();S.pn=nm;
+  var nm=ScheduleCore.normalizeSiteName(S.pn);S.pn=nm;
   var arr=getRecent();var ci=arr.findIndex(function(x){return x.pn===nm;});
   var now=nowTS();var isNew=ci<0;
+  if(!isNew&&(!_origPn||_origPn!==arr[ci].pn)){
+    _showConflictModal(nm,{source:'local',site:arr[ci],name:arr[ci].pn});return;
+  }
   if(isNew){
+    if(!options||!options.nameValidated){toast('현장명 중복 확인 후 다시 저장해주세요');return;}
     var ds=defaultState();ds.pn=nm;
     /* 글로벌 업체 저장소에 1개만 등록된 공종은 자동 배정 */
     var _gcAuto=getGlobalCtors();
@@ -1856,9 +1883,8 @@ function saveProject(){
     toast(nm+' 등록됐어요! ✅');
     var fnEl=document.getElementById('fn');if(fnEl)fnEl.blur();
   }else{
-    upd=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});
-    arr[ci]=upd;setRecent(arr);try{localStorage.setItem('cs_last',nm);}catch(e){}
-    _origPn=nm;
+    _persistCurrentLocalDraft();
+    _origPn=arr[ci].pn;
     sync();rChips();toast(nm+' 저장됐어요!');
   }
 }
@@ -1879,17 +1905,7 @@ function loadProject(pn){
   var arr=getRecent();
   var item=arr.find(function(x){return x.pn===pn;});
   if(!item)return;
-  if(S.pn&&S.pn!==pn&&!_cloudView){
-    var cur=getRecent();var ci=cur.findIndex(function(x){return x.pn===S.pn;});
-    if(ci>=0){
-      var newSnap=JSON.stringify(S);
-      /* 실제 변경이 있을 때만 savedAt 갱신 */
-      if(cur[ci].snap!==newSnap){
-        cur[ci]=Object.assign({},cur[ci],{pn:S.pn,sd:S.sd,ed:S.ed,savedAt:nowTS(),snap:newSnap});
-        setRecent(cur);
-      }
-    }
-  }
+  if(_origPn&&_origPn!==pn&&!_cloudView)_persistCurrentLocalDraft();
   try{
     var loaded=JSON.parse(item.snap);
     S=loaded;_open=null;_origPn=pn;
@@ -1947,9 +1963,13 @@ function deleteRecent(pn,ev){
   rCloudChips();
 }
 function delChip(pn,ev){if(ev){ev.stopPropagation();ev.preventDefault();}deleteRecent(pn,null);}
-function newProject(){
+async function newProject(){
   if(_cloudEditing){ _cloudEditCancel(true); }
-  if(S.pn&&S.pn.trim()){saveProject();}
+  if(_origPn)_persistCurrentLocalDraft();
+  else if(S.pn&&S.pn.trim()){
+    await pnBtnClick();
+    if(!_origPn&&S.pn&&S.pn.trim())return;
+  }
   _cancelPn=_origPn||null; /* 취소 시 돌아올 현장 */
   S=defaultState();autoTaskDates();_open=null;_origPn=null;
   normalizeTasks(); /* 글로벌 업체 병합 */
@@ -1959,11 +1979,23 @@ function newProject(){
   setTimeout(function(){var fn=document.getElementById('fn');if(fn)fn.focus();},80);
 }
 var _dropHide=null;
+var _confirmBusy={};
+function _finishConfirmBusy(pn){
+  delete _confirmBusy[pn];
+  if(_origPn===pn){
+    var item=getRecent().find(function(site){return site.pn===pn;});
+    IS_RO=!!(item&&item.confirmed);
+    _updLockOverlay();rEdit();
+  }
+  rChips();
+}
 function toggleConfirmed(pn,e){
   if(e){e.stopPropagation();e.preventDefault();}
+  if(_confirmBusy[pn]){toast('확정 상태를 처리하고 있어요');return;}
   var arr=getRecent();
   var ci=arr.findIndex(function(x){return x.pn===pn;});
   if(ci<0)return;
+  _confirmBusy[pn]=true;
 
   /* 확정 해제는 충돌 체크 불필요 → 바로 처리 */
   if(arr[ci].confirmed){
@@ -1972,45 +2004,35 @@ function toggleConfirmed(pn,e){
   }
 
   /* 확정 시도 → Firebase 충돌 먼저 확인 */
-  _checkCloudConflict(pn).then(function(exists){
-    if(exists){
-      _showConflictModal(pn);
+  _checkCloudConflict(pn).then(function(conflict){
+    if(conflict&&conflict.unavailable){
+      toast('클라우드 현장명을 확인할 수 없어 확정하지 않았어요');
+      _finishConfirmBusy(pn);
+    } else if(conflict){
+      _showConflictModal(pn,conflict);
+      _finishConfirmBusy(pn);
     } else {
       _doConfirmToggle(pn,true);
     }
-  });
+  }).catch(function(){toast('클라우드 확인에 실패해 확정하지 않았어요');_finishConfirmBusy(pn);});
 }
 
 async function _checkCloudConflict(pn){
-  /* 1차: 이미 로드된 클라우드 목록에서 대소문자 무시 비교
-     단, 같은 기기(author)가 올린 현장은 충돌 아님
-     기기명이 없으면(캐시 초기화 등) author 비교 불가 → 충돌 아님으로 처리 */
-  var lowerPn = pn.toLowerCase();
+  if(!await _ensureCloudInventory())return {unavailable:true};
+  var canonical=ScheduleCore.canonicalSiteName(pn);
+  var key=sanitizeKey(pn);
   var myDevice = getDeviceName();
-  if (_cloudSites && _cloudSites.length > 0) {
-    if (_cloudSites.some(function(s){
-      if(s.pn.toLowerCase() !== lowerPn) return false;
-      if(!myDevice) return false; /* 기기명 없으면 충돌 아님 */
-      return s.author && s.author !== myDevice;
-    })) return true;
-  }
-  /* 2차: Firebase 직접 확인 */
-  if(!_fbReady||!_db)return false;
-  if(!myDevice) return false; /* 기기명 없으면 충돌 판단 불가 */
-  try{
-    var keyOrig = sanitizeKey(pn);
-    var keyLow  = sanitizeKey(lowerPn);
-    var docOrig = await _db.collection('sites').doc(keyOrig).get();
-    if (docOrig.exists && docOrig.data().author && docOrig.data().author !== myDevice) return true;
-    if (keyOrig !== keyLow) {
-      var docLow = await _db.collection('sites').doc(keyLow).get();
-      if (docLow.exists && docLow.data().author && docLow.data().author !== myDevice) return true;
-    }
-    return false;
-  }catch(e){return false;}
+  var site=(_cloudSites||[]).find(function(item){
+    if(ScheduleCore.canonicalSiteName(item.pn)!==canonical&&sanitizeKey(item.pn)!==key)return false;
+    if(item.pn!==pn)return true;
+    return !myDevice||!item.author||item.author!==myDevice;
+  });
+  return site?{source:'cloud',site:site,name:site.pn}:null;
 }
 
-function _showConflictModal(pn){
+var _activeNameConflict=null;
+function _showConflictModal(pn,conflict){
+  _activeNameConflict=conflict||{source:'cloud',name:pn};
   var bg=document.createElement('div');
   bg.className='master-modal-bg';
   bg.id='conflictModalBg';
@@ -2018,10 +2040,11 @@ function _showConflictModal(pn){
     +'<div class="master-modal" style="gap:12px;">'
     +'<div class="master-modal-title" style="color:#fbbf24;">⚠️ 이름 충돌</div>'
     +'<div style="color:#cbd5e1;font-size:12px;line-height:1.8;text-align:center;">'
-    +'"<b style=\'color:#f1f5f9\'>'+esc(pn)+'</b>" 이름이<br>이미 다른 기기에서 확정되어 있습니다.<br>'
-    +'<span style="color:#fbbf24;font-size:11px;">현장명을 변경한 후 다시 확정해주세요.</span>'
+    +'"<b style=\'color:#f1f5f9\'>'+esc(pn)+'</b>"과 이름 또는 저장 키가 겹치는 현장이<br>이미 로컬 또는 클라우드에 있습니다.<br>'
+    +'<span style="color:#fbbf24;font-size:11px;">기존 현장을 열거나 이름을 변경해주세요.</span>'
     +'</div>'
     +'<div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">'
+    +'<button class="master-modal-ok" onclick="_openConflictSite()">기존 현장 열기</button>'
     +'<button class="master-modal-ok" style="background:#7c3aed;" onclick="_closeConflictModal();_openRenameFromConflict(\''+jsq(pn)+'\')">✏️ 이름 변경하러 가기</button>'
     +'<button class="master-modal-cancel" onclick="_closeConflictModal()">취소</button>'
     +'</div></div>';
@@ -2031,6 +2054,14 @@ function _showConflictModal(pn){
 function _closeConflictModal(){
   var bg=document.getElementById('conflictModalBg');
   if(bg)bg.remove();
+}
+function _openConflictSite(){
+  var conflict=_activeNameConflict;
+  _closeConflictModal();
+  if(!conflict)return;
+  var name=conflict.name||(conflict.site&&conflict.site.pn)||'';
+  if(conflict.source==='local')loadProject(name);
+  else loadCloudProject(name);
 }
 
 function _openRenameFromConflict(pn){
@@ -2044,10 +2075,41 @@ function _openRenameFromConflict(pn){
   },200);
 }
 
-function _doConfirmToggle(pn,confirming){
+async function _doConfirmToggle(pn,confirming){
   var arr=getRecent();
   var ci=arr.findIndex(function(x){return x.pn===pn;});
-  if(ci<0)return;
+  if(ci<0){_finishConfirmBusy(pn);return;}
+  var preparedSnap=null;
+  if(confirming){
+    clearTimeout(_asTimer);
+    if(_origPn===pn)_persistCurrentLocalDraft();
+    if(_origPn===pn){IS_RO=true;_updLockOverlay();rEdit();}
+    var stable=false;
+    for(var attempt=0;attempt<3;attempt++){
+      arr=getRecent();ci=arr.findIndex(function(x){return x.pn===pn;});
+      if(ci<0)break;
+      var sourceSnap=arr[ci].snap||'';
+      try{preparedSnap=sourceSnap?JSON.parse(sourceSnap):null;}catch(e){preparedSnap=null;}
+      if(!preparedSnap)break;
+      preparedSnap.pn=pn;preparedSnap.confirmed=true;preparedSnap.author=getDeviceName();
+      if(!await saveToCloud(preparedSnap))break;
+      var latest=getRecent();
+      var latestItem=latest.find(function(x){return x.pn===pn;});
+      if(latestItem&&latestItem.snap===sourceSnap){arr=latest;ci=arr.indexOf(latestItem);stable=true;break;}
+    }
+    if(!stable){
+      toast(preparedSnap?'저장 중 일정이 변경되었거나 클라우드 저장에 실패해 확정하지 않았어요. 다시 시도해주세요.':'현장 저장본을 읽을 수 없어 확정하지 않았어요');
+      _finishConfirmBusy(pn);return;
+    }
+  }else{
+    if(!await deleteFromCloud(pn)){
+      toast('클라우드 확정본을 삭제하지 못해 확정을 유지했어요');
+      _finishConfirmBusy(pn);return;
+    }
+    arr=getRecent();
+    ci=arr.findIndex(function(x){return x.pn===pn;});
+    if(ci<0){_finishConfirmBusy(pn);return;}
+  }
   arr[ci].confirmed=confirming;
   arr[ci].savedAt=nowTS(); /* 확정 상태 변경도 저장으로 간주 → 캘린더 업로드 대상에 포함 */
   if(confirming){ try{ _confirmGrace[pn]=Date.now(); }catch(e){} } /* 재조정 오탐 방지 유예 */
@@ -2070,10 +2132,8 @@ function _doConfirmToggle(pn,confirming){
   /* Firebase 동기화 + _cloudSites 메모리 즉시 반영 */
   var item=arr.find(function(x){return x.pn===pn;});
   if(item&&item.confirmed){
-    var snap=item.snap?JSON.parse(item.snap):null;
+    var snap=preparedSnap;
     if(snap){
-      snap.pn=pn;snap.confirmed=true;snap.author=item.author||getDeviceName();
-      saveToCloud(snap);
       /* _cloudSites 메모리 즉시 갱신 (모달에서 바로 반영되게) */
       var ci2=(_cloudSites||[]).findIndex(function(s){return s.pn===pn;});
       if(ci2>=0)_cloudSites[ci2]=Object.assign({},snap);
@@ -2088,7 +2148,6 @@ function _doConfirmToggle(pn,confirming){
       });
     }
   } else {
-    deleteFromCloud(pn);
     /* _cloudSites 메모리에서도 즉시 제거 */
     _cloudSites=(_cloudSites||[]).filter(function(s){return s.pn!==pn;});
     /* 확정 해제 → 캘린더에서 즉시 삭제 */
@@ -2117,7 +2176,7 @@ function _doConfirmToggle(pn,confirming){
     _updLockOverlay();
     rEdit();
   }
-  rChips();
+  _finishConfirmBusy(pn);
 }
 function toggleArchive(){
   var chips=document.getElementById('archiveChips');
@@ -2711,8 +2770,15 @@ async function _cloudEditSave() {
   var pn = _cloudEditing;
   /* S를 클라우드에 저장 */
   var snap = JSON.parse(JSON.stringify(S));
+  snap.pn = ScheduleCore.normalizeSiteName(snap.pn || pn);
+  if (!snap.pn) { toast('현장명을 입력해주세요'); return; }
+  if (snap.pn !== pn) {
+    if (!await _ensureCloudInventory()) return;
+    var conflict = _findSiteNameConflict(snap.pn, pn);
+    if (conflict) { _showConflictModal(snap.pn, conflict); return; }
+  }
   snap.confirmed = true; /* 확정 유지 */
-  var saved = await saveToCloud(snap);
+  var saved = await saveToCloud(snap,{expectedPn:pn});
   if (!saved) {
     /* 키충돌 취소·연결 실패 — 예전엔 그래도 '저장 완료' 토스트+편집 종료라
        저장 안 된 걸 알 수 없었다. 편집 상태를 유지해 다시 시도하게 한다. */
@@ -2724,7 +2790,11 @@ async function _cloudEditSave() {
      복사로 남아 현장이 둘이 됐다). 문서 키가 현장명 파생이라 새 키 저장 성공
      후 옛 문서·옛 이름 캘린더를 정리한다 — 로컬 개명(pnRename)과 같은 레시피. */
   if (sanitizeKey(newPn) !== sanitizeKey(pn)) {
-    deleteFromCloud(pn);
+    if(!await deleteFromCloud(pn)){
+      await deleteFromCloud(newPn);
+      toast('⚠️ 이전 현장 정리에 실패해 이름 변경을 취소했어요');
+      return;
+    }
     if (_cloudSites) _cloudSites = _cloudSites.filter(function(x){ return x.pn !== pn; });
     _gcalAddPendingDelete(pn);
     if (_gcalEnabled) {
@@ -2802,14 +2872,7 @@ window.addEventListener('popstate', function(e) {
 });
 
 window.addEventListener('beforeunload',function(){
-  if(_cloudEditing)return; /* 마스터 클라우드 편집 중 로컬 저장 차단 */
-  if(!S.pn||!S.pn.trim())return;
-  var nm=S.pn.trim();var arr=getRecent();var ci=arr.findIndex(function(x){return x.pn===nm;});
-  if(ci<0)return;
-  if(arr[ci].confirmed)return; /* 확정된 프로젝트는 덮어쓰기 차단 (autoSave와 동일) */
-  var now=nowTS();
-  arr[ci]=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:now,snap:JSON.stringify(S)});
-  setRecent(arr);try{localStorage.setItem('cs_last',nm);}catch(e){}
+  _persistCurrentLocalDraft();
 });
 
 function sync(){
@@ -2838,30 +2901,21 @@ function sync(){
 var _asTimer=null;
 function autoSave(){
   if(_cloudEditing)return; /* 마스터 클라우드 편집 중 로컬 저장 차단 */
-  if(!S.pn||!S.pn.trim())return;
+  if(!_origPn)return;
   clearTimeout(_asTimer);
   _asTimer=setTimeout(function(){
-    var nm=S.pn.trim();var arr=getRecent();
-    var ci=arr.findIndex(function(x){return x.pn===nm;});
-    if(ci<0)return;
-    if(arr[ci].confirmed)return; /* 확정된 프로젝트는 자동저장 차단 */
-    var newSnap=JSON.stringify(S);
-    /* 변경 없으면 저장 스킵 — savedAt 갱신 없음 */
-    if(arr[ci].snap===newSnap)return;
-    arr[ci]=Object.assign({},arr[ci],{pn:nm,sd:S.sd,ed:S.ed,savedAt:nowTS(),snap:newSnap,author:getDeviceName()});
-    setRecent(arr);try{localStorage.setItem('cs_last',nm);}catch(e){}
-    rChips();
+    if(_persistCurrentLocalDraft())rChips();
   },800);
 }
 function upBadge(){
   if(typeof calRender==='function')calRender();
 }
 /* calendar */
-var _cY=0,_cM=0,_cPhase=0;
+var _cY=0,_cM=0,_cPhase=0,_cPendingSd='';
 function calInit(){
   var d=S.sd?pD(S.sd):new Date();
   _cY=d.getFullYear();_cM=d.getMonth();
-  _cPhase=0;
+  _cPhase=0;_cPendingSd='';
   calRender();
 }
 function calMove(n){
@@ -2893,12 +2947,14 @@ function calRender(){
       if(dw===0)cls+=' sun';else if(dw===6)cls+=' sat';
       if(isH(ds))cls+=' hol';
       if(ds===td)cls+=' today';
-      if(S.sd&&S.ed){
-        if(ds===S.sd&&ds===S.ed)cls+=' sel-s sel-e';
-        else if(ds===S.sd)cls+=' sel-s in-range';
-        else if(ds===S.ed)cls+=' sel-e in-range';
-        else if(ds>S.sd&&ds<S.ed)cls+=' in-range';
-      } else if(S.sd&&ds===S.sd)cls+=' sel-s';
+      var selectedSd=_cPhase===1?_cPendingSd:S.sd;
+      var selectedEd=_cPhase===1?'':S.ed;
+      if(selectedSd&&selectedEd){
+        if(ds===selectedSd&&ds===selectedEd)cls+=' sel-s sel-e';
+        else if(ds===selectedSd)cls+=' sel-s in-range';
+        else if(ds===selectedEd)cls+=' sel-e in-range';
+        else if(ds>selectedSd&&ds<selectedEd)cls+=' in-range';
+      } else if(selectedSd&&ds===selectedSd)cls+=' sel-s';
       h+='<div class="'+cls+'" onclick="calClick(this)"><span class="cal-dn" data-ds="'+ds+'">'+d2+'</span></div>';
     }
     g.innerHTML=h;
@@ -2909,12 +2965,18 @@ function calRender(){
   renderMonth(ny,nm,'calGrid2','calTitle2');
 
   var dur=document.getElementById('calDur');
-  if(S.sd&&S.ed&&dur){dur.style.display='';dur.textContent=S.sd+' ~ '+S.ed+'  (총 '+(dif(S.sd,S.ed)+1)+'일)';}
+  if(_cPhase===0&&S.sd&&S.ed&&dur){dur.style.display='';dur.textContent=S.sd+' ~ '+S.ed+'  (총 '+(dif(S.sd,S.ed)+1)+'일)';}
   else if(dur)dur.style.display='none';
 }
-function autoTaskDates(){
+function _markAutoCalculated(task,index){
+  if(!task._autoCalculatedPhases){
+    Object.defineProperty(task,'_autoCalculatedPhases',{value:{},enumerable:false,configurable:true});
+  }
+  task._autoCalculatedPhases[index]=true;
+}
+function _calculateAutoTaskDates(target,options){
   /* asRunSchedule 과 동일한 dep-chain 방식으로 계산 (업체 슬롯 탐색 없음) */
-  var pStart=S.sd, pEnd=S.ed;
+  var pStart=target.sd, pEnd=target.ed;
   var total=dif(pStart,pEnd);
   if(total<=0)return;
 
@@ -2923,8 +2985,12 @@ function autoTaskDates(){
   var taskOrder=[1,2,3,4,5,7,8,10,11,6,9,12,13,14]; /* 설비→공조→필름→도장→타일 순 */
 
   taskOrder.forEach(function(tid){
-    var task=S.tasks.find(function(x){return x.id===tid;});
+    var task=target.tasks.find(function(x){return x.id===tid;});
     if(!task||!task.on)return;
+    var keepPrimary=options&&options.respectManual&&task.scheduleMode==='manual';
+    var primaryRange=keepPrimary?{sd:task.sd,ed:task.ed}:null;
+    var keepSecond=options&&options.respectManual&&task.scheduleMode2==='manual';
+    var secondRange=keepSecond?{sd:task.sd2,ed:task.ed2}:null;
 
     var propDays=AS_PCT_DUR[tid]?Math.round(total*AS_PCT_DUR[tid]):0;
     /* 전기(5): 비례값의 60%가 1차, 고정값은 최솟값 보장용 */
@@ -2957,10 +3023,11 @@ function autoTaskDates(){
         }
       });
     }
+    if(earliestStart<pStart)earliestStart=pStart;
 
     /* 가스(12): 주방집기입고일 다음날 우선 */
     if(tid===12){
-      var _n1=S.notes&&S.notes.find(function(x){return x.id===1;});
+      var _n1=target.notes&&target.notes.find(function(x){return x.id===1;});
       if(_n1&&_n1.dt&&_n1.dt>=pStart){
         var kitNext=addD(_n1.dt,1);
         if(kitNext>earliestStart)earliestStart=kitNext;
@@ -2968,13 +3035,17 @@ function autoTaskDates(){
     }
 
     /* 준공청소(14): 마지막날 고정 */
-    if(tid===14){task.sd=pEnd;task.ed=pEnd;endDates[tid]=pEnd;return;}
+    if(tid===14){
+      if(keepPrimary){endDates[tid]=primaryRange.ed;sdDates[tid]=primaryRange.sd;return;}
+      task.sd=pEnd;task.ed=pEnd;_markAutoCalculated(task,1);endDates[tid]=pEnd;sdDates[tid]=pEnd;return;
+    }
 
     /* 공조(10): 1차 시작은 설비(8) 시작일과 동일하게 맞춤 */
     if(tid===10 && sdDates[8]) earliestStart=sdDates[8];
 
     var sd=earliestStart;
     var ed=addD(sd,minDays-1);
+    if(sd>pEnd){sd=pEnd;ed=pEnd;}
 
     /* 기타(13): pEnd-1 이하로 클램프 */
     if(tid===13){
@@ -2987,120 +3058,112 @@ function autoTaskDates(){
 
     task.sd=sd;
     task.ed=ed;
+    _markAutoCalculated(task,1);
     endDates[tid]=ed;
     sdDates[tid]=sd;
 
     /* 2차 분할 날짜 (전기/공조) */
-    if(tid===5){
+    if(tid===5&&task.split){
       var elecTotal2=propDays||Math.round(total*AS_PCT_DUR[5]);
       var days2=Math.max(1,elecTotal2-minDays);
-      task.split=true;
       task.sd2=addD(pStart,Math.round(total*0.75));
       task.ed2=addD(task.sd2,days2-1);
       if(task.ed2>pEnd)task.ed2=pEnd;
       if(!task.desc2)task.desc2='조명공사';
+      _markAutoCalculated(task,2);
     }
-    if(tid===10){
-      task.split=true;
+    if(tid===10&&task.split){
       task.sd2=addD(pStart,Math.round(total*0.70));
       task.ed2=task.sd2;/* 공조 2차: 1일 ★수정 (타일 마감 다음날로 후처리에서 이동) */
       if(!task.desc2)task.desc2='덕트마감';
+      _markAutoCalculated(task,2);
     }
+    if(keepPrimary){
+      task.sd=primaryRange.sd;task.ed=primaryRange.ed;
+      endDates[tid]=primaryRange.ed;sdDates[tid]=primaryRange.sd;
+    }
+    if(keepSecond){task.sd2=secondRange.sd;task.ed2=secondRange.ed;}
   });
 
   /* ── 후처리: 전기2차(조명) / 공조2차(덕트마감) 는 타일 완료 후 시작 ──
      타일공사 진행 중 분진·작업자로 조명·덕트마감 설치 불가 */
-  var _tileT=S.tasks.find(function(x){return x.id===9&&x.on;});
+  var _tileT=target.tasks.find(function(x){return x.id===9&&x.on;});
   if(_tileT&&_tileT.ed){
     var _minAfterTile=addD(_tileT.ed,1);
+    if(_minAfterTile>pEnd)_minAfterTile=pEnd;
     /* 전기 2차 */
-    var _elecT=S.tasks.find(function(x){return x.id===5&&x.on;});
-    if(_elecT&&_elecT.split&&_elecT.sd2&&_elecT.sd2<_minAfterTile){
+    var _elecT=target.tasks.find(function(x){return x.id===5&&x.on;});
+    if(_elecT&&_elecT.split&&_elecT.scheduleMode2!=='manual'&&_elecT.sd2&&_elecT.sd2<_minAfterTile){
       var _e2dur=dif(_elecT.sd2,_elecT.ed2);
       _elecT.sd2=_minAfterTile;
       _elecT.ed2=addD(_minAfterTile,Math.max(0,_e2dur));
       if(_elecT.ed2>pEnd)_elecT.ed2=pEnd;
     }
     /* 공조 2차: 타일 마감 다음날로 고정 ★수정 */
-    var _hvacT=S.tasks.find(function(x){return x.id===10&&x.on;});
-    if(_hvacT&&_hvacT.split){
+    var _hvacT=target.tasks.find(function(x){return x.id===10&&x.on;});
+    if(_hvacT&&_hvacT.split&&_hvacT.scheduleMode2!=='manual'){
       _hvacT.sd2=_minAfterTile;
       _hvacT.ed2=_minAfterTile;/* 공조 2차: 1일 */
       if(_hvacT.ed2>pEnd)_hvacT.ed2=pEnd;
     }
   }
 }
+function autoTaskDates(target,options){
+  target=target||S;
+  if(options&&options.forceAuto){_calculateAutoTaskDates(target);return target;}
+  var baseline=ScheduleCore.clone(target);
+  _calculateAutoTaskDates(baseline);
+  ScheduleCore.inferLegacyScheduleModes(target,baseline);
+  var automatic=ScheduleCore.clone(target);
+  _calculateAutoTaskDates(automatic,{respectManual:true});
+  (target.tasks||[]).forEach(function(task){
+    if(!task.on)return;
+    var autoTask=(automatic.tasks||[]).find(function(item){return item.id===task.id;});
+    if(!autoTask)return;
+    ScheduleCore.getTaskPhases(task,{activeOnly:true}).forEach(function(phase){
+      if(phase.mode!=='auto'||!autoTask._autoCalculatedPhases||!autoTask._autoCalculatedPhases[phase.index])return;
+      var next=ScheduleCore.getTaskPhase(autoTask,phase.index);
+      ScheduleCore.setTaskPhaseRange(task,phase.index,next.sd,next.ed);
+    });
+  });
+  return target;
+}
+function setTaskScheduleMode(task,phaseIndex,mode){
+  if(task)ScheduleCore.setTaskPhaseMode(task,(phaseIndex||0)+1,mode);
+}
+function setProjectPeriod(sd,ed,options){
+  var opts=options||{};
+  if(!sd||!ed)return false;
+  if(ed<sd){var tmp=sd;sd=ed;ed=tmp;}
+  if(opts.reflow){
+    ScheduleCore.applyConstructionPeriod(S,sd,ed,function(target,context){_calculateAutoTaskDates(target,context);});
+  }else{
+    S.sd=sd;S.ed=ed;
+  }
+  if(opts.render!==false){calInit();upBadge();rEdit();rChart();sync();}
+  return true;
+}
 function calClick(el){
   if(IS_RO)return;
   var ds=el.querySelector('.cal-dn').dataset.ds;
   if(!ds)return;
   if(_cPhase===0){
-    pushUndo();
-    var oldSd=S.sd;
-    S.sd=ds;S.ed='';
-    if(oldSd&&oldSd!==ds)shiftTasks(oldSd,ds);
-    _cPhase=1;
+    _cPendingSd=ds;_cPhase=1;
     /* 선택한 시작일이 두 번째 달이면 달력을 한 달 앞으로 */
     var selY=parseInt(ds.slice(0,4)),selM=parseInt(ds.slice(5,7))-1;
     var nextM=_cM+1,nextY=_cY;if(nextM>11){nextM=0;nextY++;}
     if(selY===nextY&&selM===nextM){_cM=nextM;_cY=nextY;}
     calRender();
   } else {
-    if(ds<=S.sd){var tmp=S.sd;S.sd=ds;ds=tmp;}
-    S.ed=ds;_cPhase=0;
-    /* 공종 날짜 자동배치 */
-    autoTaskDates();
-    /* 달력 마지막날 = 준공청소 날짜로 자동 설정 */
-    var t14=S.tasks&&S.tasks.find(function(x){return x.id===14;});
-    if(t14){t14.on=true;t14.sd=ds;t14.ed=ds;}
-    calRender();upBadge();rEdit();rChart();autoSave();
+    pushUndo();
+    var start=_cPendingSd;_cPendingSd='';_cPhase=0;
+    setProjectPeriod(start,ds,{source:'calendar',reflow:true});
+    autoSave();
   }
 }
-function shiftTasks(oldSd,newSd){
-  var delta=dif(oldSd,newSd);if(!delta)return;
-  S.tasks.forEach(function(t){
-    if(t.sd)t.sd=addD(t.sd,delta);
-    if(t.ed)t.ed=addD(t.ed,delta);
-    if(t.sd2)t.sd2=addD(t.sd2,delta);
-    if(t.ed2)t.ed2=addD(t.ed2,delta);
-    if(t.sd3)t.sd3=addD(t.sd3,delta);
-    if(t.ed3)t.ed3=addD(t.ed3,delta);
-  });
-  if(S.ed)S.ed=addD(S.ed,delta);
-}function onDC(){
+function onDC(){
   var ns=document.getElementById('fs').value,ne=document.getElementById('fend').value;
-  if(ns)S.sd=ns;if(ne)S.ed=ne;upBadge();rEdit();
-}
-
-/* mode */
-function scaleTasks(oldSd,oldEd,newSd,newEd){
-  var oldLen=dif(oldSd,oldEd);
-  var newLen=dif(newSd,newEd);
-  if(oldLen<=0)return;
-  function scaleDs(ds){
-    if(!ds)return ds;
-    var offset=dif(oldSd,ds);
-    var ratio=offset/oldLen;
-    var newOffset=Math.round(ratio*newLen);
-    newOffset=Math.max(0,Math.min(newLen,newOffset));
-    return addD(newSd,newOffset);
-  }
-  S.tasks.forEach(function(t){
-    if(!t.sd)return;
-    var dur=dif(t.sd,t.ed)||0;
-    t.sd=scaleDs(t.sd);
-    t.ed=addD(t.sd,dur);
-    if(t.split&&t.sd2){
-      var dur2=dif(t.sd2,t.ed2)||0;
-      t.sd2=scaleDs(t.sd2);
-      t.ed2=addD(t.sd2,dur2);
-    }
-    if(t.split3&&t.sd3){
-      var dur3=dif(t.sd3,t.ed3)||0;
-      t.sd3=scaleDs(t.sd3);
-      t.ed3=addD(t.sd3,dur3);
-    }
-  });
+  if(ns&&ne)setProjectPeriod(ns,ne,{source:'fields',reflow:true});
 }
 function sw(m){
   _removeStickyHeader(); /* 탭 전환 시 차트 고정헤더 제거 */
@@ -3533,6 +3596,7 @@ function autoDate2Call(t,id){
     /* 나머지: 1차 종료 다음날 ~ +3일 */
     default: t.sd2=addD(t.ed||edBase,1); t.ed2=addD(t.ed||edBase,3); break;
   }
+  setTaskScheduleMode(t,1,'auto');
 }
 function autoDate3Call(t,id){
   if(t.sd3&&t.ed3)return;
@@ -3551,7 +3615,7 @@ function autoDate3Call(t,id){
       case 10: t.sd3=addD(edBase,-2); t.ed3=addD(edBase,-1); break;
       default: t.sd3=addD(t.ed2,1); t.ed3=addD(t.ed2,1); break;
     }
-    return;
+    setTaskScheduleMode(t,2,'auto');return;
   }
   /* fallback: 2차 날짜 없는 경우 */
   switch(id){
@@ -3563,6 +3627,7 @@ function autoDate3Call(t,id){
     case 10: t.sd3=addD(edBase,-2); t.ed3=addD(edBase,-1); break;
     default: t.sd3=addD(t.ed||edBase,1); t.ed3=t.sd3; break;
   }
+  setTaskScheduleMode(t,2,'auto');
 }
 function upT(id,k,v){if(IS_RO)return;
   var t=S.tasks.find(function(x){return x.id===id;});if(!t)return;t[k]=v;
@@ -3574,7 +3639,7 @@ function setGasAuto(){
   var gd=gasAutoDate();
   if(!gd){toast('주방집기 입고 날짜를 먼저 설정해주세요');return;}
   var t=S.tasks.find(function(x){return x.id===12;});
-  if(t){pushUndo();t.sd=gd;if(!t.ed||t.ed<gd)t.ed=addD(gd,2);rEdit();}
+  if(t){pushUndo();t.sd=gd;if(!t.ed||t.ed<gd)t.ed=addD(gd,2);setTaskScheduleMode(t,0,'auto');rEdit();}
 }
 
 /* NOTES EDIT */
@@ -3971,10 +4036,9 @@ function syncPeriod(){
     if(t.split3&&t.sd3&&(!minSd||t.sd3<minSd))minSd=t.sd3;
     if(t.split3&&t.ed3&&(!maxEd||t.ed3>maxEd))maxEd=t.ed3;
   });
-  if(minSd)S.sd=minSd;
-  if(maxEd)S.ed=maxEd;
+  if(minSd&&maxEd)setProjectPeriod(minSd,maxEd,{source:'task-envelope',reflow:false,render:false});
 }
-function oMU(){_hideDragTip();if(drag){document.querySelectorAll('.bar.dragging-mv,.bar.dragging-sz').forEach(function(b){b.classList.remove('dragging-mv','dragging-sz');});var _prev=drag._pre;drag=null;syncPeriod();rChart();sync();if(_prev){_undoStack.push(_prev);if(_undoStack.length>30)_undoStack.shift();_redoStack=[];_updUR();autoSave();}}document.removeEventListener('mousemove',oMM);document.removeEventListener('mouseup',oMU);}
+function oMU(){_hideDragTip();if(drag){document.querySelectorAll('.bar.dragging-mv,.bar.dragging-sz').forEach(function(b){b.classList.remove('dragging-mv','dragging-sz');});var _prev=drag._pre;var _task=S.tasks.find(function(t){return t.id===drag.id;});var _sk=drag.is3?'sd3':drag.is2?'sd2':'sd',_ek=drag.is3?'ed3':drag.is2?'ed2':'ed';if(_task&&(_task[_sk]!==drag.osd||_task[_ek]!==drag.oed))setTaskScheduleMode(_task,drag.is3?2:drag.is2?1:0,'manual');drag=null;syncPeriod();rChart();sync();if(_prev){_undoStack.push(_prev);if(_undoStack.length>30)_undoStack.shift();_redoStack=[];_updUR();autoSave();}}document.removeEventListener('mousemove',oMM);document.removeEventListener('mouseup',oMU);}
 function chartTaskClick(id){
   if(IS_RO)return;
   pushUndo();
@@ -4001,6 +4065,7 @@ function chartTaskClick(id){
     else if(id===13){t.sd=addD(S.sd,s(0.83));t.ed=addD(S.ed,-1);if(t.sd>=t.ed)t.sd=addD(S.ed,-3);}
     else if(id===14){t.sd=S.ed;t.ed=S.ed;}
     else{var mid=s(0.4);t.sd=addD(S.sd,mid);t.ed=addD(S.sd,Math.min(total,mid+13));}
+    setTaskScheduleMode(t,0,'auto');
   }
   function autoDate2(){
     if(t.sd2&&t.ed2)return;
@@ -4031,7 +4096,7 @@ function chartTaskClick(id){
       if(id===5){
         t.split=true;
         t.desc2='조명공사';
-        autoDate(); autoDate2();
+        autoDate(); autoDate2();setTaskScheduleMode(t,1,'auto');
       } else {
         t.split=false;
         autoDate();
@@ -4042,7 +4107,7 @@ function chartTaskClick(id){
       /* 2차만 활성: desc2 기본값 */
       if(id===5){t.desc2='조명공사';}
       else{var _d2c={'2':'Demolition','3':'Fire Safety','4':'Carpentry','6':'Painting','7':'Metal Work','8':'Plumbing','9':'Tiling','10':'HVAC','11':'Film'};if(!t.desc2)t.desc2=(_d2c[String(id)]||'');}
-      autoDate2();
+      autoDate2();setTaskScheduleMode(t,1,'auto');
     } else if(t.split && !t.split3 && !t._s3off){
       /* 1차+2차 → 3차 활성화 */
       t.split3=true; t._s3off=false;
@@ -4116,7 +4181,7 @@ function oTM(e){
 function oTU(){
   _hideDragTip();
   document.querySelectorAll('.bar.dragging-mv,.bar.dragging-sz').forEach(function(b){b.classList.remove('dragging-mv','dragging-sz');});
-  if(drag){var _prev=drag._pre;drag=null;syncPeriod();rChart();sync();if(_prev){_undoStack.push(_prev);if(_undoStack.length>30)_undoStack.shift();_redoStack=[];_updUR();autoSave();}}
+  if(drag){var _prev=drag._pre;var _task=S.tasks.find(function(t){return t.id===drag.id;});var _sk=drag.is3?'sd3':drag.is2?'sd2':'sd',_ek=drag.is3?'ed3':drag.is2?'ed2':'ed';if(_task&&(_task[_sk]!==drag.osd||_task[_ek]!==drag.oed))setTaskScheduleMode(_task,drag.is3?2:drag.is2?1:0,'manual');drag=null;syncPeriod();rChart();sync();if(_prev){_undoStack.push(_prev);if(_undoStack.length>30)_undoStack.shift();_redoStack=[];_updUR();autoSave();}}
   document.removeEventListener('touchmove',oTM);
   document.removeEventListener('touchend',oTU);
 }
@@ -4458,7 +4523,7 @@ function tcalClick(el){
   /* 단일 날짜 모드 (준공청소 등) */
   if(_tc.single){
     var t=S.tasks.find(function(x){return x.id===_tc.id;});
-    pushUndo();if(t){t.sd=ds;t.ed=ds;}
+    pushUndo();if(t){t.sd=ds;t.ed=ds;setTaskScheduleMode(t,0,'manual');}
     _tc.single=false;
     setTimeout(function(){closeTCal();rEdit();rChart();upBadge();},280);
     return;
@@ -4473,8 +4538,9 @@ function tcalClick(el){
   else{
     if(ds<_tc.sd){var tmp=_tc.sd;_tc.sd=ds;ds=tmp;}_tc.ed=ds;_tc.phase=0;
     t=S.tasks.find(function(x){return x.id===_tc.id;});
-    if(t){if(_tc.phase2){t.sd3=_tc.sd;t.ed3=_tc.ed;}else if(_tc.is2){t.sd2=_tc.sd;t.ed2=_tc.ed;}else{t.sd=_tc.sd;t.ed=_tc.ed;}}
-    pushUndo();tcalRender();setTimeout(function(){closeTCal();rEdit();},280);
+    pushUndo();
+    if(t){if(_tc.phase2){t.sd3=_tc.sd;t.ed3=_tc.ed;setTaskScheduleMode(t,2,'manual');}else if(_tc.is2){t.sd2=_tc.sd;t.ed2=_tc.ed;setTaskScheduleMode(t,1,'manual');}else{t.sd=_tc.sd;t.ed=_tc.ed;setTaskScheduleMode(t,0,'manual');}}
+    tcalRender();setTimeout(function(){closeTCal();rEdit();},280);
   }
 }
 
@@ -5724,6 +5790,7 @@ function _signInStaffOrAnon() {
 
 function initFirebase() {
   try {
+    if (window.__ISM_TEST_MODE__) { _cloudInventoryReady = true; return; }
     if (!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') return;
     /* Firebase SDK가 아직 로드 안 됐으면 잠시 후 재시도 */
     if (typeof firebase === 'undefined') {
@@ -5779,6 +5846,7 @@ function _startCloudListener() {
         });
         /* 전체 스냅샷으로 _cloudSites 동기화 (초기 로드 포함) */
         _cloudSites = snapshot.docs.map(function(d){ return d.data(); }).filter(function(s){ return s.pn; });
+        _cloudInventoryReady = true;
         /* 로컬↔클라우드 대조: 이 기기가 닫혀 있는 동안 다른 기기에서
            확정 해제/삭제된 현장의 로컬 confirmed 잔재 정리 (캘린더 부활 방지) */
         try{ _reconcileLocalConfirmed(); }catch(e){ console.warn('[reconcile]', e); }
@@ -5789,6 +5857,7 @@ function _startCloudListener() {
         }
       },
       function(err) {
+        _cloudInventoryReady = false;
         console.warn('[실시간 리스너 오류]', err);
       }
     );
@@ -5853,41 +5922,19 @@ function sanitizeKey(pn) {
   return (pn||'').replace(/[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ\-_]/g,'_').substring(0,100);
 }
 
-/* ── 문서키 정규화 충돌 가드 ──
-   sanitizeKey 는 공백·괄호·슬래시 등 특수문자를 모두 '_' 로 접고 100자에서 자른다.
-   → '강남 A동' 과 '강남/A동' 이 같은 문서 ID('강남_A동') 로 수렴해, 서로 다른
-   현장이 아무 경고 없이 상대 기록을 덮어쓴다. 저장 직전 기존 문서의 pn '원문'을
-   읽어 현재 현장명과 다르면 사용자 확인을 받는다.
-   (신규 문서·동일 현장명 재저장은 확인 없이 통과 — 기존 UX 불변) */
-function _confirmKeyCollision(existingPn, newPn) {
-  return new Promise(function(resolve){
-    var msg = '다른 현장 "' + existingPn + '" 기록을 덮어씁니다. 계속?';
-    if (typeof igConfirm === 'function') {
-      igConfirm(msg, function(){ resolve(true); }, function(){ resolve(false); }, '덮어쓰기');
-    } else {
-      resolve(!!window.confirm(msg));
-    }
-  });
-}
-
-async function saveToCloud(siteSnap) {
-  /* 반환: true=저장됨 / false=저장 안 됨(미연결·키충돌 취소·실패).
-     기존 호출부는 반환값을 안 보므로 하위호환 — _cloudEditSave 만 판정에 쓴다. */
+async function saveToCloud(siteSnap,options) {
+  /* 저장 identity와 다른 문서가 같은 sanitizeKey로 수렴하면 항상 차단한다. */
   if (!_fbReady || !_db) return false;
   try {
     var key = sanitizeKey(siteSnap.pn);
-    /* ★ 문서키 충돌 확인 (조회 실패는 저장을 막지 않는다 — 기존 동작 유지) */
-    var _prevPn = null;
-    try {
-      var _prev = await _db.collection('sites').doc(key).get();
-      if (_prev && _prev.exists) {
-        var _pd = _prev.data() || {};
-        _prevPn = _pd.pn || null;
+    var prev = await _db.collection('sites').doc(key).get();
+    if (prev && prev.exists) {
+      var prevPn=(prev.data()||{}).pn||'';
+      var expected=(options&&options.expectedPn)||siteSnap.pn;
+      if(prevPn!==siteSnap.pn&&prevPn!==expected){
+        toast('다른 현장과 저장 키가 충돌해 저장하지 않았어요. 현장명을 변경해주세요.');
+        return false;
       }
-    } catch(e) { _prevPn = null; }
-    if (_prevPn && String(_prevPn).trim() !== String(siteSnap.pn||'').trim()) {
-      var _ok = await _confirmKeyCollision(_prevPn, siteSnap.pn);
-      if (!_ok) { toast('저장 취소됨 — 현장명을 바꿔주세요'); return false; }
     }
     /* ★ 저장 전 업체 정규화: task.contractors는 최대 1개(주 배정)만 유지
        mergeGlobalCtorsToTasks()로 오염된 여분 업체 제거 */
@@ -5903,15 +5950,16 @@ async function saveToCloud(siteSnap) {
 }
 
 async function deleteFromCloud(pn) {
-  if (!_fbReady || !_db) return;
+  if (!_fbReady || !_db) return false;
   try {
     var key = sanitizeKey(pn);
     await _db.collection('sites').doc(key).delete();
-  } catch(e) { console.warn('Cloud delete failed:', e); }
+    return true;
+  } catch(e) { console.warn('Cloud delete failed:', e); return false; }
 }
 
 async function loadCloudSites() {
-  if (!_fbReady || !_db) { _cloudSites = []; return; }
+  if (!_fbReady || !_db) { _cloudSites = [];_cloudInventoryReady=false;return false; }
   try {
     var snap = await _db.collection('sites').get();
     _cloudSites = snap.docs.map(function(d){ return d.data(); }).filter(function(s){ return s.pn; });
@@ -5925,7 +5973,9 @@ async function loadCloudSites() {
     });
     _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 */
     _restoreMyCloudSites();   /* 캐시 지워도 내 기기 현장 복구 */
-  } catch(e) { console.warn('Cloud load failed:', e); _cloudSites = []; }
+    _cloudInventoryReady=true;
+    return true;
+  } catch(e) { console.warn('Cloud load failed:', e); _cloudSites = [];_cloudInventoryReady=false;return false; }
 }
 
 /* 내 기기가 올린 현장이 로컬에 없으면 자동 복구 */
@@ -5933,11 +5983,12 @@ function _restoreMyCloudSites() {
   var myDevice = getDeviceName();
   if (!myDevice || !_cloudSites || !_cloudSites.length) return;
   var arr = getRecent();
-  var localPns = arr.map(function(x){ return x.pn; });
+  var localPns = arr.map(function(x){ return ScheduleCore.canonicalSiteName(x.pn); });
   var changed = false;
   _cloudSites.forEach(function(s) {
     if (!s.pn || !s.author || s.author !== myDevice) return;
-    if (localPns.indexOf(s.pn) >= 0) return; /* 이미 있음 */
+    var canonical=ScheduleCore.canonicalSiteName(s.pn);
+    if (localPns.indexOf(canonical) >= 0) return; /* 정규화 기준으로 이미 있음 */
     /* 내 현장인데 로컬에 없음 → 복구 */
     var snap = s.snap ? JSON.parse(s.snap) : null;
     arr.push({
@@ -5946,7 +5997,7 @@ function _restoreMyCloudSites() {
       confirmed: true,
       snap: s.snap||''
     });
-    localPns.push(s.pn);
+    localPns.push(canonical);
     changed = true;
     console.log('[복구] 내 현장 로컬 복구:', s.pn);
   });
@@ -7270,8 +7321,9 @@ function igSaveDateModal() {
   /* 1. _cloudSites 메모리 업데이트 */
   pushIgUndo();
   task.sd = sd; task.ed = ed;
+  setTaskScheduleMode(task,0,'manual');
   task.split = hasSplit;
-  if (hasSplit) { task.sd2 = sd2; task.ed2 = ed2; }
+  if (hasSplit) { task.sd2 = sd2; task.ed2 = ed2; setTaskScheduleMode(task,1,'manual'); }
   else { delete task.sd2; delete task.ed2; }
 
   /* 2. Firebase 저장 */
@@ -7287,9 +7339,9 @@ function igSaveDateModal() {
       if (snapObj && snapObj.tasks) {
         var st = snapObj.tasks.find(function(t){ return t.id === tid; });
         if (st) {
-          st.sd = sd; st.ed = ed;
+          st.sd = sd; st.ed = ed;setTaskScheduleMode(st,0,'manual');
           st.split = hasSplit;
-          if (hasSplit) { st.sd2 = sd2; st.ed2 = ed2; }
+          if (hasSplit) { st.sd2 = sd2; st.ed2 = ed2;setTaskScheduleMode(st,1,'manual'); }
           else { delete st.sd2; delete st.ed2; }
         }
         arr[ci].snap = JSON.stringify(snapObj);
@@ -7305,9 +7357,9 @@ function igSaveDateModal() {
     if (!state || !state.tasks) return false;
     var st2 = state.tasks.find(function(t){ return t.id === tid; });
     if (!st2) return false;
-    st2.sd = sd; st2.ed = ed;
+    st2.sd = sd; st2.ed = ed;setTaskScheduleMode(st2,0,'manual');
     st2.split = hasSplit;
-    if (hasSplit) { st2.sd2 = sd2; st2.ed2 = ed2; }
+    if (hasSplit) { st2.sd2 = sd2; st2.ed2 = ed2;setTaskScheduleMode(st2,1,'manual'); }
     else { delete st2.sd2; delete st2.ed2; }
     return true;
   }
@@ -7582,9 +7634,9 @@ function igBarpickSave() {
   pushIgUndo();
 
   if (rIdx === 1) {
-    if(rIdx===2){task.sd3=sd;task.ed3=ed;task.split3=true;}else{task.sd2 = sd; task.ed2 = ed; task.split = true;}
+    if(rIdx===2){task.sd3=sd;task.ed3=ed;task.split3=true;setTaskScheduleMode(task,2,'manual');}else{task.sd2 = sd; task.ed2 = ed; task.split = true;setTaskScheduleMode(task,1,'manual');}
   } else {
-    task.sd = sd; task.ed = ed;
+    task.sd = sd; task.ed = ed;setTaskScheduleMode(task,0,'manual');
   }
 
   /* Firebase 저장 */
@@ -7600,8 +7652,8 @@ function igBarpickSave() {
       if (snapObj && snapObj.tasks) {
         var st = snapObj.tasks.find(function(t){ return t.id === tid; });
         if (st) {
-          if (rIdx===2){st.sd3=sd;st.ed3=ed;st.split3=true;} else if (rIdx === 1) { st.sd2 = sd; st.ed2 = ed; st.split = true; }
-          else { st.sd = sd; st.ed = ed; }
+          if (rIdx===2){st.sd3=sd;st.ed3=ed;st.split3=true;setTaskScheduleMode(st,2,'manual');} else if (rIdx === 1) { st.sd2 = sd; st.ed2 = ed; st.split = true;setTaskScheduleMode(st,1,'manual'); }
+          else { st.sd = sd; st.ed = ed;setTaskScheduleMode(st,0,'manual'); }
         }
         arr[ci].snap = JSON.stringify(snapObj);
         setRecent(arr);
@@ -7614,8 +7666,8 @@ function igBarpickSave() {
     if (!state || !state.tasks) return false;
     var st2 = state.tasks.find(function(t){ return t.id === tid; });
     if (!st2) return false;
-    if (rIdx===2){st2.sd3=sd;st2.ed3=ed;st2.split3=true;} else if (rIdx === 1) { st2.sd2 = sd; st2.ed2 = ed; st2.split = true; }
-    else { st2.sd = sd; st2.ed = ed; }
+    if (rIdx===2){st2.sd3=sd;st2.ed3=ed;st2.split3=true;setTaskScheduleMode(st2,2,'manual');} else if (rIdx === 1) { st2.sd2 = sd; st2.ed2 = ed; st2.split = true;setTaskScheduleMode(st2,1,'manual'); }
+    else { st2.sd = sd; st2.ed = ed;setTaskScheduleMode(st2,0,'manual'); }
     return true;
   }
   var _barUpdated = false;
@@ -8035,6 +8087,7 @@ function ctorCheckResolve(tid, overlapEnd, rowId, newSd){
     function(){
       pushUndo();
       task.sd=newSd;
+      setTaskScheduleMode(task,0,'manual');
       autoSave();
       rChart();
       toast('✅ '+task.name+' '+newSdStr+'부터로 조정됐어요');
@@ -8059,6 +8112,7 @@ function ctorCheckUndo(tid, origSd, rowId, isCtorSwap){
     doUndo();
   } else {
     task.sd=origSd;
+    setTaskScheduleMode(task,0,'manual');
     autoSave();
     rChart();
     toast('↩ '+task.name+' 일정을 되돌렸어요');
@@ -9609,11 +9663,14 @@ function asApplyResult(){
     /* 무시 처리: 원래 날짜 유지 */
     if(_asIgnored[r.tid]){
       /* 날짜 그대로 — 분할/업체는 바꾸지 않음 */
+      ScheduleCore.getTaskPhases(task,{activeOnly:true}).forEach(function(phase){setTaskScheduleMode(task,phase.index-1,'manual');});
       return;
     }
     task.sd=r.sd;task.ed=r.ed;
+    setTaskScheduleMode(task,0,'auto');
     if(r.useSplit&&r.sd2&&r.ed2){
       task.split=true;task.sd2=r.sd2;task.ed2=r.ed2;task._s2off=false;
+      setTaskScheduleMode(task,1,'auto');
       /* 전기공사(5) desc 자동 세팅 */
       /* 자동배치 적용 시 desc2/desc3 세팅 */
       var _dam={'2':'Demolition','3':'Fire Safety','4':'Carpentry','6':'Painting','7':'Metal Work','8':'Plumbing','9':'Tiling','10':'HVAC','11':'Film'};
@@ -9624,6 +9681,7 @@ function asApplyResult(){
       }
       if(r.useSplit3&&r.sd3&&r.ed3){
         task.split3=true;task.sd3=r.sd3;task.ed3=r.ed3;
+        setTaskScheduleMode(task,2,'auto');
         if(task.id===5){task.desc3='조명공사';}
         else{if(!task.desc3)task.desc3=(_dam[String(task.id)]||'');}
       }else{task.split3=false;task.sd3='';task.ed3='';}
@@ -9635,7 +9693,7 @@ function asApplyResult(){
     else if(r.ctor&&r.ctor.startsWith('신규업체(')){/* 신규업체 배당: contractors 비워서 편집탭에서 입력하도록 */task.contractors=[];}
   });
   if(maxExt>0){
-    S.ed=addD(S.ed,maxExt);
+    setProjectPeriod(S.sd,addD(S.ed,maxExt),{source:'auto-schedule-extension',reflow:false,render:false});
     var fe=document.getElementById('fend');if(fe)fe.value=S.ed;
   }
   var changedCount=0, autoShift=0, autoNewctor=0, autoTrim=0, autoLocked=0;
