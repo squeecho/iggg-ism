@@ -6,6 +6,14 @@
   'use strict';
 
   var MAX_PHASES = 5;
+  var MIN_CUSTOM_TASK_ID = 1000000000;
+  var DEFAULT_TASK_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 12, 14];
+  var DEFAULT_TASK_NAMES = {
+    1: '가설공사', 2: '철거공사', 3: '소방공사', 4: '목공사',
+    5: '전기공사', 6: '도장공사', 7: '금속공사', 8: '설비공사',
+    9: '타일공사', 10: '공조공사', 11: '필름공사', 12: '가스공사',
+    13: '기타공사', 14: '준공청소'
+  };
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -99,9 +107,338 @@
   }
 
   function setTaskPhaseMode(task, index, mode) {
+    if (!task || index < 1 || index > MAX_PHASES) throw new Error('Invalid task phase');
     if (mode !== 'auto' && mode !== 'manual') throw new Error('Invalid schedule mode');
     task[phaseFields(index).mode] = mode;
     return task;
+  }
+
+  function hasOwn(value, key) {
+    return Object.prototype.hasOwnProperty.call(value, key);
+  }
+
+  function normalizeTask(task) {
+    if (!task || typeof task !== 'object' || Array.isArray(task)) {
+      throw new Error('Invalid task');
+    }
+
+    if (task.name == null) task.name = '';
+    if (task.desc == null) task.desc = '';
+    if (task.sd == null) task.sd = '';
+    if (task.ed == null) task.ed = '';
+    if (task.scheduleMode == null) task.scheduleMode = '';
+    if (task.contractors == null) task.contractors = [];
+    if (task.canSplit === undefined) task.canSplit = true;
+    if (task.custom === undefined) task.custom = false;
+
+    for (var index = 2; index <= MAX_PHASES; index++) {
+      var fields = phaseFields(index);
+      if (task[fields.enabled] === undefined) task[fields.enabled] = false;
+      if (task[fields.start] == null) task[fields.start] = '';
+      if (task[fields.end] == null) task[fields.end] = '';
+      if (task[fields.description] == null) task[fields.description] = '';
+      if (task[fields.mode] == null) task[fields.mode] = '';
+    }
+
+    /* A later legacy phase implies all preceding phases. Values are never cleared. */
+    for (index = MAX_PHASES; index >= 2; index--) {
+      fields = phaseFields(index);
+      if (task[fields.enabled] !== true) continue;
+      for (var previous = 2; previous < index; previous++) {
+        task[phaseFields(previous).enabled] = true;
+      }
+    }
+
+    for (index = 2; index <= MAX_PHASES; index++) {
+      fields = phaseFields(index);
+      if (task[fields.name] == null) {
+        task[fields.name] = isPhaseEnabled(task, index) ? String(task.name || '') : '';
+      }
+    }
+    return task;
+  }
+
+  function hasAutomaticNoteRule(note) {
+    if (!note || typeof note !== 'object') return false;
+    return note.type === 'auto' || note.type === 'auto_mk' ||
+      note.type === 'auto_sb' || Number(note.id) === 1;
+  }
+
+  function normalizeNote(note) {
+    if (!note || typeof note !== 'object' || Array.isArray(note)) {
+      throw new Error('Invalid note');
+    }
+    if (note.dt == null) note.dt = '';
+    if (note.chk === undefined) note.chk = false;
+    if (note.dateMode !== 'auto' && note.dateMode !== 'manual') {
+      if (note.type === 'auto') {
+        note.dateMode = 'auto';
+      } else if (note.type === 'auto_mk' || note.type === 'auto_sb' || Number(note.id) === 1) {
+        note.dateMode = note.dt ? 'manual' : 'auto';
+      } else {
+        note.dateMode = 'manual';
+      }
+    }
+    return note;
+  }
+
+  function normalizeScheduleState(state) {
+    if (!state || typeof state !== 'object' || Array.isArray(state)) {
+      throw new Error('Invalid schedule state');
+    }
+    if (!Array.isArray(state.tasks)) state.tasks = [];
+    if (!Array.isArray(state.notes)) state.notes = [];
+    state.tasks.forEach(normalizeTask);
+    state.notes.forEach(normalizeNote);
+    return state;
+  }
+
+  function getTaskPhaseCount(task) {
+    if (!task || typeof task !== 'object') return 0;
+    var count = 1;
+    for (var index = 2; index <= MAX_PHASES; index++) {
+      if (isPhaseEnabled(task, index)) count = index;
+    }
+    return count;
+  }
+
+  function getTaskRanges(task) {
+    return getTaskPhases(task, { activeOnly: true, validOnly: true });
+  }
+
+  function setTaskPhaseEnabled(task, index, enabled) {
+    if (!task || index < 1 || index > MAX_PHASES) throw new Error('Invalid task phase');
+    if (index === 1) return task;
+    if (enabled) {
+      for (var current = 2; current <= index; current++) {
+        task[phaseFields(current).enabled] = true;
+      }
+    } else {
+      for (current = index; current <= MAX_PHASES; current++) {
+        task[phaseFields(current).enabled] = false;
+      }
+    }
+    return task;
+  }
+
+  function updateTaskPhase(task, index, patch) {
+    if (!task || index < 1 || index > MAX_PHASES) throw new Error('Invalid task phase');
+    var next = patch || {};
+    var fields = phaseFields(index);
+    if (index > 1 && hasOwn(next, 'enabled')) {
+      setTaskPhaseEnabled(task, index, !!next.enabled);
+    }
+    if (hasOwn(next, 'sd')) task[fields.start] = next.sd || '';
+    if (hasOwn(next, 'ed')) task[fields.end] = next.ed || '';
+    if (hasOwn(next, 'name')) task[fields.name] = String(next.name == null ? '' : next.name);
+    if (hasOwn(next, 'desc')) task[fields.description] = String(next.desc == null ? '' : next.desc);
+    if (hasOwn(next, 'description')) {
+      task[fields.description] = String(next.description == null ? '' : next.description);
+    }
+    if (hasOwn(next, 'mode')) {
+      if (next.mode === '') task[fields.mode] = '';
+      else setTaskPhaseMode(task, index, next.mode);
+    }
+    return task;
+  }
+
+  function addTaskPhase(task, patch) {
+    normalizeTask(task);
+    var currentCount = getTaskPhaseCount(task);
+    if (currentCount >= MAX_PHASES) return null;
+    var index = currentCount + 1;
+    var fields = phaseFields(index);
+    setTaskPhaseEnabled(task, index, true);
+    if (!task[fields.name]) task[fields.name] = String(task.name || '');
+    if (!task[fields.description]) task[fields.description] = String(task.desc || '');
+    if (task[fields.mode] !== 'auto' && task[fields.mode] !== 'manual') {
+      task[fields.mode] = 'manual';
+    }
+    updateTaskPhase(task, index, patch || {});
+    return getTaskPhase(task, index);
+  }
+
+  function removeLastTaskPhase(task) {
+    normalizeTask(task);
+    var index = getTaskPhaseCount(task);
+    if (index <= 1) return null;
+    var removed = getTaskPhase(task, index);
+    var fields = phaseFields(index);
+    task[fields.enabled] = false;
+    task[fields.start] = '';
+    task[fields.end] = '';
+    task[fields.name] = '';
+    task[fields.description] = '';
+    task[fields.mode] = '';
+    return removed;
+  }
+
+  function toSafeTaskId(value) {
+    if (value === '' || value == null) return null;
+    var numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : null;
+  }
+
+  function visitScheduleStates(sources, visitor) {
+    var seen = typeof WeakSet === 'function' ? new WeakSet() : null;
+    function visit(value) {
+      if (!value) return;
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+        return;
+      }
+      if (typeof value !== 'object') return;
+      if (seen) {
+        if (seen.has(value)) return;
+        seen.add(value);
+      }
+      if (Array.isArray(value.tasks)) {
+        visitor(value);
+        return;
+      }
+      if (typeof value.snap === 'string' && value.snap) {
+        try { visit(JSON.parse(value.snap)); } catch (error) {}
+      } else if (value.snap && typeof value.snap === 'object') {
+        visit(value.snap);
+      }
+      if (value.state) visit(value.state);
+      if (value.site) visit(value.site);
+      if (value.sites) visit(value.sites);
+      if (value.records) visit(value.records);
+    }
+    visit(sources);
+  }
+
+  function collectTaskIds(sources) {
+    var ids = [];
+    var seenIds = {};
+    visitScheduleStates(sources, function(state) {
+      state.tasks.forEach(function(task) {
+        var id = toSafeTaskId(task && task.id);
+        if (id == null || seenIds[id]) return;
+        seenIds[id] = true;
+        ids.push(id);
+      });
+    });
+    return ids;
+  }
+
+  function secureRandomTaskId() {
+    var cryptoObject = typeof globalThis !== 'undefined' ? globalThis.crypto : null;
+    if (!cryptoObject || typeof cryptoObject.getRandomValues !== 'function') {
+      throw new Error('Secure random source unavailable');
+    }
+    var values = new Uint32Array(2);
+    cryptoObject.getRandomValues(values);
+    return (values[0] & 0x1fffff) * 0x100000000 + values[1];
+  }
+
+  function createCustomTaskId(usedIds, randomSource) {
+    var used = {};
+    function addUsed(value) {
+      if (value instanceof Set) {
+        value.forEach(addUsed);
+      } else if (Array.isArray(value)) {
+        value.forEach(addUsed);
+      } else {
+        var id = toSafeTaskId(value);
+        if (id != null) used[id] = true;
+      }
+    }
+    addUsed(usedIds || []);
+    var nextRandom = typeof randomSource === 'function' ? randomSource : secureRandomTaskId;
+    for (var attempt = 0; attempt < 128; attempt++) {
+      var candidate = toSafeTaskId(nextRandom());
+      if (candidate != null && candidate >= MIN_CUSTOM_TASK_ID && !used[candidate]) return candidate;
+    }
+    for (candidate = MIN_CUSTOM_TASK_ID; candidate <= Number.MAX_SAFE_INTEGER; candidate++) {
+      if (!used[candidate]) return candidate;
+    }
+    throw new Error('No custom task ID available');
+  }
+
+  function createCustomTask(state, attributes, options) {
+    normalizeScheduleState(state);
+    var attrs = attributes && typeof attributes === 'object' ? Object.assign({}, attributes) : {};
+    var opts = options || {};
+    var used = collectTaskIds([state, opts.sources || []]);
+    var requestedId = hasOwn(attrs, 'id') ? toSafeTaskId(attrs.id) : null;
+    var id;
+    if (hasOwn(attrs, 'id')) {
+      if (requestedId == null || requestedId < MIN_CUSTOM_TASK_ID || used.indexOf(requestedId) >= 0) {
+        throw new Error('Invalid or duplicate custom task ID');
+      }
+      id = requestedId;
+    } else {
+      id = createCustomTaskId(used, opts.randomSource);
+    }
+    var task = Object.assign({
+      id: id,
+      custom: true,
+      name: '새 공종',
+      desc: '',
+      sd: state.sd || '',
+      ed: state.sd || '',
+      on: true,
+      canSplit: true,
+      contractors: [],
+      scheduleMode: 'auto'
+    }, attrs);
+    task.id = id;
+    task.custom = true;
+    if (Array.isArray(task.contractors)) task.contractors = task.contractors.slice();
+    normalizeTask(task);
+    state.tasks.push(task);
+    return task;
+  }
+
+  function deleteCustomTask(state, id) {
+    if (!state || !Array.isArray(state.tasks)) return false;
+    var numericId = toSafeTaskId(id);
+    if (numericId == null) return false;
+    var index = state.tasks.findIndex(function(task) {
+      return toSafeTaskId(task && task.id) === numericId;
+    });
+    if (index < 0 || state.tasks[index].custom !== true) return false;
+    state.tasks.splice(index, 1);
+    return true;
+  }
+
+  function orderedTaskIds(states, baseOrder) {
+    var observed = [];
+    var observedSet = {};
+    visitScheduleStates(states, function(state) {
+      state.tasks.forEach(function(task) {
+        var id = toSafeTaskId(task && task.id);
+        if (id == null || observedSet[id]) return;
+        observedSet[id] = true;
+        observed.push(id);
+      });
+    });
+    var result = [];
+    (Array.isArray(baseOrder) ? baseOrder : DEFAULT_TASK_ORDER).forEach(function(value) {
+      var id = toSafeTaskId(value);
+      if (id != null && observedSet[id] && result.indexOf(id) < 0) result.push(id);
+    });
+    observed.forEach(function(id) {
+      if (result.indexOf(id) < 0) result.push(id);
+    });
+    return result;
+  }
+
+  function resolveTaskName(id, states, fallback) {
+    var numericId = toSafeTaskId(id);
+    var resolved = '';
+    visitScheduleStates(states, function(state) {
+      if (resolved) return;
+      var task = state.tasks.find(function(candidate) {
+        return toSafeTaskId(candidate && candidate.id) === numericId;
+      });
+      if (task && task.name) resolved = String(task.name);
+    });
+    if (resolved) return resolved;
+    if (numericId != null && DEFAULT_TASK_NAMES[numericId]) return DEFAULT_TASK_NAMES[numericId];
+    return fallback == null ? (numericId == null ? '' : '공종 ' + numericId) : String(fallback);
   }
 
   function sameRange(left, right) {
@@ -153,6 +490,90 @@
     if (!date) return '';
     date.setDate(date.getDate() + days);
     return formatDate(date);
+  }
+
+  function findTask(state, id) {
+    if (!state || !Array.isArray(state.tasks)) return null;
+    var numericId = toSafeTaskId(id);
+    if (numericId == null) return null;
+    return state.tasks.find(function(task) {
+      return toSafeTaskId(task && task.id) === numericId;
+    }) || null;
+  }
+
+  function taskBoundary(state, id, boundary) {
+    var task = findTask(state, id);
+    if (!task || task.on !== true) return '';
+    var dates = getTaskRanges(task).map(function(phase) {
+      return boundary === 'start' ? phase.sd : phase.ed;
+    }).filter(function(value) {
+      return !!parseDate(value);
+    });
+    if (!dates.length) return '';
+    dates.sort();
+    return boundary === 'start' ? dates[0] : dates[dates.length - 1];
+  }
+
+  function getAutoNoteDate(note, state) {
+    if (!hasAutomaticNoteRule(note)) return '';
+    var boundary = '';
+    if (note.type === 'auto') {
+      boundary = taskBoundary(state, 14, 'end');
+      return boundary ? addDays(boundary, 1) : '';
+    }
+    if (note.type === 'auto_mk') {
+      boundary = taskBoundary(state, 4, 'end');
+      return boundary ? addDays(boundary, 1) : '';
+    }
+    if (note.type === 'auto_sb') {
+      boundary = taskBoundary(state, 8, 'end');
+      return boundary ? addDays(boundary, 2) : '';
+    }
+    if (Number(note.id) === 1) {
+      boundary = taskBoundary(state, 9, 'end');
+      if (boundary) return addDays(boundary, 2);
+      return taskBoundary(state, 13, 'start');
+    }
+    return '';
+  }
+
+  function getNoteDate(note, state) {
+    normalizeNote(note);
+    return note.dateMode === 'auto' ? getAutoNoteDate(note, state) : String(note.dt || '');
+  }
+
+  function setNoteMode(note, state, mode) {
+    normalizeNote(note);
+    if (mode !== 'auto' && mode !== 'manual') throw new Error('Invalid note date mode');
+    if (mode === 'auto') {
+      if (!hasAutomaticNoteRule(note)) return false;
+      note.dateMode = 'auto';
+      note.dt = '';
+      return true;
+    }
+    if (note.dateMode === 'auto') note.dt = getAutoNoteDate(note, state);
+    note.dateMode = 'manual';
+    return true;
+  }
+
+  function setNoteManualDate(note, date) {
+    normalizeNote(note);
+    var value = String(date || '');
+    if (value && !parseDate(value)) throw new Error('Invalid note date');
+    note.dateMode = 'manual';
+    note.dt = value;
+    return note;
+  }
+
+  function isNoteOutsidePeriod(note, state) {
+    if (!note || !state) return false;
+    normalizeNote(note);
+    if (note.dateMode !== 'manual') return false;
+    var date = parseDate(note.dt);
+    var start = parseDate(state.sd);
+    var end = parseDate(state.ed);
+    if (!date || !start || !end) return false;
+    return date < start || date > end;
   }
 
   function rebaseRange(range, oldStart, oldEnd, newStart, newEnd) {
@@ -246,6 +667,8 @@
 
   return {
     MAX_PHASES: MAX_PHASES,
+    MIN_CUSTOM_TASK_ID: MIN_CUSTOM_TASK_ID,
+    DEFAULT_TASK_ORDER: DEFAULT_TASK_ORDER.slice(),
     clone: clone,
     normalizeSiteName: normalizeSiteName,
     canonicalSiteName: canonicalSiteName,
@@ -256,6 +679,27 @@
     getTaskPhases: getTaskPhases,
     setTaskPhaseRange: setTaskPhaseRange,
     setTaskPhaseMode: setTaskPhaseMode,
+    normalizeTask: normalizeTask,
+    normalizeNote: normalizeNote,
+    normalizeScheduleState: normalizeScheduleState,
+    getTaskPhaseCount: getTaskPhaseCount,
+    getTaskRanges: getTaskRanges,
+    setTaskPhaseEnabled: setTaskPhaseEnabled,
+    updateTaskPhase: updateTaskPhase,
+    addTaskPhase: addTaskPhase,
+    removeLastTaskPhase: removeLastTaskPhase,
+    collectTaskIds: collectTaskIds,
+    createCustomTaskId: createCustomTaskId,
+    createCustomTask: createCustomTask,
+    deleteCustomTask: deleteCustomTask,
+    orderedTaskIds: orderedTaskIds,
+    resolveTaskName: resolveTaskName,
+    hasAutomaticNoteRule: hasAutomaticNoteRule,
+    getAutoNoteDate: getAutoNoteDate,
+    getNoteDate: getNoteDate,
+    setNoteMode: setNoteMode,
+    setNoteManualDate: setNoteManualDate,
+    isNoteOutsidePeriod: isNoteOutsidePeriod,
     inferLegacyScheduleModes: inferLegacyScheduleModes,
     applyConstructionPeriod: applyConstructionPeriod,
     snapshotForIdentity: snapshotForIdentity,
