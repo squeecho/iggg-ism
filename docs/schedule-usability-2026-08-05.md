@@ -40,12 +40,12 @@
 | W2-05 | 사용자 공종 CRUD 및 저장 | parity | P0 | `schedule-core.js`의 `createCustomTask`, `deleteCustomTask`, `orderedTaskIds`; `index.html`의 `addCustomTask`, `deleteCustomTaskConfirm` | 충돌 검사한 안전정수 ID와 `custom:true`를 저장한다. 기본 공종 삭제는 거부하고 동적 공종 목록을 전 경로에 포함했다. |
 | W2-06 | 특별 날짜 자동/수동 토글 | parity | P0 | `schedule-core.js`의 `setNoteMode`, `getNoteDate`; `index.html`의 `rNE`, `setNoteModeUi`, `openNCal` | 명시적 `dateMode`를 도입했다. 직접 선택은 수동, 자동 복귀는 즉시 재계산하며 기간 밖 수동 날짜는 경고만 표시한다. 자동 규칙이 없는 사용자 항목은 수동만 제공한다. |
 | W2-07 | 기존 저장 데이터 무손실 정규화 | parity | P0 | `schedule-core.js`의 `normalizeTask`, `normalizeNote`, `normalizeScheduleState`; `index.html`의 local/cloud/hash load 경로 | 모든 상태 진입점에서 같은 정규화를 호출하고 기존 2·3차 flat 필드와 특별 날짜 의미를 보존한다. |
-| W3-01 | 모든 공종 막대 좌우 끝 경계 | missing | P1 | `index.html:609-619`, `327-344` | 막대 크기를 바꾸지 않는 inset 경계선을 기본/통합 차트에 적용한다. |
-| W3-02 | 선택/드래그 중 시작·종료 세로 가이드 | missing | P1 | `index.html:3695-4119` | 포인터 이벤트 없는 전용 레이어를 막대 뒤에 두고 선택 해제/Escape를 지원한다. 인쇄·PDF에는 포함하지 않는다. |
+| W3-01 | 모든 공종 막대 좌우 끝 경계 | parity | P1 | `index.html`의 `.bar`, `.ig-cal-bar.range-start`, `.ig-cal-bar.range-end`; `renderOneMonth` | 메인 차트는 각 기간 막대 양 끝에 1px 경계를 두고, 통합 일정은 실제 시작일·종료일 조각에만 경계를 표시한다. |
+| W3-02 | 선택/드래그 중 시작·종료 세로 가이드 | parity | P1 | `index.html`의 `_selectedChartPhase`, `_renderChartGuides`, `dSPhase`, `tI` | 포인터 이벤트 없는 전용 레이어를 막대 뒤와 날짜 헤더 아래에 두고 바깥 선택/Escape 해제를 지원한다. 인쇄·PDF에서는 제외한다. |
 | W3-03 | 1~5차 막대 겹침 방지 | parity | P0 | `index.html`의 `rG`, `renderOneMonth` | 메인 차트 행과 통합 달력 주 높이를 활성 phase/lane 수에 맞춰 계산한다. 5개 막대가 셀 안에 포함되는지 격리 DOM 좌표로 검증했다. |
 | QA-01 | 기존 데이터 정규화와 저장/재로드 자동 테스트 | parity | P0 | `tests/schedule-core.test.js` | Node 기본 test runner로 순수 helper의 1~5차, legacy, 사용자 공종, 날짜 모드를 검증한다. |
 | QA-02 | 격리 브라우저 실제 UI 검증 | parity | P0 | `tests/ui_regression.py` | 임시 브라우저 프로필과 합성 localStorage만 사용하고 외부 mutation을 차단한다. console/page error 및 mutation 0건을 테스트 종료 조건으로 둔다. |
-| QA-03 | 데스크톱·모바일 시각 검증 | missing | P1 | 차트 1·3차 겹침 재현됨 | 1440px와 390px 화면을 캡처해 직접 확인한다. |
+| QA-03 | 데스크톱·모바일 시각 검증 | parity | P1 | `tests/ui_regression.py`의 `wave_three` 검증 | 1440x1000 데스크톱과 390x844 터치 모바일 화면을 캡처하고 막대, 가이드, 헤더, 차수별 lane을 직접 확인했다. |
 | OPS-01 | push/preview/운영 배포 | oos | - | 사용자 금지 범위 | 로컬 브랜치와 커밋만 생성한다. |
 
 ## 구현 원칙
@@ -63,7 +63,7 @@
 
 | Wave | 변경 범위 | 완료 게이트 |
 |---|---|---|
-| 1 | W1-01~W1-05 | 기간 변경 자동/수동 회귀, local/cloud 정규화 충돌, rename/save 테스트 통과 후 별도 커밋 |
+| 1 | W1-01~W1-06 | 기간 변경 자동/수동 회귀, local/cloud 정규화 충돌, rename/save 테스트 통과 후 별도 커밋 |
 | 2 | W2-01~W2-07 | 1~5차 CRUD/저장/재로드/전 소비 경로, 사용자 공종 CRUD, 특별 날짜 자동/수동 테스트 통과 후 별도 커밋 |
 | 3 | W3-01~W3-03 | 데스크톱/모바일 차트 실제 렌더, 선택/드래그 가이드, overlap 검사 통과 후 별도 커밋 |
 
@@ -92,6 +92,16 @@
 - 기간 재배치: 새 사용자 공종 1차는 직접 날짜를 고르기 전까지 자동 mode이며 기존 7일 기간을 보존해 새 공사 시작일로 이동했다. 준공청소 5개 자동 차수도 새 종료일까지 서로 겹치지 않고 순서대로 재배치됐다.
 - 충돌 판정: 협력업체 충돌 해결에서 4차만 이동·복구되고 1차는 바뀌지 않음을 실제 모달로 확인했다.
 - 네트워크·오류: 격리 Chromium에서 외부 mutation 0건, console error 0건, page error 0건이었다. 운영 Firebase, Google Calendar, 고객 데이터와 기존 사용자 저장소는 사용하지 않았다.
+
+## Wave 3 체크포인트
+
+- 메인 차트 경계: 활성 공종의 1~5차 막대 모두 좌우 1px 경계를 표시한다. 경계는 전역 `box-sizing:border-box` 안에 포함돼 기존 날짜 폭을 늘리지 않는다.
+- 선택 가이드: 데스크톱에서 4차 막대를 실제 mouse down·drag하고 모바일 터치 context에서 실제 tap했다. 두 환경 모두 시작·종료 가이드 2개가 막대 양 끝과 1px 이내로 일치했다.
+- 레이어 안전성: 가이드는 `tbody` 상하 범위에만 표시돼 날짜 헤더를 침범하지 않고, `pointer-events:none`과 막대보다 낮은 z-index로 편집을 가리지 않는다. 바깥 선택과 Escape에서 즉시 제거되며 인쇄에서는 숨긴다.
+- 선택 무변경: 이동하지 않은 mouse/touch 선택은 공사기간, 일정 mode, undo, autosave를 변경하지 않는다. 실제 날짜가 달라진 drag에만 기존 저장 파이프라인을 실행한다.
+- 겹침·통합 일정: 데스크톱 전체 행과 모바일 선택 행에서 1~5차 lane의 DOM 경계가 겹치지 않았다. 통합 일정의 같은 날짜에 5개 차수를 합성해 높이 116px 이상, 셀 내부 포함, 시작·종료 경계 각 5개를 확인했다.
+- 시각 확인: 1440x1000과 390x844 캡처를 직접 열어 공종명·날짜 헤더·다른 막대와 가이드가 겹치지 않고 1~5차가 분리되는지 확인했다.
+- 네트워크·오류: Calendar `action=config`만 로컬 합성 응답으로 허용하고 다른 POST를 실패 처리했다. 격리 Chromium의 외부 mutation 0건, console error 0건, page error 0건이었다.
 
 ## 범위 밖 백로그
 

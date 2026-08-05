@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -21,6 +22,9 @@ def run():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     origin = f"http://127.0.0.1:{server.server_port}"
+    screenshot_dir = Path(os.environ["ISM_SCREENSHOT_DIR"]) if os.environ.get("ISM_SCREENSHOT_DIR") else None
+    if screenshot_dir:
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
 
     console_errors = []
     page_errors = []
@@ -45,12 +49,20 @@ def run():
                 nonlocal intercepted_config_requests
                 request = route.request
                 if request.url == origin + "/api/calendar" and request.method == "POST":
-                    intercepted_config_requests += 1
-                    route.fulfill(
-                        status=200,
-                        content_type="application/json",
-                        body=json.dumps({"detailCalId": "qa-detail", "simpleCalId": "qa-simple"}),
-                    )
+                    try:
+                        payload = json.loads(request.post_data or "{}")
+                    except json.JSONDecodeError:
+                        payload = {}
+                    if payload.get("action") == "config":
+                        intercepted_config_requests += 1
+                        route.fulfill(
+                            status=200,
+                            content_type="application/json",
+                            body=json.dumps({"detailCalId": "qa-detail", "simpleCalId": "qa-simple"}),
+                        )
+                        return
+                    unexpected_mutations.append({"method": request.method, "url": request.url})
+                    route.abort()
                     return
                 if request.url.startswith(origin) and request.method in ("GET", "HEAD"):
                     route.continue_()
@@ -543,6 +555,185 @@ def run():
                 "Math.round(document.querySelector('.bar[data-task-id=\"2\"][data-phase=\"1\"]').getBoundingClientRect().width)"
             ) == 90
 
+            assert page.locator(".chart-range-guide").count() == 0
+            phase_four_bar = page.locator('.bar[data-task-id="1"][data-phase="4"]')
+            period_before_selection = page.evaluate("({sd:S.sd,ed:S.ed})")
+            phase_four_box = phase_four_bar.bounding_box()
+            page.mouse.move(
+                phase_four_box["x"] + phase_four_box["width"] / 2,
+                phase_four_box["y"] + phase_four_box["height"] / 2,
+            )
+            page.mouse.down()
+            assert page.locator(".chart-range-guide").count() == 2
+            page.mouse.move(
+                phase_four_box["x"] + phase_four_box["width"] / 2 + 5,
+                phase_four_box["y"] + phase_four_box["height"] / 2,
+            )
+            desktop_chart_metrics = page.evaluate(
+                """
+                () => {
+                  const bar = document.querySelector('.bar[data-task-id="1"][data-phase="4"]');
+                  const guides = Array.from(document.querySelectorAll('.chart-range-guide'));
+                  const layer = document.getElementById('chartRangeGuides');
+                  const tbody = document.querySelector('#gt tbody');
+                  const thead = document.querySelector('#gt thead');
+                  const barRect = bar.getBoundingClientRect();
+                  const bodyRect = tbody.getBoundingClientRect();
+                  const headRect = thead.getBoundingClientRect();
+                  const guideRects = guides.map(guide => guide.getBoundingClientRect());
+                  const rows = Array.from(document.querySelectorAll('#gt tbody tr'));
+                  const lanesClear = rows.every(row => {
+                    const bars = Array.from(row.querySelectorAll('.bar'))
+                      .map(item => item.getBoundingClientRect())
+                      .sort((a, b) => a.top - b.top);
+                    return bars.every((item, index) => index === 0 || bars[index - 1].bottom <= item.top + 0.5);
+                  });
+                  const allBounded = Array.from(document.querySelectorAll('#gt .bar')).every(item => {
+                    const style = getComputedStyle(item);
+                    return style.borderLeftWidth === '1px' && style.borderRightWidth === '1px';
+                  });
+                  return {
+                    guides:guides.length,
+                    selected:document.querySelectorAll('#gt .bar.chart-selected').length,
+                    startError:Math.abs(guideRects[0].left - barRect.left),
+                    endError:Math.abs(guideRects[1].left - (barRect.right - 1)),
+                    topError:Math.abs(guideRects[0].top - bodyRect.top),
+                    bottomError:Math.abs(guideRects[0].bottom - bodyRect.bottom),
+                    headerClear:guideRects[0].top >= headRect.bottom - 1,
+                    pointerEvents:getComputedStyle(layer).pointerEvents,
+                    layerZ:Number(getComputedStyle(layer).zIndex),
+                    barZ:Number(getComputedStyle(bar).zIndex),
+                    lanesClear,
+                    allBounded
+                  };
+                }
+                """
+            )
+            assert desktop_chart_metrics["guides"] == 2
+            assert desktop_chart_metrics["selected"] == 1
+            assert desktop_chart_metrics["startError"] <= 1
+            assert desktop_chart_metrics["endError"] <= 1
+            assert desktop_chart_metrics["topError"] <= 1
+            assert desktop_chart_metrics["bottomError"] <= 1
+            assert desktop_chart_metrics["headerClear"] is True
+            assert desktop_chart_metrics["pointerEvents"] == "none"
+            assert desktop_chart_metrics["layerZ"] < desktop_chart_metrics["barZ"]
+            assert desktop_chart_metrics["lanesClear"] is True
+            assert desktop_chart_metrics["allBounded"] is True
+            page.mouse.up()
+            assert page.locator(".chart-range-guide").count() == 2
+            assert page.evaluate("({sd:S.sd,ed:S.ed})") == period_before_selection
+            if screenshot_dir:
+                phase_four_bar.scroll_into_view_if_needed()
+                page.screenshot(path=str(screenshot_dir / "wave3-desktop.png"), full_page=False)
+
+            page.locator("#pc .cs").dispatch_event("mousedown")
+            assert page.locator(".chart-range-guide").count() == 0
+            phase_four_bar.dispatch_event(
+                "mousedown",
+                {
+                    "button": 0,
+                    "clientX": phase_four_box["x"] + phase_four_box["width"] / 2,
+                    "clientY": phase_four_box["y"] + phase_four_box["height"] / 2,
+                },
+            )
+            assert page.locator(".chart-range-guide").count() == 2
+            page.keyboard.press("Escape")
+            assert page.locator(".chart-range-guide").count() == 0
+            page.evaluate("if (drag) { drag = null; document.removeEventListener('mousemove', oMM); document.removeEventListener('mouseup', oMU); }")
+
+            mobile_state = page.evaluate("JSON.parse(JSON.stringify(S))")
+            mobile_context = browser.new_context(
+                viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True
+            )
+            mobile_context.add_init_script(
+                """
+                window.__ISM_TEST_MODE__ = true;
+                localStorage.clear();
+                sessionStorage.clear();
+                localStorage.setItem('_deviceName', 'isolated-mobile-qa');
+                localStorage.setItem('_gcalEnabled', '0');
+                """
+            )
+            mobile_context.route("**/*", route_request)
+            mobile_page = mobile_context.new_page()
+            mobile_page.on(
+                "console", lambda message: console_errors.append(message.text) if message.type == "error" else None
+            )
+            mobile_page.on("pageerror", lambda error: page_errors.append(str(error)))
+            mobile_page.goto(origin + "/", wait_until="domcontentloaded")
+            mobile_page.evaluate(
+                """
+                state => {
+                  S = ScheduleCore.normalizeScheduleState(state);
+                  _origPn = state.pn;
+                  IS_RO = false;
+                  _cloudEditing = null;
+                  _cloudView = null;
+                  _cloudSites = [];
+                  _cloudInventoryReady = true;
+                  _fbReady = false;
+                  _db = null;
+                  calInit(); sync(); rEdit(); rChips(); sw('c'); rChart();
+                }
+                """,
+                mobile_state,
+            )
+            mobile_phase_four = mobile_page.locator('.bar[data-task-id="1"][data-phase="4"]')
+            mobile_phase_four.tap()
+            assert mobile_page.locator(".chart-range-guide").count() == 2
+            mobile_chart_metrics = mobile_page.evaluate(
+                """
+                () => {
+                  const bar = document.querySelector('.bar[data-task-id="1"][data-phase="4"]');
+                  const guides = Array.from(document.querySelectorAll('.chart-range-guide'));
+                  const layer = document.getElementById('chartRangeGuides');
+                  const tbody = document.querySelector('#gt tbody');
+                  const thead = document.querySelector('#gt thead');
+                  const barRect = bar.getBoundingClientRect();
+                  const bodyRect = tbody.getBoundingClientRect();
+                  const headRect = thead.getBoundingClientRect();
+                  const guideRects = guides.map(guide => guide.getBoundingClientRect());
+                  const selectedRowBars = Array.from(bar.closest('tr').querySelectorAll('.bar'))
+                    .map(item => item.getBoundingClientRect())
+                    .sort((a, b) => a.top - b.top);
+                  return {
+                    width:window.innerWidth,
+                    guides:guides.length,
+                    startError:Math.abs(guideRects[0].left - barRect.left),
+                    endError:Math.abs(guideRects[1].left - (barRect.right - 1)),
+                    topError:Math.abs(guideRects[0].top - bodyRect.top),
+                    bottomError:Math.abs(guideRects[0].bottom - bodyRect.bottom),
+                    headerClear:guideRects[0].top >= headRect.bottom - 1,
+                    layerBehind:Number(getComputedStyle(layer).zIndex) < Number(getComputedStyle(bar).zIndex),
+                    lanesClear:selectedRowBars.every((item, index) => index === 0 || selectedRowBars[index - 1].bottom <= item.top + 0.5)
+                  };
+                }
+                """
+            )
+            assert mobile_chart_metrics["width"] == 390
+            assert mobile_chart_metrics["guides"] == 2
+            assert mobile_chart_metrics["startError"] <= 1
+            assert mobile_chart_metrics["endError"] <= 1
+            assert mobile_chart_metrics["topError"] <= 1
+            assert mobile_chart_metrics["bottomError"] <= 1
+            assert mobile_chart_metrics["headerClear"] is True
+            assert mobile_chart_metrics["layerBehind"] is True
+            assert mobile_chart_metrics["lanesClear"] is True
+            if screenshot_dir:
+                mobile_page.evaluate(
+                    "document.querySelector('.bar[data-task-id=\"1\"][data-phase=\"4\"]').scrollIntoView({block:'center',inline:'center'})"
+                )
+                mobile_page.screenshot(path=str(screenshot_dir / "wave3-mobile.png"), full_page=False)
+            mobile_context.close()
+
+            wave_three_result = {
+                "desktop_guides": desktop_chart_metrics["guides"],
+                "desktop_lanes_clear": desktop_chart_metrics["lanesClear"],
+                "mobile_guides": mobile_chart_metrics["guides"],
+                "mobile_lanes_clear": mobile_chart_metrics["lanesClear"],
+            }
+
             integrated_result = page.evaluate(
                 """
                 () => {
@@ -569,7 +760,9 @@ def run():
                   return {
                     bars: bars.length,
                     height: Math.round(dayRect.height),
-                    contained: bars.every(bar => bar.getBoundingClientRect().bottom <= dayRect.bottom + 1)
+                    contained: bars.every(bar => bar.getBoundingClientRect().bottom <= dayRect.bottom + 1),
+                    startBoundaries: bars.filter(bar => bar.classList.contains('range-start') && getComputedStyle(bar).borderLeftWidth === '1px').length,
+                    endBoundaries: bars.filter(bar => bar.classList.contains('range-end') && getComputedStyle(bar).borderRightWidth === '1px').length
                   };
                 }
                 """
@@ -577,6 +770,8 @@ def run():
             assert integrated_result["bars"] == 5
             assert integrated_result["height"] >= 116
             assert integrated_result["contained"] is True
+            assert integrated_result["startBoundaries"] == 5
+            assert integrated_result["endBoundaries"] == 5
 
             page.locator("#tabs > #te").click()
             manual_group = page.get_by_role("group", name="간판실측 가능일 배치 방식")
@@ -903,6 +1098,7 @@ def run():
             "first_save_round_trip": first_save_round_trip,
             "cloud_restore_round_trip": cloud_restore_round_trip,
             "wave_two": wave_two_result,
+            "wave_three": wave_three_result,
             "intercepted_local_config_requests": intercepted_config_requests,
             "unexpected_network_mutations": len(unexpected_mutations),
             "console_errors": len(console_errors),
