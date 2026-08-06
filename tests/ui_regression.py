@@ -629,6 +629,492 @@ def run_chart_task_management(
     }
 
 
+NOTE_IDS = [4, 5, 1, 2, 3]
+
+
+def read_note_dom_state(page, note_id):
+    return page.evaluate(
+        """
+        noteId => {
+          const note = S.notes.find(item => item.id === noteId);
+          const date = nDt(note);
+          const lines = Array.from(document.querySelectorAll('.dg-note-line[data-nid="' + noteId + '"]'));
+          const expectedLeft = (d2i(date) + .5) * CW;
+          const card = document.querySelector('.sc-card[data-note-id="' + noteId + '"]');
+          const headers = Array.from(document.querySelectorAll('#gt .hd2'));
+          const header = headers[d2i(date)];
+          const shortLabels = {
+            '간판실측 가능일':'간판실측', '주방실측 가능일':'주방실측',
+            '주방집기 입고':'주방입고', '간판 설치':'간판설치', '이동식 가구':'이동가구'
+          };
+          return {
+            id:noteId,
+            label:note.label,
+            date,
+            mode:note.dateMode,
+            lineCount:lines.length,
+            linesAligned:lines.length > 0 && lines.every(line => Math.abs(parseFloat(line.style.left) - expectedLeft) <= .1),
+            cardDate:card && card.querySelector('.sc-card-date').textContent.trim(),
+            expectedCardDate:dspK(date),
+            cardEditable:!!(card && card.classList.contains('editable')),
+            headerHasLabel:!!(header && header.textContent.includes(shortLabels[note.label] || note.label.substring(0, 5))),
+            outside:ScheduleCore.isNoteOutsidePeriod(note, S),
+            calendarVisible:getComputedStyle(document.getElementById('tcalOv')).display !== 'none'
+          };
+        }
+        """,
+        note_id,
+    )
+
+
+def assert_note_dom_synced(state, expected_date, expected_mode="manual"):
+    assert state["date"] == expected_date, state
+    assert state["mode"] == expected_mode, state
+    assert state["lineCount"] > 0 and state["linesAligned"] is True, state
+    assert state["cardDate"] == state["expectedCardDate"], state
+    assert state["headerHasLabel"] is True, state
+    assert state["calendarVisible"] is False, state
+
+
+def wait_for_note_draft(page, note_id, expected_date, expected_mode="manual"):
+    page.wait_for_function(
+        """
+        expected => {
+          const records = JSON.parse(localStorage.getItem('cs_recent') || '[]');
+          const record = records.find(item => item.pn === 'Note Date QA');
+          if (!record) return false;
+          const saved = JSON.parse(record.snap);
+          const note = saved.notes.find(item => item.id === expected.id);
+          return note && note.dateMode === expected.mode && note.dt === expected.date;
+        }
+        """,
+        arg={"id": note_id, "date": expected_date, "mode": expected_mode},
+    )
+
+
+def prepare_note_auto(page, note_id):
+    return page.evaluate(
+        """
+        noteId => {
+          const target = S.notes.find(note => note.id === noteId);
+          if (!target || !ScheduleCore.setNoteMode(target, S, 'auto')) throw new Error('automatic note unavailable');
+          const automaticDate = nDt(target);
+          if (noteId === 2) {
+            const overlap = S.notes.find(note => note.id === 3);
+            ScheduleCore.setNoteManualDate(overlap, addD(automaticDate, 7));
+          }
+          rNE(); rChart(); sync(); clearTimeout(_asTimer);
+          _undoStack = []; _redoStack = []; _updUR();
+          window.__noteAutoSaveCalls = 0;
+          return {date:automaticDate, label:target.label, state:JSON.stringify(target)};
+        }
+        """,
+        note_id,
+    )
+
+
+def exercise_note_mouse_drag(page, note_id, screenshot_path=None, test_cancel=False):
+    initial = prepare_note_auto(page, note_id)
+    selector = f'.dg-note-line[data-nid="{note_id}"]'
+    line = page.locator(selector).first
+    line.scroll_into_view_if_needed()
+    undo_before = page.evaluate("_undoStack.length")
+    line.click()
+    assert page.locator("#tcalOv").is_hidden()
+    assert page.evaluate("_undoStack.length") == undo_before
+    assert page.evaluate("window.__noteAutoSaveCalls") == 0
+    assert page.evaluate("id => S.notes.find(note => note.id === id).dateMode", note_id) == "auto"
+
+    if test_cancel:
+        cancelled_state = page.evaluate("JSON.stringify(S)")
+        box = page.locator(selector).first.bounding_box()
+        assert box is not None
+        cancel_x = box["x"] + box["width"] / 2
+        cancel_y = box["y"] + min(12, box["height"] / 2)
+        page.mouse.move(cancel_x, cancel_y)
+        page.mouse.down()
+        page.wait_for_timeout(700)
+        page.mouse.move(cancel_x + 30, cancel_y, steps=2)
+        page.evaluate(
+            """
+            () => {
+              const press = _notePress;
+              document.dispatchEvent(new PointerEvent('pointercancel', {
+                pointerId:press.pointerId, pointerType:press.pointerType,
+                isPrimary:true, bubbles:true
+              }));
+            }
+            """
+        )
+        page.mouse.up()
+        assert page.evaluate("JSON.stringify(S)") == cancelled_state
+        assert page.evaluate("_undoStack.length") == undo_before
+        assert page.evaluate("window.__noteAutoSaveCalls") == 0
+        assert read_note_dom_state(page, note_id)["linesAligned"] is True
+
+    line = page.locator(selector).first
+    box = line.bounding_box()
+    assert box is not None
+    x = box["x"] + box["width"] / 2
+    y = box["y"] + min(12, box["height"] / 2)
+    haptics_before = page.evaluate("window.__noteHaptics.length")
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.wait_for_timeout(700)
+    assert page.locator(selector + ".dragging").count() > 0
+    assert page.locator("#toast").text_content() == "좌우로 이동하세요"
+    assert page.evaluate("window.__noteHaptics.length") == haptics_before + 1
+    active_color = page.evaluate(
+        "id => getComputedStyle(document.querySelector('.dg-note-line[data-nid=\"' + id + '\"]'), '::after').borderLeftColor",
+        note_id,
+    )
+    assert active_color == "rgb(16, 185, 129)", active_color
+    page.mouse.move(x + 30, y, steps=2)
+    expected = page.evaluate("date => addD(date, 1)", initial["date"])
+    tooltip = page.locator("#dragTip")
+    assert tooltip.is_visible()
+    assert initial["label"] in tooltip.inner_text() and page.evaluate("date => dspK(date)", expected) in tooltip.inner_text()
+    if screenshot_path:
+        page.screenshot(path=str(screenshot_path), full_page=False)
+    page.mouse.up()
+    page.wait_for_timeout(30)
+
+    state = read_note_dom_state(page, note_id)
+    assert_note_dom_synced(state, expected)
+    assert page.locator("#tcalOv").is_hidden()
+    assert page.evaluate("_undoStack.length") == undo_before + 1
+    assert page.evaluate("window.__noteAutoSaveCalls") == 1
+    wait_for_note_draft(page, note_id, expected)
+
+    page.evaluate("doUndo()")
+    assert_note_dom_synced(read_note_dom_state(page, note_id), initial["date"], "auto")
+    page.evaluate("doRedo()")
+    assert_note_dom_synced(read_note_dom_state(page, note_id), expected)
+    return initial, expected
+
+
+def dispatch_note_touch_drag(page, cdp, note_id, screenshot_path=None, test_cancel=False):
+    initial = prepare_note_auto(page, note_id)
+    selector = f'.dg-note-line[data-nid="{note_id}"]'
+    line = page.locator(selector).first
+    line.scroll_into_view_if_needed()
+    line.tap()
+    assert page.locator("#tcalOv").is_hidden()
+    assert page.evaluate("_undoStack.length") == 0
+    assert page.evaluate("window.__noteAutoSaveCalls") == 0
+
+    if test_cancel:
+        cancelled_state = page.evaluate("JSON.stringify(S)")
+        box = page.locator(selector).first.bounding_box()
+        assert box is not None
+        cancel_point = {
+            "x": box["x"] + box["width"] / 2,
+            "y": box["y"] + min(12, box["height"] / 2),
+            "radiusX": 1,
+            "radiusY": 1,
+            "force": 1,
+            "id": 9,
+        }
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [cancel_point]})
+        page.wait_for_timeout(700)
+        cancelled_move = dict(cancel_point)
+        cancelled_move["x"] += 30
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [cancelled_move]})
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchCancel", "touchPoints": []})
+        page.wait_for_timeout(30)
+        assert page.evaluate("JSON.stringify(S)") == cancelled_state
+        assert page.evaluate("_undoStack.length") == 0
+        assert page.evaluate("window.__noteAutoSaveCalls") == 0
+        assert read_note_dom_state(page, note_id)["linesAligned"] is True
+
+    line = page.locator(selector).first
+    box = line.bounding_box()
+    assert box is not None
+    x = box["x"] + box["width"] / 2
+    y = box["y"] + min(12, box["height"] / 2)
+    haptics_before = page.evaluate("window.__noteHaptics.length")
+    point = {"x": x, "y": y, "radiusX": 1, "radiusY": 1, "force": 1, "id": 1}
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [point]})
+    page.wait_for_timeout(700)
+    assert page.locator(selector + ".dragging").count() > 0
+    assert page.locator("#toast").text_content() == "좌우로 이동하세요"
+    assert page.evaluate("window.__noteHaptics.length") == haptics_before + 1
+    active_color = page.evaluate(
+        "id => getComputedStyle(document.querySelector('.dg-note-line[data-nid=\"' + id + '\"]'), '::after').borderLeftColor",
+        note_id,
+    )
+    assert active_color == "rgb(16, 185, 129)", active_color
+    moved = dict(point)
+    moved["x"] = x + 30
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [moved]})
+    page.wait_for_timeout(30)
+    expected = page.evaluate("date => addD(date, 1)", initial["date"])
+    tooltip = page.locator("#dragTip")
+    assert tooltip.is_visible()
+    assert initial["label"] in tooltip.inner_text() and page.evaluate("date => dspK(date)", expected) in tooltip.inner_text()
+    if screenshot_path:
+        page.screenshot(path=str(screenshot_path), full_page=False)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    page.wait_for_timeout(50)
+
+    assert_note_dom_synced(read_note_dom_state(page, note_id), expected)
+    assert page.locator("#tcalOv").is_hidden()
+    assert page.evaluate("_undoStack.length") == 1
+    assert page.evaluate("window.__noteAutoSaveCalls") == 1
+    wait_for_note_draft(page, note_id, expected)
+    page.evaluate("doUndo()")
+    assert_note_dom_synced(read_note_dom_state(page, note_id), initial["date"], "auto")
+    page.evaluate("doRedo()")
+    assert_note_dom_synced(read_note_dom_state(page, note_id), expected)
+    return initial, expected
+
+
+def restore_note_auto_with_ui(page, note_id, label, automatic_date, mobile=False):
+    page.locator("#te").tap() if mobile else page.locator("#te").click()
+    group = page.get_by_role("group", name=f"{label} 배치 방식")
+    auto_button = group.get_by_role("button", name="자동")
+    auto_button.tap() if mobile else auto_button.click()
+    page.locator("#tc2").tap() if mobile else page.locator("#tc2").click()
+    assert_note_dom_synced(read_note_dom_state(page, note_id), automatic_date, "auto")
+
+
+def change_note_from_card(page, note_id, target_date, mobile=False, screenshot_path=None):
+    page.evaluate(
+        """
+        () => {
+          clearTimeout(_asTimer); _undoStack = []; _redoStack = []; _updUR();
+          window.__noteAutoSaveCalls = 0;
+        }
+        """
+    )
+    card = page.locator(f'.sc-card[data-note-id="{note_id}"]')
+    card.scroll_into_view_if_needed()
+    card.tap() if mobile else card.click()
+    assert page.locator("#tcalOv").is_visible()
+    assert page.evaluate("_ncalId") == note_id
+    if screenshot_path:
+        page.screenshot(path=str(screenshot_path), full_page=False)
+    day = page.locator(f'#tcalOv .tcal-dn[data-ds="{target_date}"]').first
+    day.tap() if mobile else day.click()
+    page.locator("#tcalOv").wait_for(state="hidden")
+    assert_note_dom_synced(read_note_dom_state(page, note_id), target_date)
+    assert page.evaluate("_undoStack.length") == 1
+    assert page.evaluate("window.__noteAutoSaveCalls") == 1
+    wait_for_note_draft(page, note_id, target_date)
+    page.evaluate("doUndo()")
+    assert page.evaluate("id => S.notes.find(note => note.id === id).dateMode", note_id) == "auto"
+    page.evaluate("doRedo()")
+    assert_note_dom_synced(read_note_dom_state(page, note_id), target_date)
+    page.evaluate("clearTimeout(_asTimer); window.__noteAutoSaveCalls = 0")
+    undo_before = page.evaluate("_undoStack.length")
+    card = page.locator(f'.sc-card[data-note-id="{note_id}"]')
+    card.tap() if mobile else card.click()
+    same_day = page.locator(f'#tcalOv .tcal-dn[data-ds="{target_date}"]').first
+    same_day.tap() if mobile else same_day.click()
+    page.locator("#tcalOv").wait_for(state="hidden")
+    assert page.evaluate("_undoStack.length") == undo_before
+    assert page.evaluate("window.__noteAutoSaveCalls") == 0
+    assert_note_dom_synced(read_note_dom_state(page, note_id), target_date)
+
+
+def setup_note_page(page):
+    page.evaluate(
+        """
+        () => {
+          const state = defaultState();
+          state.pn = 'Note Date QA'; state.sd = '2026-08-01'; state.ed = '2026-09-20';
+          state.tasks.forEach(task => { task.on = false; });
+          const ranges = {
+            4:['2026-08-05','2026-08-10'],
+            8:['2026-08-10','2026-08-15'],
+            9:['2026-08-16','2026-08-20'],
+            14:['2026-08-24','2026-08-25']
+          };
+          Object.keys(ranges).forEach(rawId => {
+            const task = state.tasks.find(item => item.id === Number(rawId));
+            task.on = true; task.sd = ranges[rawId][0]; task.ed = ranges[rawId][1]; task.scheduleMode = 'auto';
+          });
+          state.notes.forEach(note => { note.dateMode = 'auto'; note.dt = ''; });
+          const record = {pn:state.pn,sd:state.sd,ed:state.ed,confirmed:false,savedAt:'2026-08-07 12:00',snap:JSON.stringify(state)};
+          localStorage.setItem('cs_recent', JSON.stringify([record])); localStorage.setItem('cs_last', state.pn);
+          S = ScheduleCore.normalizeScheduleState(state); _origPn = state.pn; _cancelPn = null; _open = null;
+          IS_RO = false; _cloudEditing = null; _cloudView = null; _cloudSites = []; _cloudInventoryReady = true;
+          _fbReady = false; _db = null; _undoStack = []; _redoStack = [];
+          calInit(); sync(); rEdit(); rChips(); sw('c'); rChart(); clearTimeout(_asTimer);
+          window.__noteAutoSaveCalls = 0;
+          window.__noteAutoSaveOriginal = autoSave;
+          autoSave = function(){ window.__noteAutoSaveCalls++; return window.__noteAutoSaveOriginal.apply(this, arguments); };
+        }
+        """
+    )
+
+
+def run_note_date_interactions(
+    browser,
+    origin,
+    route_request,
+    screenshot_dir,
+    console_errors,
+    page_errors,
+    request_failures,
+):
+    results = {}
+    reload_results = {}
+    for label, viewport, mobile in (
+        ("desktop", {"width": 1440, "height": 1000}, False),
+        ("mobile", {"width": 390, "height": 844}, True),
+    ):
+        context = browser.new_context(
+            viewport=viewport,
+            is_mobile=mobile,
+            has_touch=mobile,
+        )
+        context.add_init_script(
+            """
+            window.__ISM_TEST_MODE__ = true;
+            if (!sessionStorage.getItem('__noteQaBoot')) {
+              localStorage.clear(); sessionStorage.clear(); sessionStorage.setItem('__noteQaBoot', '1');
+            }
+            localStorage.setItem('_deviceName', 'note-date-qa');
+            localStorage.setItem('_gcalEnabled', '0');
+            window.__noteHaptics = [];
+            Object.defineProperty(navigator, 'vibrate', {
+              configurable:true,
+              value:value => { window.__noteHaptics.push(value); return true; }
+            });
+            """
+        )
+        context.route("**/*", route_request)
+        page = context.new_page()
+        page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
+        page.on("pageerror", lambda error: page_errors.append(str(error)))
+        page.on("requestfailed", lambda request: request_failures.append(f"{request.method} {request.url}"))
+        page.goto(origin + "/", wait_until="domcontentloaded")
+        setup_note_page(page)
+        cdp = context.new_cdp_session(page) if mobile else None
+        operations = 0
+        final_dates = {}
+
+        for index, note_id in enumerate(NOTE_IDS):
+            active_capture = None
+            calendar_capture = None
+            if screenshot_dir and index == 0:
+                active_capture = screenshot_dir / f"note-drag-active-{label}.png"
+                calendar_capture = screenshot_dir / f"note-calendar-{label}.png"
+            if mobile:
+                initial, _ = dispatch_note_touch_drag(page, cdp, note_id, active_capture, test_cancel=index == 0)
+            else:
+                initial, _ = exercise_note_mouse_drag(page, note_id, active_capture, test_cancel=index == 0)
+            restore_note_auto_with_ui(page, note_id, initial["label"], initial["date"], mobile)
+            target = (
+                page.evaluate("addD(S.ed, 5)")
+                if note_id == 3
+                else page.evaluate("date => addD(date, 2)", initial["date"])
+            )
+            change_note_from_card(page, note_id, target, mobile, calendar_capture)
+            if note_id == 3:
+                assert read_note_dom_state(page, note_id)["outside"] is True
+                assert page.locator("#en .note-date-warning").count() > 0
+            final_dates[str(note_id)] = target
+            operations += 2
+
+        page.wait_for_function(
+            """
+            expected => {
+              const records = JSON.parse(localStorage.getItem('cs_recent') || '[]');
+              const record = records.find(item => item.pn === 'Note Date QA');
+              if (!record) return false;
+              const saved = JSON.parse(record.snap);
+              return Object.keys(expected).every(id => {
+                const note = saved.notes.find(item => item.id === Number(id));
+                return note && note.dateMode === 'manual' && note.dt === expected[id];
+              });
+            }
+            """,
+            arg=final_dates,
+        )
+        if screenshot_dir:
+            if mobile:
+                page.evaluate(
+                    """
+                    () => {
+                      if (_stickyObserver) _stickyObserver.disconnect();
+                      _removeStickyHeader();
+                      document.getElementById('scw').scrollIntoView({block:'end'});
+                    }
+                    """
+                )
+                page.screenshot(path=str(screenshot_dir / f"note-bidirectional-{label}.png"), full_page=False)
+            else:
+                page.locator("#pa").screenshot(path=str(screenshot_dir / f"note-bidirectional-{label}.png"))
+
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function("S && S.pn === 'Note Date QA'")
+        page.evaluate("sw('c'); rChart()")
+        reloaded = page.evaluate(
+            """
+            expected => Object.keys(expected).every(id => {
+              const note = S.notes.find(item => item.id === Number(id));
+              return note && note.dateMode === 'manual' && note.dt === expected[id];
+            })
+            """,
+            final_dates,
+        )
+        assert reloaded is True
+        reload_results[label] = reloaded
+
+        readonly_before = page.evaluate("JSON.stringify(S)")
+        page.evaluate("IS_RO = true; rChart(); _undoStack = []; _redoStack = []; _updUR()")
+        assert page.locator(".dg-note-line.editable").count() == 0
+        assert page.locator('.sc-card[role="button"]').count() == 0
+        for readonly_index, note_id in enumerate(NOTE_IDS):
+            readonly_line = page.locator(f'.dg-note-line[data-nid="{note_id}"]').first
+            readonly_line.scroll_into_view_if_needed()
+            box = readonly_line.bounding_box()
+            assert box is not None
+            if mobile:
+                point = {
+                    "x": box["x"] + 8,
+                    "y": box["y"] + 8,
+                    "radiusX": 1,
+                    "radiusY": 1,
+                    "force": 1,
+                    "id": readonly_index + 20,
+                }
+                cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [point]})
+                page.wait_for_timeout(700)
+                point["x"] += 30
+                cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [point]})
+                cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+            else:
+                page.mouse.move(box["x"] + 8, box["y"] + 8)
+                page.mouse.down()
+                page.wait_for_timeout(700)
+                page.mouse.move(box["x"] + 38, box["y"] + 8)
+                page.mouse.up()
+        assert page.evaluate("JSON.stringify(S)") == readonly_before
+        assert page.evaluate("_undoStack.length") == 0
+        assert page.locator("#tcalOv").is_hidden()
+
+        results[label] = {
+            "operations": operations,
+            "simple_click_calendar_opens": 0,
+            "long_press_drags": len(NOTE_IDS),
+            "card_calendar_changes": len(NOTE_IDS),
+            "same_date_noop": len(NOTE_IDS),
+            "cancelled_drag_mutations": 0,
+            "readonly_attempts": len(NOTE_IDS),
+            "readonly_unchanged": True,
+        }
+        context.close()
+
+    return {
+        "desktop": results["desktop"],
+        "mobile": results["mobile"],
+        "reload_exact": all(reload_results.values()),
+    }
+
+
 def run():
     handler = partial(QuietHandler, directory=str(ROOT))
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -1730,6 +2216,16 @@ def run():
                 request_failures,
             )
 
+            note_date_result = run_note_date_interactions(
+                browser,
+                origin,
+                route_request,
+                screenshot_dir,
+                console_errors,
+                page_errors,
+                request_failures,
+            )
+
             assert console_errors == [], console_errors
             assert page_errors == [], page_errors
             assert request_failures == [], request_failures
@@ -1759,6 +2255,7 @@ def run():
             "wave_two": wave_two_result,
             "wave_three": wave_three_result,
             "chart_task_management": chart_task_result,
+            "note_date_interactions": note_date_result,
             "intercepted_local_config_requests": intercepted_config_requests,
             "unexpected_network_mutations": len(unexpected_mutations),
             "console_errors": len(console_errors),
