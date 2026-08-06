@@ -44,10 +44,10 @@
 | TL-03 | 단일 1차 중앙 배치 | parity | P0 | 38px 행에서 막대 중심 `19px` | 38px 행의 수직 중앙과 막대 중심 오차 1px 이하 |
 | TL-04 | 1일 막대 문구의 이웃 침범 차단 | parity | P0 | `.bt`만 clip하고 resize handle은 기존 overflow 유지 | 차수 표시는 유지하고 상세만 ellipsis, 실제 text bbox가 막대 경계를 이탈하지 않음 |
 | TL-05 | drag·resize·guide·undo·autosave 불변 | parity | P0 | 5개 차수별 이동·좌·우 조절 15회 실제 포인터 검증 | 각 차수 독립 이동·좌우 조절, 비대상 phase 불변, 저장·undo/redo 통과 |
-| MF-01 | footer 첫 줄 제거 왼쪽·추가 오른쪽 | missing | P0 | 현재 추가가 먼저이며 제거에 `-` 없음 | 좌우 bbox와 `- N차 제거`/`+ N차 추가` 문구 검증 |
-| MF-02 | 항상 보이는 완료 버튼과 저장 확정 | missing | P0 | 완료 버튼이 없고 body의 flex shrink 계약이 없음 | phase 5까지 scroll해도 완료가 viewport 안에 있고 blur·기존 autosave flush 후 닫힘 |
-| MF-03 | 사용자 공종 삭제 danger 분리 | deviant | P1 | 삭제가 차수 action과 같은 영역 | body 끝 별도 danger 영역, footer에는 차수와 완료만 존재 |
-| MF-04 | 읽기 전용 닫기와 mutation 차단 | partial | P0 | X는 닫히나 footer 완료가 없음 | 완료/X는 닫고, 추가·제거·편집·삭제는 disabled이며 state mutation 0 |
+| MF-01 | footer 첫 줄 제거 왼쪽·추가 오른쪽 | parity | P0 | 2차 상태의 desktop/mobile 실제 bbox로 좌우 순서 확인 | 좌우 bbox와 `- N차 제거`/`+ N차 추가` 문구 검증 |
+| MF-02 | 항상 보이는 완료 버튼과 저장 확정 | parity | P0 | scroll 전후 footer top 오차 1px 이하, 완료 직전 active input 즉시 저장 | phase 5까지 scroll해도 완료가 viewport 안에 있고 blur·기존 autosave flush 후 닫힘 |
+| MF-03 | 사용자 공종 삭제 danger 분리 | parity | P1 | body 끝 `chart-task-danger-zone`으로 이동 | body 끝 별도 danger 영역, footer에는 차수와 완료만 존재 |
+| MF-04 | 읽기 전용 닫기와 mutation 차단 | parity | P0 | read-only 완료/X 전후 전체 state JSON 동일 | 완료/X는 닫고, 추가·제거·편집·삭제는 disabled이며 state mutation 0 |
 | EX-01 | 화면·PNG·PDF 동일 2단 배치 | partial | P0 | 동일 DOM 캡처이지만 현재 DOM이 회귀 상태 | 실제 PNG와 PDF 렌더에서 고정 2단 좌표·행 높이 확인 |
 | QA-06 | desktop/mobile 실제 Chromium 회귀 | missing | P0 | 현 구현 기준선만 측정 | 1440x1000·390x844 조작, 캡처 직접 관찰, 오류·외부 mutation 0 |
 
@@ -67,6 +67,15 @@
 - 1일 폭 30px 막대에서도 `[N차]` 표식이 막대 경계 안에 남았고 상세 문구는 ellipsis 처리됐다. 전체 문구는 막대 `title`로 유지했다.
 - 막대 바깥 resize hit area는 보존하고 텍스트 span만 clip했다. 5개 차수 각각의 이동·왼쪽 시작일 조절·오른쪽 종료일 조절 15회를 실제 mouse로 수행했으며 비대상 차수는 바뀌지 않았고 각 조작의 undo가 원문 phase JSON으로 복원됐다.
 - Node test 16/16, typecheck, 정적 build, 전체 UI 회귀가 통과했다. UI 실행에서 외부 mutation·console error·page error·request failure는 각각 0건이었다.
+
+### Wave 3 체크포인트
+
+- footer 첫 줄은 CSS grid의 왼쪽 제거·오른쪽 추가 위치를 사용한다. 2차 상태에서 desktop/mobile 모두 실제 `remove.left < add.left`였고 문구는 `- 2차 제거`, `+ 3차 추가`였다.
+- 1차에서는 제거가 없고 추가가 오른쪽에, 5차에서는 추가가 없고 제거가 왼쪽에 남는다. 두 번째 줄의 `완료`는 첫 줄과 같은 전체 폭을 사용한다.
+- 5차 body를 끝까지 스크롤한 전후 footer top 차이는 1px 이하였다. desktop modal과 390x844 bottom sheet 모두 완료 버튼의 하단이 sheet와 viewport 안에 유지됐다.
+- focus된 4차 설명 input에서 곧바로 완료를 누른 뒤 800ms debounce를 기다리지 않고 local draft를 재파싱했다. 입력값이 저장됐고 modal은 닫혔다.
+- 읽기 전용에서는 완료와 X만 닫기로 동작했다. 두 경로와 직접 mutation 함수 호출 전후 전체 state JSON이 동일했다.
+- 사용자 공종 삭제는 scroll body 끝의 별도 danger 영역으로 이동했고 차수 footer에는 포함되지 않았다.
 
 ## 2026-08-07 차트 공종 관리 복구
 

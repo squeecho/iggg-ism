@@ -252,7 +252,9 @@ def run_chart_task_management(
     page.locator('.chart-task-name[data-task-id="1"]').click()
     page.locator("#chartTaskOv").wait_for(state="visible")
     assert page.evaluate("S.tasks.find(task => task.id === 1).on") == initial_on
-    assert page.locator('#chartTaskActions .delete-task-btn[data-task-id="1"]').count() == 0
+    assert page.locator('#chartTaskBody .delete-task-btn[data-task-id="1"]').count() == 0
+    assert page.locator("#chartTaskActions .chart-task-done").is_visible()
+    assert page.locator('#chartTaskActions .remove-phase-btn[data-task-id="1"]').count() == 0
     desktop_bounds = page.evaluate(
         """
         () => {
@@ -269,7 +271,56 @@ def run_chart_task_management(
     for expected_count in range(2, 6):
         page.locator('#chartTaskActions .add-phase-btn[data-task-id="1"]').click()
         assert page.evaluate("ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === 1))") == expected_count
+        if expected_count == 2:
+            footer_order = page.evaluate(
+                """
+                () => {
+                  const remove = document.querySelector('#chartTaskActions .remove-phase-btn').getBoundingClientRect();
+                  const add = document.querySelector('#chartTaskActions .add-phase-btn').getBoundingClientRect();
+                  return {
+                    removeLeft:remove.left,
+                    addLeft:add.left,
+                    removeText:document.querySelector('#chartTaskActions .remove-phase-btn').textContent.trim(),
+                    addText:document.querySelector('#chartTaskActions .add-phase-btn').textContent.trim()
+                  };
+                }
+                """
+            )
+            assert footer_order["removeLeft"] < footer_order["addLeft"]
+            assert footer_order["removeText"] == "- 2차 제거"
+            assert footer_order["addText"] == "+ 3차 추가"
     assert page.locator('#chartTaskActions .add-phase-btn[data-task-id="1"]').count() == 0
+    assert page.locator('#chartTaskActions .remove-phase-btn[data-task-id="1"]').inner_text() == "- 5차 제거"
+    sticky_footer = page.evaluate(
+        """
+        () => {
+          const body = document.getElementById('chartTaskBody');
+          const footer = document.getElementById('chartTaskActions');
+          const done = footer.querySelector('.chart-task-done');
+          const phaseActions = footer.querySelector('.chart-task-phase-actions');
+          const before = footer.getBoundingClientRect();
+          body.scrollTop = body.scrollHeight;
+          const after = footer.getBoundingClientRect();
+          const doneRect = done.getBoundingClientRect();
+          const actionRect = phaseActions.getBoundingClientRect();
+          const sheetRect = footer.closest('.chart-task-sheet').getBoundingClientRect();
+          return {
+            scrollTop:body.scrollTop,
+            stationary:Math.abs(before.top - after.top),
+            position:getComputedStyle(footer).position,
+            doneVisible:doneRect.top >= sheetRect.top && doneRect.bottom <= sheetRect.bottom + .5,
+            doneFullWidth:Math.abs(doneRect.width - actionRect.width) <= 1,
+            doneSecondRow:doneRect.top >= actionRect.bottom + 7
+          };
+        }
+        """
+    )
+    assert sticky_footer["scrollTop"] > 0
+    assert sticky_footer["stationary"] <= 1
+    assert sticky_footer["position"] == "sticky"
+    assert sticky_footer["doneVisible"] is True
+    assert sticky_footer["doneFullWidth"] is True
+    assert sticky_footer["doneSecondRow"] is True
 
     phase_snapshot = page.evaluate(
         "ScheduleCore.getTaskPhases(S.tasks.find(task => task.id === 1), {activeOnly:true})"
@@ -316,7 +367,20 @@ def run_chart_task_management(
     assert independent_phase_result["othersUnchanged"] is True
     if screenshot_dir:
         page.screenshot(path=str(screenshot_dir / "chart-phase-desktop.png"), full_page=False)
-    page.locator("#chartTaskOv .chart-task-close").click()
+    final_desc = page.locator('#chartTaskBody .chart-manager-desc[data-task-id="1"][data-phase="4"]')
+    final_desc.fill("완료 버튼 즉시 저장")
+    page.locator("#chartTaskActions .chart-task-done").click()
+    page.locator("#chartTaskOv").wait_for(state="hidden")
+    immediate_persist = page.evaluate(
+        """
+        () => {
+          const record = JSON.parse(localStorage.getItem('cs_recent')).find(item => item.pn === 'Chart Manager QA');
+          const restored = ScheduleCore.normalizeScheduleState(JSON.parse(record.snap));
+          return ScheduleCore.getTaskPhase(restored.tasks.find(task => task.id === 1), 4).desc;
+        }
+        """
+    )
+    assert immediate_persist == "완료 버튼 즉시 저장"
     pointer_edit_operations = exercise_phase_pointer_edits(page, 1)
     assert pointer_edit_operations == 15
     assert_two_lane_geometry(read_two_lane_geometry(page, [1, 2, 3, 4, 5]))
@@ -344,7 +408,9 @@ def run_chart_task_management(
     page.locator("#chartCustomName").fill("차트 사용자 공종 B")
     page.locator("#chartCustomSave").click()
     custom_b = page.evaluate("S.tasks.find(task => task.name === '차트 사용자 공종 B').id")
-    page.locator(f'#chartTaskActions .delete-task-btn[data-task-id="{custom_b}"]').click()
+    assert page.locator(f'#chartTaskBody .chart-task-danger-zone .delete-task-btn[data-task-id="{custom_b}"]').count() == 1
+    assert page.locator(f'#chartTaskActions .delete-task-btn[data-task-id="{custom_b}"]').count() == 0
+    page.locator(f'#chartTaskBody .delete-task-btn[data-task-id="{custom_b}"]').click()
     page.locator("#igConfirmOk").click()
     assert page.evaluate(f"S.tasks.some(task => task.id === {custom_b})") is False
     page.evaluate("doUndo()")
@@ -417,7 +483,8 @@ def run_chart_task_management(
     page.locator('.chart-task-name[data-task-id="1"]').click()
     assert page.locator('#chartTaskBody input:not([disabled])').count() == 0
     assert page.locator('#chartTaskBody .chart-task-date:not([disabled])').count() == 0
-    assert page.locator('#chartTaskActions button:not([disabled])').count() == 0
+    assert page.locator('#chartTaskActions .chart-task-action:not([disabled])').count() == 0
+    assert page.locator('#chartTaskActions .chart-task-done:not([disabled])').count() == 1
     page.evaluate(
         f"""
         () => {{
@@ -431,7 +498,13 @@ def run_chart_task_management(
         """
     )
     assert page.evaluate("JSON.stringify(S)") == readonly_before
+    page.locator("#chartTaskActions .chart-task-done").click()
+    page.locator("#chartTaskOv").wait_for(state="hidden")
+    assert page.evaluate("JSON.stringify(S)") == readonly_before
+    page.locator('.chart-task-name[data-task-id="1"]').click()
     page.locator("#chartTaskOv .chart-task-close").click()
+    page.locator("#chartTaskOv").wait_for(state="hidden")
+    assert page.evaluate("JSON.stringify(S)") == readonly_before
     page.evaluate("IS_RO = false; rChart();")
     mobile_state = page.evaluate("JSON.parse(JSON.stringify(S))")
 
@@ -472,6 +545,28 @@ def run_chart_task_management(
     assert_two_lane_geometry(mobile_two_lane)
     if screenshot_dir:
         mobile_page.locator("#pc").screenshot(path=str(screenshot_dir / "chart-two-lane-mobile.png"))
+    mobile_page.locator('.chart-task-name[data-task-id="2"]').tap()
+    mobile_footer_order = mobile_page.evaluate(
+        """
+        () => {
+          const remove = document.querySelector('#chartTaskActions .remove-phase-btn').getBoundingClientRect();
+          const add = document.querySelector('#chartTaskActions .add-phase-btn').getBoundingClientRect();
+          const done = document.querySelector('#chartTaskActions .chart-task-done').getBoundingClientRect();
+          const sheet = document.querySelector('#chartTaskOv .chart-task-sheet').getBoundingClientRect();
+          return {
+            removeLeft:remove.left,
+            addLeft:add.left,
+            doneVisible:done.top >= sheet.top && done.bottom <= sheet.bottom + .5,
+            footerPosition:getComputedStyle(document.getElementById('chartTaskActions')).position
+          };
+        }
+        """
+    )
+    assert mobile_footer_order["removeLeft"] < mobile_footer_order["addLeft"]
+    assert mobile_footer_order["doneVisible"] is True
+    assert mobile_footer_order["footerPosition"] == "sticky"
+    mobile_page.locator("#chartTaskActions .chart-task-done").tap()
+    mobile_page.locator("#chartTaskOv").wait_for(state="hidden")
     mobile_page.locator('.chart-task-name[data-task-id="1"]').tap()
     mobile_bounds = mobile_page.evaluate(
         """
@@ -486,10 +581,32 @@ def run_chart_task_management(
     assert mobile_bounds["right"] <= mobile_bounds["width"]
     assert mobile_bounds["bottom"] <= mobile_bounds["height"]
     assert mobile_bounds["overflow"] == "auto"
+    mobile_sticky = mobile_page.evaluate(
+        """
+        () => {
+          const body = document.getElementById('chartTaskBody');
+          const footer = document.getElementById('chartTaskActions');
+          const before = footer.getBoundingClientRect();
+          body.scrollTop = body.scrollHeight;
+          const after = footer.getBoundingClientRect();
+          const done = footer.querySelector('.chart-task-done').getBoundingClientRect();
+          return {
+            scrollTop:body.scrollTop,
+            stationary:Math.abs(before.top - after.top),
+            doneBottom:done.bottom,
+            viewport:innerHeight
+          };
+        }
+        """
+    )
+    assert mobile_sticky["scrollTop"] > 0
+    assert mobile_sticky["stationary"] <= 1
+    assert mobile_sticky["doneBottom"] <= mobile_sticky["viewport"]
     mobile_page.wait_for_timeout(400)
     if screenshot_dir:
         mobile_page.screenshot(path=str(screenshot_dir / "chart-phase-mobile.png"), full_page=False)
-    mobile_page.locator("#chartTaskOv .chart-task-close").tap()
+    mobile_page.locator("#chartTaskActions .chart-task-done").tap()
+    mobile_page.locator("#chartTaskOv").wait_for(state="hidden")
     mobile_page.locator("#chartAddTask").tap()
     mobile_page.locator("#chartCustomName").fill("모바일 사용자 공종")
     if screenshot_dir:
