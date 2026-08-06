@@ -39,16 +39,16 @@
 
 | ID | 목표 | 상태 | 우선순위 | 현재 근거 | 완료 기준 |
 |---|---|---:|---:|---|---|
-| ND-01 | 5개 세로선 long-press drag | missing | P0 | 과거 함수 삭제, 현재 `onclick`만 존재 | mouse/touch 5개 모두 long-press 후 날짜 칸 단위 이동 |
-| ND-02 | 짧은 선 click은 달력 0회 | deviant | P0 | 현재 `onclick=openNCal` | click/tap과 drag 종료 click 모두 달력 미표시 |
-| ND-03 | 활성 피드백과 실시간 tooltip | missing | P1 | dragging CSS만 잔존 | 활성 색상·햅틱·안내와 항목명·날짜 tooltip 표시 |
-| ND-04 | drag 종료 단일 undo/autosave | missing | P0 | 현재 drag 종료 경로 없음 | 변경 1회당 undo snapshot 1개, autosave 예약/지속화 1개 |
-| ND-05 | drag의 `dateMode=manual` 정본화 | missing | P0 | 과거는 `n.dt` 직접 대입 | `ScheduleCore.setNoteManualDate`만 사용하고 자동 복귀 계산 일치 |
-| NC-01 | 하단 카드에서 공유 날짜 달력 열기 | missing | P0 | `rSC()` 카드가 정적 | 카드 click/keyboard로 기존 `openNCal` 열기 |
-| NC-02 | 카드·선·상단 헤더 즉시 동기화 | partial | P0 | 세 소비 경로는 `nDt()` 공유, 카드 mutation 진입점 없음 | 어느 경로로 변경해도 세 화면이 같은 날짜를 즉시 표시 |
+| ND-01 | 5개 세로선 long-press drag | parity | P0 | 공통 Pointer Event 경로와 650ms 활성 게이트 | mouse/touch 5개 모두 long-press 후 날짜 칸 단위 이동 |
+| ND-02 | 짧은 선 click은 달력 0회 | parity | P0 | 선 click은 소비하고 달력 handler를 제거 | click/tap과 drag 종료 click 모두 달력 미표시 |
+| ND-03 | 활성 피드백과 실시간 tooltip | parity | P1 | 녹색 활성선·햅틱·안내·항목명/날짜 tooltip | 활성 색상·햅틱·안내와 항목명·날짜 tooltip 표시 |
+| ND-04 | drag 종료 단일 undo/autosave | parity | P0 | pointerup에서만 정본 커밋, 취소는 preview 폐기 | 변경 1회당 undo snapshot 1개, autosave 예약/지속화 1개 |
+| ND-05 | drag의 `dateMode=manual` 정본화 | parity | P0 | 커밋 시 `ScheduleCore.setNoteManualDate` 사용 | `ScheduleCore.setNoteManualDate`만 사용하고 자동 복귀 계산 일치 |
+| NC-01 | 하단 카드에서 공유 날짜 달력 열기 | parity | P0 | 카드 click/keyboard가 기존 `openNCal` 사용 | 카드 click/keyboard로 기존 `openNCal` 열기 |
+| NC-02 | 카드·선·상단 헤더 즉시 동기화 | parity | P0 | 두 mutation 경로가 같은 note와 `rChart()`를 공유 | 어느 경로로 변경해도 세 화면이 같은 날짜를 즉시 표시 |
 | NC-03 | 기간 밖 수동 날짜 보존·경고 | parity | P0 | 기존 core와 편집 UI 테스트 존재 | 새 경로 이후에도 reload·기간 변경에서 날짜 보존 및 경고 유지 |
-| ND-06 | 읽기 전용 mutation 차단 | partial | P0 | 달력은 `IS_RO` 차단, drag는 미구현 | 선 drag와 카드 편집 모두 시작 불가, state/저장 불변 |
-| QA-07 | desktop/mobile 5개 양방향 회귀 | missing | P0 | 기존 UI 테스트에 note pointer 상호작용 없음 | 5개 mouse/touch, undo/redo/reload, 오류·외부 mutation 0 |
+| ND-06 | 읽기 전용 mutation 차단 | parity | P0 | 선 handler와 카드 role 자체를 렌더하지 않음 | 선 drag와 카드 편집 모두 시작 불가, state/저장 불변 |
+| QA-07 | desktop/mobile 5개 양방향 회귀 | parity | P0 | 실제 mouse/CDP touch 20개 편집과 10개 readonly 입력 | 5개 mouse/touch, undo/redo/reload, 오류·외부 mutation 0 |
 
 ### 이번 Wave 계획
 
@@ -58,6 +58,27 @@
 | 2 | 5개 세로선 공통 pointer long-press drag | click 억제, snap, tooltip, manual 전환, 단일 undo/autosave 테스트 |
 | 3 | 하단 카드의 기존 달력 연결과 양방향 회귀 | desktop/mobile 5개, 자동 복귀, undo/redo/reload, 캡처 |
 | 4 | 전체 회귀·Preview·Production | test/typecheck/build/UI와 안전한 Preview 검증 후에만 main fast-forward |
+
+### Wave 2 체크포인트
+
+- 세로선은 짧은 click/tap에서 달력을 0회 열고, 650ms long-press 뒤에만 녹색 활성선·30ms 햅틱·`좌우로 이동하세요` 안내와 항목명/변경 날짜 tooltip을 표시한다.
+- drag 중에는 DOM 선 위치만 미리 보이고 상태 정본은 바꾸지 않는다. 정상 `pointerup`에서만 `ScheduleCore.setNoteManualDate()`를 호출해 한 undo snapshot과 한 autosave를 만든다.
+- `pointercancel`과 창 blur는 preview를 원위치로 렌더하고 상태·undo·autosave를 0건으로 유지한다. 시작 날짜로 되돌아온 drag도 no-op이다.
+
+### Wave 3 체크포인트
+
+- 하단 카드 5개는 기존 `openNCal()`과 공유 달력을 사용한다. 카드 날짜 선택 직후 카드·차트 선·상단 날짜 라벨이 같은 note를 다시 읽어 함께 갱신된다.
+- 자동 날짜를 drag 또는 달력으로 바꾸면 해당 note만 manual이 되고, 편집 탭의 기존 자동 버튼으로 되돌리면 현재 공사기간의 계산 날짜가 세 화면에 함께 복원된다.
+- 변경 선택은 undo/autosave 각 1회와 실제 local draft 지속화를 확인했다. 이미 manual인 같은 날짜 재선택은 undo/autosave 0건이다.
+- 5개 중 이동식 가구는 공사기간 밖 합성 날짜를 선택해 경고 표시와 저장·reload 보존을 확인했다. 읽기 전용 desktop/mobile에서는 5개 선과 카드 모두 mutation 0건이었다.
+
+### Wave 4 로컬 최종 게이트
+
+- `npm test` 16/16, `npm run typecheck`, `npm run build`, `npm run test:ui`, `git diff --check`가 통과했다.
+- 실제 Chromium 1440x1000과 390x844에서 각각 세로선 5회, 카드 달력 5회, 동일 날짜 no-op 5회, 읽기 전용 drag 시도 5회를 실행했다. desktop/mobile reload도 5개 manual 날짜와 정확히 일치했다.
+- console error, page error, request failure, 예상 밖 네트워크 mutation은 모두 0건이었다. Calendar config만 로컬 합성 응답했고 Firebase와 Google Calendar의 실제 요청은 수행하지 않았다.
+- 직접 관찰 캡처: `/tmp/ig-ism-note-date-deploy-gate/note-drag-active-desktop.png`, `/tmp/ig-ism-note-date-deploy-gate/note-calendar-desktop.png`, `/tmp/ig-ism-note-date-deploy-gate/note-bidirectional-desktop.png`, `/tmp/ig-ism-note-date-deploy-gate/note-drag-active-mobile.png`, `/tmp/ig-ism-note-date-deploy-gate/note-calendar-mobile.png`, `/tmp/ig-ism-note-date-deploy-gate/note-bidirectional-mobile.png`.
+- 캡처에서 활성선·tooltip, 공유 달력, 다섯 카드와 다섯 날짜선의 동기화를 직접 확인했다. 모바일 카드의 기본 tap highlight가 달력 위에 남던 transient 표시도 제거했으며 겹침·잘림·화면 이탈은 확인되지 않았다.
 
 ## 2026-08-07 차트 고정 2단과 공종 관리 footer 복구
 
