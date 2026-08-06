@@ -27,22 +27,22 @@
 
 상태 값: `parity` 충족, `partial` 일부 충족, `deviant` 의도와 다른 구현, `missing` 미구현, `oos` 이번 범위 밖.
 
-| ID | 목표 | 착수 상태 | 우선순위 | 현재 근거 | 완료 기준 |
+| ID | 목표 | 상태 | 우선순위 | 현재 근거 | 완료 기준 |
 |---|---|---:|---:|---|---|
-| C1-01 | 차트 공종명 클릭으로 차수 관리 열기 | deviant | P0 | `chartTaskClick`이 `togT` 호출 | 클릭 전후 `task.on` 불변, desktop modal/mobile sheet 열림 |
-| C1-02 | 1~5차 순차 추가·마지막 제거 | partial | P0 | core CRUD와 편집 탭 UI는 존재하나 차트 진입점 없음 | 기존 CRUD·undo·autosave로 1→5→1, 5차 초과 및 1차 제거 차단 |
-| C1-03 | 차수 이름·설명·기간 독립 편집 | partial | P0 | flat phase 필드와 date picker는 존재 | 4차 수정 시 1~3·5차와 mode 불변, 직접 날짜만 해당 phase manual 전환 |
-| C1-04 | 확정 현장 열람 전용 관리 | missing | P0 | 현 `chartTaskClick`은 `IS_RO`에서 UI도 열지 않음 | 조회 source는 `_cloudView || S`, 모든 mutation entry는 `IS_RO`에서 차단 |
-| C2-01 | 차트에서 사용자 공종 생성·삭제 | missing | P0 | create/delete core와 편집 탭 wrapper만 존재 | toolbar 생성, 생성 직후 관리 열기, 사용자 공종만 확인 후 삭제 |
-| C2-02 | 공통 표시 순서 | deviant | P0 | raw `tasks[]` 순회와 custom 후미 append | 편집·차트·통합·업체·자동배치·Calendar가 기타-사용자-가스-청소 계약 공유 |
+| C1-01 | 차트 공종명 클릭으로 차수 관리 열기 | parity | P0 | `chartTaskClick`이 공통 관리 sheet를 열고 활성 변경은 별도 toggle만 수행 | 클릭 전후 `task.on` 불변, desktop modal/mobile sheet 열림 |
+| C1-02 | 1~5차 순차 추가·마지막 제거 | parity | P0 | 차트 action이 기존 `addTaskPhase`/`removeTaskPhase` wrapper를 호출 | 기존 CRUD·undo·autosave로 1→5→1, 5차 초과 및 1차 제거 차단 |
+| C1-03 | 차수 이름·설명·기간 독립 편집 | parity | P0 | `updateTaskPhase`와 기존 `tcal` date picker를 재사용 | 4차 수정 시 1~3·5차와 mode 불변, 직접 날짜만 해당 phase manual 전환 |
+| C1-04 | 확정 현장 열람 전용 관리 | parity | P0 | 조회는 `_cloudView || S`, mutation 함수와 control은 read-only 차단 | 조회 source는 `_cloudView || S`, 모든 mutation entry는 `IS_RO`에서 차단 |
+| C2-01 | 차트에서 사용자 공종 생성·삭제 | parity | P0 | toolbar 생성 modal과 기존 create/delete wrapper를 연결 | toolbar 생성, 생성 직후 관리 열기, 사용자 공종만 확인 후 삭제 |
+| C2-02 | 공통 표시 순서 | parity | P0 | 확장된 `orderedTaskIds`/`orderedTasks`를 모든 소비 화면에서 사용 | 편집·차트·통합·업체·자동배치·Calendar가 기타-사용자-가스-청소 계약 공유 |
 | C2-03 | 안정적 ID와 legacy 저장 호환 | parity | P0 | `createCustomTask` 충돌 회피 ID, 전체 state 직렬화 | 배열과 ID를 재번호화하지 않고 reload/cloud/undo 후 순서·ID 불변 |
-| C2-04 | 명시적 활성 토글 | partial | P0 | 편집 탭 toggle은 존재, 차트 이름 클릭과 결합됨 | 관리 UI의 별도 toggle만 `task.on`을 변경 |
-| C3-01 | 데스크톱 compact modal | missing | P1 | 기존 `.ov/.mo` modal primitive 존재 | 1440x1000에서 차트 위 표시, viewport 이탈·겹침 0 |
-| C3-02 | 모바일 bottom sheet | missing | P1 | 기존 date picker가 mobile bottom sheet 패턴 사용 | 390x844에서 safe-area 포함, 내부 scroll, 잘림·이탈 0 |
-| C3-03 | PDF·이미지 출력에서 편집 UI 제외 | partial | P1 | `.ca`와 runtime `.no-print` 숨김은 있으나 print CSS의 `.no-print` 누락 | chart toolbar/overlay가 브라우저 print와 PDF·이미지에 포함되지 않음 |
-| QA-04 | 차트 공종 관리 자동 회귀 | missing | P0 | edit-only phase/custom 회귀만 존재 | 순수 core, undo/redo, reload/cloud, read-only mutation 0 검증 |
-| QA-05 | 실제 Chromium 조작·캡처 | missing | P0 | 기존 합성 격리 하니스 존재 | desktop/mobile 실제 조작, console/page/request failure 및 비-GET mutation 0 |
-| OPS-02 | feature Preview 검증 | missing | P1 | Production branch는 `main`, Preview 보호 활성 | feature non-force push, exact SHA Preview READY 및 기존 인증 세션 범위에서 검증 |
+| C2-04 | 명시적 활성 토글 | parity | P0 | 관리 sheet에 별도 active toggle 제공 | 관리 UI의 별도 toggle만 `task.on`을 변경 |
+| C3-01 | 데스크톱 compact modal | parity | P1 | 640px sheet, 고정 header/action과 내부 scroll | 1440x1000에서 차트 위 표시, viewport 이탈·겹침 0 |
+| C3-02 | 모바일 bottom sheet | parity | P1 | 92dvh, safe-area padding, body overscroll containment | 390x844에서 safe-area 포함, 내부 scroll, 잘림·이탈 0 |
+| C3-03 | PDF·이미지 출력에서 편집 UI 제외 | parity | P1 | toolbar/overlay `no-print`, print CSS와 runtime capture 모두 숨김 | chart toolbar/overlay가 브라우저 print와 PDF·이미지에 포함되지 않음 |
+| QA-04 | 차트 공종 관리 자동 회귀 | parity | P0 | core 16건과 chart 합성 UI 시나리오 | 순수 core, undo/redo, reload/cloud, read-only mutation 0 검증 |
+| QA-05 | 실제 Chromium 조작·캡처 | parity | P0 | 1440x1000/390x844 실제 Chromium 조작·bbox·캡처 | desktop/mobile 실제 조작, console/page/request failure 및 비-GET mutation 0 |
+| OPS-02 | feature Preview 검증 | partial | P1 | Production branch는 `main`, Preview 보호 활성 | feature non-force push, exact SHA Preview READY 및 기존 인증 세션 범위에서 검증 |
 
 ### 이번 Wave 계획
 
@@ -51,6 +51,18 @@
 | 1 | 감사 기준선과 경쟁 가설 | 코드·Git 이력·기준 테스트 증거를 문서화하고 별도 `[audit]` 커밋 |
 | 2 | 공통 ordering과 차트 공종/차수 관리 | core 및 UI 회귀, undo·저장·cloud 호환, read-only mutation 0 |
 | 3 | 반응형·출력·실제 Chromium 회귀 | 1440x1000/390x844 캡처 직접 관찰, 전체 test/typecheck/build/UI와 네트워크 오류 0 |
+
+### 2026-08-07 체크포인트
+
+- 순수 계약: Node test 16/16 통과. 신규 사용자 공종은 `customOrder`를 저장하고 legacy는 직렬화된 최초 출현 순서를 fallback으로 사용한다. 저장 배열과 안정적 숫자 ID는 변경하지 않는다.
+- 차수 관리: 실제 차트 공종명 클릭 전후 `task.on`이 유지됐다. 기존 phase wrapper로 1→5차 추가, 5→1차 마지막 제거, 5차 초과 차단, undo/redo 수렴을 검증했다.
+- 독립 편집: 4차 이름·설명·날짜를 차트 sheet에서 변경한 뒤 1~3·5차 JSON이 동일했고 4차만 `manual`로 전환됐다.
+- 사용자 공종: 차트에서 공종 A/B를 순차 생성하고 `기타공사 → A → B → 가스공사 → 준공청소`를 확인했다. 삭제·undo·redo·autosave·JSON reload 뒤 ID와 순서가 유지됐고 사용자 공종 A의 5개 차수가 편집 탭과 같은 상태를 공유했다.
+- 소비 경로: 편집, 차트, 업체 관리, 자동배치, 통합 일정, Google Calendar queue/hash가 공통 ordering helper를 사용한다. 브라우저 print와 PDF·이미지 runtime의 `no-print` 계약도 확인했다.
+- 읽기 전용: 확정 상태에서 sheet는 열렸지만 input/date/action과 상단 추가 버튼이 비활성화됐고 직접 mutation 함수 호출 전후 전체 state JSON이 동일했다.
+- 시각 검증: `/tmp/ig-ism-chart-task-20260807-final/chart-phase-desktop.png`, `chart-custom-desktop.png`, `chart-phase-mobile.png`, `chart-custom-mobile.png`를 직접 열어 내부 scroll 외 잘림, 겹침, viewport 이탈이 없음을 확인했다.
+- 격리 안전: Chromium console error 0, page error 0, request failure 0, 외부 비-GET mutation 0. 운영 Firebase와 Google Calendar는 사용하지 않았다.
+- Preview: feature push 전이므로 exact SHA Preview 검증만 남아 있다. `main`과 Production은 변경하지 않는다.
 
 ## 저장 및 실행 흐름 기준선
 

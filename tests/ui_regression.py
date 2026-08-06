@@ -16,6 +16,322 @@ class QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
+def run_chart_task_management(
+    browser,
+    origin,
+    route_request,
+    screenshot_dir,
+    console_errors,
+    page_errors,
+    request_failures,
+):
+    context = browser.new_context(viewport={"width": 1440, "height": 1000})
+    context.add_init_script(
+        """
+        window.__ISM_TEST_MODE__ = true;
+        localStorage.clear();
+        sessionStorage.clear();
+        localStorage.setItem('_deviceName', 'chart-task-qa');
+        localStorage.setItem('_gcalEnabled', '0');
+        """
+    )
+    context.route("**/*", route_request)
+    page = context.new_page()
+    page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.on("requestfailed", lambda request: request_failures.append(f"{request.method} {request.url}"))
+    page.goto(origin + "/", wait_until="domcontentloaded")
+    page.evaluate(
+        """
+        () => {
+          const state = defaultState();
+          state.pn = 'Chart Manager QA';
+          state.sd = '2026-08-05';
+          state.ed = '2026-09-01';
+          state.tasks.forEach((task, index) => {
+            task.on = true;
+            task.sd = addD(state.sd, Math.min(index, 10));
+            task.ed = addD(task.sd, 2);
+            task.scheduleMode = 'auto';
+          });
+          const record = {
+            pn:state.pn, sd:state.sd, ed:state.ed, confirmed:false,
+            savedAt:'2026-08-07 09:00', snap:JSON.stringify(state)
+          };
+          localStorage.setItem('cs_recent', JSON.stringify([record]));
+          localStorage.setItem('cs_last', state.pn);
+          S = ScheduleCore.normalizeScheduleState(state);
+          _origPn = state.pn;
+          _cancelPn = null;
+          _open = null;
+          IS_RO = false;
+          _cloudEditing = null;
+          _cloudView = null;
+          _cloudSites = [];
+          _cloudInventoryReady = true;
+          _fbReady = false;
+          _db = null;
+          calInit(); sync(); rEdit(); rChips(); sw('c'); rChart();
+        }
+        """
+    )
+
+    initial_on = page.evaluate("S.tasks.find(task => task.id === 1).on")
+    page.locator('.chart-task-name[data-task-id="1"]').click()
+    page.locator("#chartTaskOv").wait_for(state="visible")
+    assert page.evaluate("S.tasks.find(task => task.id === 1).on") == initial_on
+    assert page.locator('#chartTaskActions .delete-task-btn[data-task-id="1"]').count() == 0
+    desktop_bounds = page.evaluate(
+        """
+        () => {
+          const rect = document.querySelector('#chartTaskOv .chart-task-sheet').getBoundingClientRect();
+          return {left:rect.left, top:rect.top, right:rect.right, bottom:rect.bottom,
+                  width:innerWidth, height:innerHeight};
+        }
+        """
+    )
+    assert desktop_bounds["left"] >= 0 and desktop_bounds["top"] >= 0
+    assert desktop_bounds["right"] <= desktop_bounds["width"]
+    assert desktop_bounds["bottom"] <= desktop_bounds["height"]
+
+    for expected_count in range(2, 6):
+        page.locator('#chartTaskActions .add-phase-btn[data-task-id="1"]').click()
+        assert page.evaluate("ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === 1))") == expected_count
+    assert page.locator('#chartTaskActions .add-phase-btn[data-task-id="1"]').count() == 0
+
+    phase_snapshot = page.evaluate(
+        "ScheduleCore.getTaskPhases(S.tasks.find(task => task.id === 1), {activeOnly:true})"
+    )
+    for expected_count in range(4, 0, -1):
+        page.locator('#chartTaskActions .remove-phase-btn[data-task-id="1"]').click()
+        assert page.evaluate("ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === 1))") == expected_count
+    assert page.locator('#chartTaskActions .remove-phase-btn[data-task-id="1"]').count() == 0
+    page.evaluate("doUndo()")
+    assert page.evaluate("ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === 1))") == 2
+    page.evaluate("doRedo()")
+    assert page.evaluate("ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === 1))") == 1
+    for _ in range(4):
+        page.evaluate("doUndo()")
+    assert page.evaluate("ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === 1))") == 5
+
+    phase_four_name = page.locator('#chartTaskBody .chart-manager-name[data-task-id="1"][data-phase="4"]')
+    phase_four_name.fill("차트 4차")
+    phase_four_name.press("Tab")
+    phase_four_desc = page.locator('#chartTaskBody .chart-manager-desc[data-task-id="1"][data-phase="4"]')
+    phase_four_desc.fill("차트에서 독립 수정")
+    phase_four_desc.press("Tab")
+    page.locator('#chartTaskBody .chart-task-date[data-task-id="1"][data-phase="4"]').click()
+    page.locator('#tcalOv .tcal-dn[data-ds="2026-08-19"]').click()
+    page.locator('#tcalOv .tcal-dn[data-ds="2026-08-20"]').click()
+    page.locator("#chartTaskOv").wait_for(state="visible")
+    independent_phase_result = page.evaluate(
+        """
+        before => {
+          const phases = ScheduleCore.getTaskPhases(S.tasks.find(task => task.id === 1), {activeOnly:true});
+          return {
+            fourth:phases[3],
+            othersUnchanged:phases.every((phase, index) => index === 3 || JSON.stringify(phase) === JSON.stringify(before[index]))
+          };
+        }
+        """,
+        phase_snapshot,
+    )
+    assert independent_phase_result["fourth"]["name"] == "차트 4차"
+    assert independent_phase_result["fourth"]["desc"] == "차트에서 독립 수정"
+    assert independent_phase_result["fourth"]["sd"] == "2026-08-19"
+    assert independent_phase_result["fourth"]["ed"] == "2026-08-20"
+    assert independent_phase_result["fourth"]["mode"] == "manual"
+    assert independent_phase_result["othersUnchanged"] is True
+    if screenshot_dir:
+        page.screenshot(path=str(screenshot_dir / "chart-phase-desktop.png"), full_page=False)
+    page.locator("#chartTaskOv .chart-task-close").click()
+
+    page.locator("#chartAddTask").click()
+    page.locator("#chartCustomName").fill("차트 사용자 공종 A")
+    page.locator("#chartCustomDesc").fill("차트 생성")
+    page.locator("#chartCustomDates").click()
+    page.locator('#tcalOv .tcal-dn[data-ds="2026-08-24"]').click()
+    page.locator('#tcalOv .tcal-dn[data-ds="2026-08-25"]').click()
+    page.locator("#chartCustomOv").wait_for(state="visible")
+    page.locator("#chartCustomSave").click()
+    page.locator("#chartTaskOv").wait_for(state="visible")
+    custom_a = page.evaluate("S.tasks.find(task => task.name === '차트 사용자 공종 A').id")
+    for expected_count in range(2, 6):
+        page.locator(f'#chartTaskActions .add-phase-btn[data-task-id="{custom_a}"]').click()
+        assert page.evaluate(
+            f"ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === {custom_a}))"
+        ) == expected_count
+    if screenshot_dir:
+        page.screenshot(path=str(screenshot_dir / "chart-custom-desktop.png"), full_page=False)
+    page.locator("#chartTaskOv .chart-task-close").click()
+
+    page.locator("#chartAddTask").click()
+    page.locator("#chartCustomName").fill("차트 사용자 공종 B")
+    page.locator("#chartCustomSave").click()
+    custom_b = page.evaluate("S.tasks.find(task => task.name === '차트 사용자 공종 B').id")
+    page.locator(f'#chartTaskActions .delete-task-btn[data-task-id="{custom_b}"]').click()
+    page.locator("#igConfirmOk").click()
+    assert page.evaluate(f"S.tasks.some(task => task.id === {custom_b})") is False
+    page.evaluate("doUndo()")
+    order_after_undo = page.evaluate(
+        "Array.from(document.querySelectorAll('#gt tbody tr')).map(row => Number(row.dataset.taskId))"
+    )
+    tail = [13, custom_a, custom_b, 12, 14]
+    assert [task_id for task_id in order_after_undo if task_id in tail] == tail
+    assert page.evaluate(f"S.tasks.find(task => task.id === {custom_a}).id") == custom_a
+    assert page.evaluate(f"S.tasks.find(task => task.id === {custom_b}).id") == custom_b
+    page.evaluate("doRedo()")
+    assert page.evaluate(f"S.tasks.some(task => task.id === {custom_b})") is False
+
+    page.locator("#tabs > #te").click()
+    shared_state = page.evaluate(
+        f"""
+        () => {{
+          const editOrder = Array.from(document.querySelectorAll('#tl .tc')).map(card => Number(card.dataset.taskId));
+          const vendorOrder = Array.from(document.querySelectorAll('#ctorMgrList .ctor-mgr-item')).map(item => Number(item.dataset.taskId));
+          const cloud = JSON.parse(JSON.stringify(S));
+          _cloudSites = [cloud];
+          return {{
+            editOrder,
+            vendorOrder,
+            integratedOrder:igTaskOrder(),
+            autoOrder:ScheduleCore.orderedTaskIds([S], [1,2,3,4,5,6,7,8,9,10,11,13,12,14]),
+            phaseCount:ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === {custom_a})),
+            stableId:S.tasks.find(task => task.name === '차트 사용자 공종 A').id
+          }};
+        }}
+        """
+    )
+    expected_tail = [13, custom_a, 12, 14]
+    for key in ("editOrder", "vendorOrder", "integratedOrder", "autoOrder"):
+        assert [task_id for task_id in shared_state[key] if task_id in expected_tail] == expected_tail
+    assert shared_state["phaseCount"] == 5
+    assert shared_state["stableId"] == custom_a
+
+    page.emulate_media(media="print")
+    assert page.locator("#chartAddTask").is_visible() is False
+    assert page.evaluate("getComputedStyle(document.querySelector('#chartAddTask').closest('.no-print')).display") == "none"
+    assert page.locator("#chartTaskOv").is_visible() is False
+    page.emulate_media(media="screen")
+
+    page.wait_for_timeout(950)
+    persisted = page.evaluate(
+        f"""
+        () => {{
+          const record = JSON.parse(localStorage.getItem('cs_recent')).find(item => item.pn === 'Chart Manager QA');
+          const restored = ScheduleCore.normalizeScheduleState(JSON.parse(record.snap));
+          const custom = restored.tasks.find(task => task.id === {custom_a});
+          return {{
+            phaseCount:ScheduleCore.getTaskPhaseCount(restored.tasks.find(task => task.id === 1)),
+            customPhaseCount:ScheduleCore.getTaskPhaseCount(custom),
+            customOrder:ScheduleCore.orderedTasks(restored.tasks).map(task => task.id),
+            stableId:custom.id
+          }};
+        }}
+        """
+    )
+    assert persisted["phaseCount"] == 5
+    assert persisted["customPhaseCount"] == 5
+    assert persisted["stableId"] == custom_a
+    assert [task_id for task_id in persisted["customOrder"] if task_id in expected_tail] == expected_tail
+
+    page.locator("#tabs > #tc2").click()
+    page.evaluate("IS_RO = true; rChart();")
+    assert page.locator("#chartAddTask").is_disabled()
+    readonly_before = page.evaluate("JSON.stringify(S)")
+    page.locator('.chart-task-name[data-task-id="1"]').click()
+    assert page.locator('#chartTaskBody input:not([disabled])').count() == 0
+    assert page.locator('#chartTaskBody .chart-task-date:not([disabled])').count() == 0
+    assert page.locator('#chartTaskActions button:not([disabled])').count() == 0
+    page.evaluate(
+        f"""
+        () => {{
+          chartToggleTask(1);
+          addTaskPhase(1);
+          removeTaskPhase(1);
+          chartUpdateTaskPhase(1, 1, 'name', '차단 실패');
+          deleteCustomTaskConfirm({custom_a});
+          openChartCustomTask();
+        }}
+        """
+    )
+    assert page.evaluate("JSON.stringify(S)") == readonly_before
+    page.locator("#chartTaskOv .chart-task-close").click()
+    page.evaluate("IS_RO = false; rChart();")
+    mobile_state = page.evaluate("JSON.parse(JSON.stringify(S))")
+
+    mobile_context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
+    mobile_context.add_init_script(
+        """
+        window.__ISM_TEST_MODE__ = true;
+        localStorage.clear();
+        sessionStorage.clear();
+        localStorage.setItem('_deviceName', 'chart-task-mobile-qa');
+        localStorage.setItem('_gcalEnabled', '0');
+        """
+    )
+    mobile_context.route("**/*", route_request)
+    mobile_page = mobile_context.new_page()
+    mobile_page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
+    mobile_page.on("pageerror", lambda error: page_errors.append(str(error)))
+    mobile_page.on("requestfailed", lambda request: request_failures.append(f"{request.method} {request.url}"))
+    mobile_page.goto(origin + "/", wait_until="domcontentloaded")
+    mobile_page.evaluate(
+        """
+        state => {
+          S = ScheduleCore.normalizeScheduleState(state);
+          _origPn = state.pn;
+          IS_RO = false;
+          _cloudEditing = null;
+          _cloudView = null;
+          _cloudSites = [];
+          _cloudInventoryReady = true;
+          _fbReady = false;
+          _db = null;
+          calInit(); sync(); rEdit(); rChips(); sw('c'); rChart();
+        }
+        """,
+        mobile_state,
+    )
+    mobile_page.locator('.chart-task-name[data-task-id="1"]').tap()
+    mobile_bounds = mobile_page.evaluate(
+        """
+        () => {
+          const rect = document.querySelector('#chartTaskOv .chart-task-sheet').getBoundingClientRect();
+          return {left:rect.left, top:rect.top, right:rect.right, bottom:rect.bottom,
+                  width:innerWidth, height:innerHeight, overflow:getComputedStyle(document.getElementById('chartTaskBody')).overflowY};
+        }
+        """
+    )
+    assert mobile_bounds["left"] >= 0 and mobile_bounds["top"] >= 0
+    assert mobile_bounds["right"] <= mobile_bounds["width"]
+    assert mobile_bounds["bottom"] <= mobile_bounds["height"]
+    assert mobile_bounds["overflow"] == "auto"
+    mobile_page.wait_for_timeout(400)
+    if screenshot_dir:
+        mobile_page.screenshot(path=str(screenshot_dir / "chart-phase-mobile.png"), full_page=False)
+    mobile_page.locator("#chartTaskOv .chart-task-close").tap()
+    mobile_page.locator("#chartAddTask").tap()
+    mobile_page.locator("#chartCustomName").fill("모바일 사용자 공종")
+    if screenshot_dir:
+        mobile_page.screenshot(path=str(screenshot_dir / "chart-custom-mobile.png"), full_page=False)
+    mobile_page.locator("#chartCustomSave").tap()
+    assert mobile_page.locator("#chartTaskOv").is_visible()
+    assert mobile_page.evaluate("S.tasks.some(task => task.name === '모바일 사용자 공종')") is True
+    mobile_context.close()
+    context.close()
+
+    return {
+        "task_on_unchanged": initial_on,
+        "phase_count": persisted["phaseCount"],
+        "custom_phase_count": persisted["customPhaseCount"],
+        "custom_id_stable": persisted["stableId"] == custom_a,
+        "readonly_unchanged": True,
+        "desktop_in_viewport": True,
+        "mobile_in_viewport": True,
+    }
+
+
 def run():
     handler = partial(QuietHandler, directory=str(ROOT))
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -28,6 +344,7 @@ def run():
 
     console_errors = []
     page_errors = []
+    request_failures = []
     unexpected_mutations = []
     intercepted_config_requests = 0
 
@@ -78,6 +395,7 @@ def run():
             page = context.new_page()
             page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
             page.on("pageerror", lambda error: page_errors.append(str(error)))
+            page.on("requestfailed", lambda request: request_failures.append(f"{request.method} {request.url}"))
             page.goto(origin + "/", wait_until="domcontentloaded")
 
             page.evaluate(
@@ -661,6 +979,7 @@ def run():
                 "console", lambda message: console_errors.append(message.text) if message.type == "error" else None
             )
             mobile_page.on("pageerror", lambda error: page_errors.append(str(error)))
+            mobile_page.on("requestfailed", lambda request: request_failures.append(f"{request.method} {request.url}"))
             mobile_page.goto(origin + "/", wait_until="domcontentloaded")
             mobile_page.evaluate(
                 """
@@ -1072,8 +1391,19 @@ def run():
                 "gcal_events": len(gcal_result),
             }
 
+            chart_task_result = run_chart_task_management(
+                browser,
+                origin,
+                route_request,
+                screenshot_dir,
+                console_errors,
+                page_errors,
+                request_failures,
+            )
+
             assert console_errors == [], console_errors
             assert page_errors == [], page_errors
+            assert request_failures == [], request_failures
             assert unexpected_mutations == [], unexpected_mutations
             context.close()
             browser.close()
@@ -1099,10 +1429,12 @@ def run():
             "cloud_restore_round_trip": cloud_restore_round_trip,
             "wave_two": wave_two_result,
             "wave_three": wave_three_result,
+            "chart_task_management": chart_task_result,
             "intercepted_local_config_requests": intercepted_config_requests,
             "unexpected_network_mutations": len(unexpected_mutations),
             "console_errors": len(console_errors),
             "page_errors": len(page_errors),
+            "request_failures": len(request_failures),
         }
         print(json.dumps(result, ensure_ascii=False, indent=2))
     finally:
