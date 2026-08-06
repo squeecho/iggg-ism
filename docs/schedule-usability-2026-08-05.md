@@ -39,15 +39,15 @@
 
 | ID | 목표 | 상태 | 우선순위 | 현재 근거 | 완료 기준 |
 |---|---|---:|---:|---|---|
-| CL-01 | 1일 준공청소 전체 4글자 | deviant | P0 | client 28px, 글리프 36.81px, ellipsis 적용 | visible glyph가 `준공청소` 전체이고 ellipsis/clip 없음 |
-| CL-02 | 실제 텍스트 충돌 기반 상·하 분리 | missing | P0 | 현재는 모든 label 중앙+clip | 충돌 pair 앞 upper·뒤 lower, glyph 교집합 0 |
-| CL-03 | 비충돌 label 중앙 복귀 | missing | P0 | 동적 layout 단계 없음 | 날짜 변경 후 충돌이 사라지면 center로 결정적 복귀 |
-| CL-04 | 차트 양끝 방향 전환 | missing | P0 | label이 bar 폭에 갇혀 방향 개념 없음 | 첫날 right, 마지막날 left, grid 경계 이탈 0 |
-| CL-05 | phase 번호와 전체 tooltip | partial | P0 | bar title은 전체이나 visible phase 계약과 분리되지 않음 | `[N차]` shrink 0, bar title에 전체 name/desc 유지 |
+| CL-01 | 1일 준공청소 전체 4글자 | parity | P0 | 30px 막대와 독립된 66.2px label에서 `준공청소` visible glyph 전체 확인 | visible glyph가 `준공청소` 전체이고 ellipsis/clip 없음 |
+| CL-02 | 실제 텍스트 충돌 기반 상·하 분리 | parity | P0 | 실제 DOM bbox 충돌 graph와 결정적 lane/packing을 적용하고 desktop/mobile 교집합 0 확인 | 충돌 pair 앞 upper·뒤 lower, glyph 교집합 0 |
+| CL-03 | 비충돌 label 중앙 복귀 | parity | P0 | 충돌 phase를 이동한 뒤 두 label이 모두 center로 복귀 | 날짜 변경 후 충돌이 사라지면 center로 결정적 복귀 |
+| CL-04 | 차트 양끝 방향 전환 | parity | P0 | 첫날 right, 마지막날 left이고 마지막 label right가 bar right와 일치 | 첫날 right, 마지막날 left, grid 경계 이탈 0 |
+| CL-05 | phase 번호와 전체 tooltip | parity | P0 | 모든 visible phase span과 bar/label title의 전체 name·desc를 actual DOM으로 확인 | `[N차]` shrink 0, bar title에 전체 name/desc 유지 |
 | CL-06 | 막대/A3/단일 행 기하 불변 | parity | P0 | 30px 열, 38px 행, 19px 중심, A3 landscape | 화면·PNG·PDF에서 동일 수치 유지 |
-| CL-07 | drag/resize 중 label 재배치 | missing | P0 | live path는 bar left/width만 갱신 | mouse/touch 이동 중 row-local layout, drop 후 최종 일치 |
+| CL-07 | drag/resize 중 label 재배치 | parity | P0 | mouse/touch live path가 대상 `td.dg`만 재측정하고 phase 15개 포인터 편집 회귀 통과 | mouse/touch 이동 중 row-local layout, drop 후 최종 일치 |
 | CL-08 | 특별 날짜 양방향 기능 불변 | parity | P0 | 별도 650ms long-press/card/dateMode 회귀 존재 | desktop/mobile 기존 회귀 전체 통과 |
-| CL-09 | 출력과 운영 안전 | partial | P0 | 공통 DOM이나 새 label 결과 미검증 | PNG/A3 PDF 직접 관찰, 운영 API 호출·mutation 0 |
+| CL-09 | 출력과 운영 안전 | partial | P0 | 실제 PNG/A3 PDF와 출력 후 복구는 통과했으며 Production root/정적 asset 검증은 배포 게이트로 남음 | PNG/A3 PDF 직접 관찰, 운영 API 호출·mutation 0 |
 
 ### 이번 Wave 계획
 
@@ -56,6 +56,22 @@
 | 1 | Production 기준 재현·경쟁 가설·갭 기록 | 실제 bbox와 기준 캡처, 별도 `[audit]` 커밋 |
 | 2 | render-only label layer와 DOM 충돌 배치 | 준공청소·충돌·비충돌·양끝·폰트·drag 재계산 자동 검증 |
 | 3 | 화면·PNG·A3 PDF 및 전체 회귀 | 실제 산출물 직접 관찰, 전체 test/typecheck/build/UI 통과 후 배포 |
+
+### Wave 2 체크포인트
+
+- 날짜 폭을 가진 `.bar`와 독립적인 render-only `.chart-bar-label-layer`를 기존 `rG()` 안에 추가했다. 막대는 계속 `top:50%; transform:translateY(-50%)`를 사용하고 label만 center/upper/lower로 이동한다.
+- 실제 DOM bbox로 충돌 component를 만들고, bar x/phase 순서를 유지하는 2개 lane packing을 반복한다. 차트 양끝에서는 label 방향을 반전하며, 수용할 수 없는 선택적 name/desc만 줄이고 phase 번호와 `준공청소` required span은 보존한다.
+- 210px 실제 DOM 반례에 66.203125px `준공청소` label 5개를 배치해 upper 3개와 lower 2개의 최소 간격이 각각 0.5px, 충돌과 경계 이탈이 각각 0건임을 확인했다.
+- desktop/mobile 합성 1~5차의 행 높이는 모두 38px, 막대 중심은 모두 19px이었다. 인접 장문은 upper/lower, 비충돌 문구는 center, 첫날/마지막날은 right/left로 결정됐고 label 충돌·이탈은 0건이었다.
+- phase 이동·좌 resize·우 resize 15회, undo/redo/autosave, 특별 날짜 desktop/mobile 20개 편집 회귀를 재실행했다. 특별 날짜 구현과 일정 state·dateMode·저장 형식은 변경하지 않았다.
+
+### Wave 3 체크포인트
+
+- 실제 `doIMG()`와 `doPDF()`가 font와 label layout을 settle한 뒤 같은 live DOM을 캡처하도록 했다. 동시 export를 차단하고 성공·실패 모두 임시 width/overflow/sticky/light/no-print 상태를 원문 inline style로 복구한다.
+- export success/failure 네 경로에서 label 좌표, 일정 JSON, undo/redo, localStorage, busy 상태의 전후 불일치가 0건이었다. layout 충돌·이탈 또는 제한 시간 안에 font가 준비되지 않으면 캡처 전에 fail-closed한다.
+- 실제 PNG는 2236x1434px, 실제 PDF는 jsPDF 2.5.1의 A3 가로 420x297mm 1페이지다. PNG와 `pdftoppm` PDF 재렌더를 직접 열어 장문 상·하 분리, 비충돌 중앙 정렬, 좌우 경계 전환, 1~5차 `준공청소` 전체 표시를 확인했다.
+- `npm test` 16/16, `npm run typecheck`, `npm run build`, `npm run test:ui` 고정 파일 연속 2회, `git diff --check`가 통과했다. console error, page error, request failure, 예상 밖 네트워크 mutation은 모두 0건이었다.
+- 직접 관찰 캡처: `/tmp/ig-ism-label-final-suite-v2-20260807/chart-label-layout-desktop.png`, `/tmp/ig-ism-label-final-v3-20260807/chart-label-mobile-right.png`, `/tmp/ig-ism-label-final-v3-20260807/schedule.png`, `/tmp/ig-ism-label-final-v3-20260807/schedule-rendered.png`.
 
 ## 2026-08-07 차트 차수 막대 단일 중앙 행 전환
 
