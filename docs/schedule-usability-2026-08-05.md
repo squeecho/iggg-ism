@@ -6,6 +6,52 @@
 - 범위: 직원 요청 6건의 데이터 정확성, 일정 편집, 차트 가독성
 - 안전 경계: 운영 Firebase, Google Calendar, 고객 데이터, 기존 사용자 브라우저 저장소에 접근하거나 변경하지 않는다.
 
+## 2026-08-07 차트 공종 관리 복구
+
+- 기준 커밋: `3f4a361095a0f28073fd93f3916b4e2b0ac06b84`
+- 작업 브랜치: `feat/chart-task-management-20260807`
+- 범위: 차트 공종명 클릭의 차수 관리 복구, 차트 사용자 공종 CRUD, 전 화면 공통 표시 순서
+- 안전 경계: 합성 현장과 차단된 네트워크만 사용하며 운영 Firebase, Google Calendar, 고객 데이터, 전자계약, 메시징, SMBM에 접근하거나 mutation하지 않는다.
+
+### 경쟁 가설과 판정
+
+| 가설 | 판정 | 근거 |
+|---|---|---|
+| 공종명 클릭의 활성 상태 변경은 이벤트 버블링이나 차트 막대 handler 충돌 때문이다. | 기각 | `index.html`의 `chartTaskClick`이 `togT`를 직접 호출하고, `togT`가 undo snapshot 후 `task.on`을 반전한다. |
+| 과거 차수 생성 기능은 삭제됐고 현재 데이터 모델은 3차까지만 지원한다. | 기각 | Git 이력의 과거 `chartTaskClick`은 차수를 순환했고, 현재 `ScheduleCore`의 `getTaskPhases`, `addTaskPhase`, `removeLastTaskPhase`, `updateTaskPhase`는 기존 flat 필드로 1~5차를 지원한다. |
+| 차트에 관리 진입점이 없어서 사용자가 편집 탭의 펼친 카드까지 이동해야 한다. | 확인 | 1~5차 추가·제거 UI와 사용자 공종 추가 버튼은 `rEdit` 안에만 있고, 차트 toolbar에는 대응 명령이 없다. |
+| 사용자 공종이 준공청소 뒤에 붙는 원인은 저장 데이터 손상이나 ID 재번호화다. | 기각 | `createCustomTask`는 안정적 숫자 ID로 `tasks[]` 끝에 추가하고 저장·복원은 배열과 ID를 그대로 보존한다. 문제는 `rEdit`/`rG`의 raw 배열 순회와 `orderedTaskIds`의 unknown/custom 후미 append 규칙이다. |
+| 공통 정렬 helper만 확장하면 기존 저장 데이터를 변환하지 않고 순서를 통일할 수 있다. | 확인 | legacy 저장 배열의 사용자 공종 상대 순서는 생성 순서의 유일한 근거다. 렌더 시 `기타공사 → 사용자 공종 생성순 → 가스공사 → 준공청소`로 view order만 계산하면 내부 ID와 payload는 불변이다. |
+
+### 차트 공종 관리 갭 스코어보드
+
+상태 값: `parity` 충족, `partial` 일부 충족, `deviant` 의도와 다른 구현, `missing` 미구현, `oos` 이번 범위 밖.
+
+| ID | 목표 | 착수 상태 | 우선순위 | 현재 근거 | 완료 기준 |
+|---|---|---:|---:|---|---|
+| C1-01 | 차트 공종명 클릭으로 차수 관리 열기 | deviant | P0 | `chartTaskClick`이 `togT` 호출 | 클릭 전후 `task.on` 불변, desktop modal/mobile sheet 열림 |
+| C1-02 | 1~5차 순차 추가·마지막 제거 | partial | P0 | core CRUD와 편집 탭 UI는 존재하나 차트 진입점 없음 | 기존 CRUD·undo·autosave로 1→5→1, 5차 초과 및 1차 제거 차단 |
+| C1-03 | 차수 이름·설명·기간 독립 편집 | partial | P0 | flat phase 필드와 date picker는 존재 | 4차 수정 시 1~3·5차와 mode 불변, 직접 날짜만 해당 phase manual 전환 |
+| C1-04 | 확정 현장 열람 전용 관리 | missing | P0 | 현 `chartTaskClick`은 `IS_RO`에서 UI도 열지 않음 | 조회 source는 `_cloudView || S`, 모든 mutation entry는 `IS_RO`에서 차단 |
+| C2-01 | 차트에서 사용자 공종 생성·삭제 | missing | P0 | create/delete core와 편집 탭 wrapper만 존재 | toolbar 생성, 생성 직후 관리 열기, 사용자 공종만 확인 후 삭제 |
+| C2-02 | 공통 표시 순서 | deviant | P0 | raw `tasks[]` 순회와 custom 후미 append | 편집·차트·통합·업체·자동배치·Calendar가 기타-사용자-가스-청소 계약 공유 |
+| C2-03 | 안정적 ID와 legacy 저장 호환 | parity | P0 | `createCustomTask` 충돌 회피 ID, 전체 state 직렬화 | 배열과 ID를 재번호화하지 않고 reload/cloud/undo 후 순서·ID 불변 |
+| C2-04 | 명시적 활성 토글 | partial | P0 | 편집 탭 toggle은 존재, 차트 이름 클릭과 결합됨 | 관리 UI의 별도 toggle만 `task.on`을 변경 |
+| C3-01 | 데스크톱 compact modal | missing | P1 | 기존 `.ov/.mo` modal primitive 존재 | 1440x1000에서 차트 위 표시, viewport 이탈·겹침 0 |
+| C3-02 | 모바일 bottom sheet | missing | P1 | 기존 date picker가 mobile bottom sheet 패턴 사용 | 390x844에서 safe-area 포함, 내부 scroll, 잘림·이탈 0 |
+| C3-03 | PDF·이미지 출력에서 편집 UI 제외 | partial | P1 | `.ca`와 runtime `.no-print` 숨김은 있으나 print CSS의 `.no-print` 누락 | chart toolbar/overlay가 브라우저 print와 PDF·이미지에 포함되지 않음 |
+| QA-04 | 차트 공종 관리 자동 회귀 | missing | P0 | edit-only phase/custom 회귀만 존재 | 순수 core, undo/redo, reload/cloud, read-only mutation 0 검증 |
+| QA-05 | 실제 Chromium 조작·캡처 | missing | P0 | 기존 합성 격리 하니스 존재 | desktop/mobile 실제 조작, console/page/request failure 및 비-GET mutation 0 |
+| OPS-02 | feature Preview 검증 | missing | P1 | Production branch는 `main`, Preview 보호 활성 | feature non-force push, exact SHA Preview READY 및 기존 인증 세션 범위에서 검증 |
+
+### 이번 Wave 계획
+
+| Wave | 변경 범위 | 완료 게이트 |
+|---|---|---|
+| 1 | 감사 기준선과 경쟁 가설 | 코드·Git 이력·기준 테스트 증거를 문서화하고 별도 `[audit]` 커밋 |
+| 2 | 공통 ordering과 차트 공종/차수 관리 | core 및 UI 회귀, undo·저장·cloud 호환, read-only mutation 0 |
+| 3 | 반응형·출력·실제 Chromium 회귀 | 1440x1000/390x844 캡처 직접 관찰, 전체 test/typecheck/build/UI와 네트워크 오류 0 |
+
 ## 저장 및 실행 흐름 기준선
 
 | 영역 | 현재 정본/진입점 | 확인 결과 |
