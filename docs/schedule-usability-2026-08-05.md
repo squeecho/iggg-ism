@@ -6,6 +6,59 @@
 - 범위: 직원 요청 6건의 데이터 정확성, 일정 편집, 차트 가독성
 - 안전 경계: 운영 Firebase, Google Calendar, 고객 데이터, 기존 사용자 브라우저 저장소에 접근하거나 변경하지 않는다.
 
+## 2026-08-07 특별 날짜 세로선과 하단 카드 양방향 편집 복구
+
+- 기준 커밋: `7eaef670718086ce539b7482d59d5b27669f87a0`
+- 작업 브랜치: `fix/note-line-card-bidirectional-20260807`
+- 범위: 차트 특별 날짜 세로선의 long-press drag, 하단 일정 카드의 기존 날짜 달력 연결, 동일 note/dateMode의 양방향 동기화
+- 안전 경계: 합성 현장과 차단된 네트워크만 사용하며 운영 Firebase, Google Calendar, 고객 데이터, 전자계약, 메시징, SMBM에 접근하거나 mutation하지 않는다.
+
+### 원문과 현재 구현 대조
+
+| 근거 | 직접 확인한 사실 | 판정 범위 |
+|---|---|---|
+| 과거 `292be05`의 `dg-note-line` | 3초 long-press 후 활성 색상·햅틱·안내를 표시하고 날짜 칸 단위로 이동한 뒤 한 undo snapshot과 autosave를 기록한다. 당시에는 id 4·5·1만 drag 대상이고 `n.dt`를 직접 변경한다. | long-press 상호작용의 원형은 존재하지만 현재 5개 항목과 `dateMode` 계약에는 그대로 쓸 수 없다. |
+| 현재 `rG()` | 모든 note 세로선을 렌더하지만 편집 가능 선의 `onclick`이 `openNCal()`을 직접 호출한다. long-press 시작·이동·종료 함수는 삭제되고 CSS만 남아 있다. | 짧은 클릭이 달력을 여는 회귀와 drag 기능 단절의 직접 원인이다. |
+| 현재 `rSC()` | 하단 카드에는 label과 계산된 날짜만 있고 note id, click, keyboard handler가 없다. | 카드에서 공유 날짜 달력으로 진입할 수 없는 직접 원인이다. |
+| 현재 `ScheduleCore` | `getNoteDate`, `setNoteMode`, `setNoteManualDate`가 `dateMode: auto/manual`과 `dt`의 정본이다. 기간 변경 시 수동 날짜는 보존하고 자동 날짜만 다시 계산한다. | 별도 날짜 상태나 저장 구조가 필요 없으며 두 UI 경로가 같은 note를 수정해야 한다. |
+| 현재 공유 날짜 달력 | `openNCal()`과 `tcalClick()`의 note branch가 `pushUndo()` 후 `setNoteManualDate()`를 호출하고 `_commitDatePickerChange()`의 `sync()`가 autosave를 예약한다. | 카드 편집은 이 경로를 그대로 재사용해야 undo와 autosave가 한 번씩 기록된다. |
+
+### 경쟁 가설과 판정
+
+| 가설 | 판정 | 근거 |
+|---|---|---|
+| 세로선 drag가 CSS 또는 hit area 문제로만 동작하지 않는다. | 기각 | `.dg-note-line`의 16px hit area와 `touch-action:none`은 남아 있지만 현재 HEAD에는 `nDragStart/nDragMove/nDragEnd`가 없다. |
+| 짧은 클릭이 달력을 여는 것은 drag 종료 click의 우발적 버블링뿐이다. | 기각 | 현재 렌더가 모든 편집 가능 세로선에 `onclick="openNCal(id)"`를 명시적으로 부여한다. |
+| 하단 카드와 차트 선이 서로 다른 날짜 값을 사용해 동기화가 깨진다. | 기각 | 둘 다 `nDt()`를 통해 `ScheduleCore.getNoteDate()`를 소비한다. 문제는 mutation 진입점이 카드에 없고 선은 잘못된 진입점에 연결된 것이다. |
+| 공유 달력 경로를 재사용하면 undo와 autosave를 중복 기록한다. | 기각, 구현 주의 필요 | note branch는 `pushUndo()` 1회이고 `_commitDatePickerChange()`는 `sync()`를 1회 호출한다. 새 wrapper에서 `autoSave()`를 다시 호출하면 중복되므로 금지해야 한다. |
+| 과거 drag 코드를 그대로 복원하면 현재 계약을 충족한다. | 기각 | 과거 코드는 3개 note만 허용하고 `n.dt`를 직접 변경해 자동→수동 전환을 명시하지 않는다. 현재는 5개 모두 `setNoteManualDate()`를 써야 한다. |
+
+### 갭 스코어보드
+
+상태 값: `parity` 충족, `partial` 일부 충족, `deviant` 의도와 다른 구현, `missing` 미구현, `oos` 이번 범위 밖.
+
+| ID | 목표 | 상태 | 우선순위 | 현재 근거 | 완료 기준 |
+|---|---|---:|---:|---|---|
+| ND-01 | 5개 세로선 long-press drag | missing | P0 | 과거 함수 삭제, 현재 `onclick`만 존재 | mouse/touch 5개 모두 long-press 후 날짜 칸 단위 이동 |
+| ND-02 | 짧은 선 click은 달력 0회 | deviant | P0 | 현재 `onclick=openNCal` | click/tap과 drag 종료 click 모두 달력 미표시 |
+| ND-03 | 활성 피드백과 실시간 tooltip | missing | P1 | dragging CSS만 잔존 | 활성 색상·햅틱·안내와 항목명·날짜 tooltip 표시 |
+| ND-04 | drag 종료 단일 undo/autosave | missing | P0 | 현재 drag 종료 경로 없음 | 변경 1회당 undo snapshot 1개, autosave 예약/지속화 1개 |
+| ND-05 | drag의 `dateMode=manual` 정본화 | missing | P0 | 과거는 `n.dt` 직접 대입 | `ScheduleCore.setNoteManualDate`만 사용하고 자동 복귀 계산 일치 |
+| NC-01 | 하단 카드에서 공유 날짜 달력 열기 | missing | P0 | `rSC()` 카드가 정적 | 카드 click/keyboard로 기존 `openNCal` 열기 |
+| NC-02 | 카드·선·상단 헤더 즉시 동기화 | partial | P0 | 세 소비 경로는 `nDt()` 공유, 카드 mutation 진입점 없음 | 어느 경로로 변경해도 세 화면이 같은 날짜를 즉시 표시 |
+| NC-03 | 기간 밖 수동 날짜 보존·경고 | parity | P0 | 기존 core와 편집 UI 테스트 존재 | 새 경로 이후에도 reload·기간 변경에서 날짜 보존 및 경고 유지 |
+| ND-06 | 읽기 전용 mutation 차단 | partial | P0 | 달력은 `IS_RO` 차단, drag는 미구현 | 선 drag와 카드 편집 모두 시작 불가, state/저장 불변 |
+| QA-07 | desktop/mobile 5개 양방향 회귀 | missing | P0 | 기존 UI 테스트에 note pointer 상호작용 없음 | 5개 mouse/touch, undo/redo/reload, 오류·외부 mutation 0 |
+
+### 이번 Wave 계획
+
+| Wave | 변경 범위 | 완료 게이트 |
+|---|---|---|
+| 1 | Git 이력·현재 정본·경쟁 가설과 갭 기록 | 스코어보드와 별도 `[audit]` 커밋 |
+| 2 | 5개 세로선 공통 pointer long-press drag | click 억제, snap, tooltip, manual 전환, 단일 undo/autosave 테스트 |
+| 3 | 하단 카드의 기존 달력 연결과 양방향 회귀 | desktop/mobile 5개, 자동 복귀, undo/redo/reload, 캡처 |
+| 4 | 전체 회귀·Preview·Production | test/typecheck/build/UI와 안전한 Preview 검증 후에만 main fast-forward |
+
 ## 2026-08-07 차트 고정 2단과 공종 관리 footer 복구
 
 - 기준 커밋: `38468f9f49883be4a61e8c7131fbdcd6708e5bce`
