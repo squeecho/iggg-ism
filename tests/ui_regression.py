@@ -510,6 +510,29 @@ def run_chart_task_management(
     assert page.evaluate("JSON.stringify(S)") == readonly_before
     page.evaluate("IS_RO = false; rChart();")
     mobile_state = page.evaluate("JSON.parse(JSON.stringify(S))")
+    mobile_geometry_state = page.evaluate(
+        """
+        () => {
+          const state = ScheduleCore.normalizeScheduleState(JSON.parse(JSON.stringify(S)));
+          state.tasks.slice(0, 5).forEach((task, taskIndex) => {
+            const phaseCount = taskIndex + 1;
+            while (ScheduleCore.getTaskPhaseCount(task) > phaseCount) {
+              ScheduleCore.removeLastTaskPhase(task);
+            }
+            while (ScheduleCore.getTaskPhaseCount(task) < phaseCount) {
+              ScheduleCore.addTaskPhase(task, {name:task.name, desc:'', mode:'manual'});
+            }
+            for (let phaseIndex = 1; phaseIndex <= phaseCount; phaseIndex++) {
+              const date = addD(state.sd, (phaseIndex - 1) * 3);
+              ScheduleCore.updateTaskPhase(task, phaseIndex, {
+                sd:date, ed:date, mode:'manual'
+              });
+            }
+          });
+          return state;
+        }
+        """
+    )
 
     mobile_context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
     mobile_context.add_init_script(
@@ -542,12 +565,23 @@ def run_chart_task_management(
           calInit(); sync(); rEdit(); rChips(); sw('c'); rChart();
         }
         """,
-        mobile_state,
+        mobile_geometry_state,
     )
     mobile_single_row = read_single_row_geometry(mobile_page, [1, 2, 3, 4, 5])
+    assert [len(row["bars"]) for row in mobile_single_row] == [1, 2, 3, 4, 5]
     assert_single_row_geometry(mobile_single_row)
     if screenshot_dir:
         mobile_page.locator("#pc").screenshot(path=str(screenshot_dir / "chart-single-row-mobile.png"))
+    mobile_page.evaluate(
+        """
+        state => {
+          S = ScheduleCore.normalizeScheduleState(state);
+          _origPn = state.pn;
+          sync(); rEdit(); rChips(); sw('c'); rChart();
+        }
+        """,
+        mobile_state,
+    )
     mobile_page.locator('.chart-task-name[data-task-id="2"]').tap()
     mobile_footer_order = mobile_page.evaluate(
         """
