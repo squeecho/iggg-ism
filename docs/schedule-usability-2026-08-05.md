@@ -42,7 +42,7 @@
 | SR-02 | 1~5차 막대의 동일 세로 중앙 | parity | P0 | 레인 계산·속성을 제거하고 모든 막대를 `top:50%`에 배치 | 모든 막대의 행 내부 중심 19px, 최대 편차 1px 이하 |
 | SR-03 | 짧은 막대의 차수 번호와 말줄임 | parity | P0 | 1일 막대의 고정 차수 span과 본문 ellipsis를 실제 bbox로 검증 | 1일 막대에서도 차수 번호는 보이고 나머지 문구만 경계 안에서 ellipsis |
 | SR-04 | drag·resize·undo/redo·autosave 불변 | parity | P0 | 포인터 로직은 x축과 phase id에만 의존 | 1~5차 이동·좌·우 조절이 독립적으로 동작하고 비대상 phase 불변 |
-| SR-05 | 화면·PNG·PDF 동일 단일 행 | missing | P0 | 출력은 공통 DOM이나 새 계약 산출물은 아직 없음 | 실제 PNG/PDF와 PDF 재렌더에서 38px·19px 계약 확인 |
+| SR-05 | 화면·PNG·PDF 동일 단일 행 | parity | P0 | 실제 두 캡처 clone 모두 38px·19px, PNG와 A3 PDF 재렌더 직접 관찰 | 실제 PNG/PDF와 PDF 재렌더에서 38px·19px 계약 확인 |
 | SR-06 | 특별 날짜 양방향 기능 불변 | parity | P0 | 별도 650ms long-press/card/dateMode 테스트 존재 | desktop/mobile 5개 항목의 기존 회귀 전체 통과 |
 | SR-07 | 운영 안전 경계 | parity | P0 | 로컬 합성 fixture와 요청 차단 harness 존재 | Production은 root와 정적 자산만 GET, 금지 경로 접근·mutation 0 |
 
@@ -61,6 +61,14 @@
 - 1~5차 각각의 이동·왼쪽 resize·오른쪽 resize 15회를 실제 mouse로 수행했다. 각 조작은 대상 phase만 바꾸고 undo 후 원본 JSON으로 복원됐다.
 - 특별 날짜 코드는 변경하지 않았다. desktop/mobile에서 5개 long-press drag, 5개 카드 달력 변경, 동일 날짜 no-op, 자동 복귀, undo/redo/reload, 읽기 전용 차단이 모두 통과했다.
 - `npm test` 16/16, typecheck, build와 전체 UI 회귀가 통과했다. console error, page error, request failure, 예상 밖 네트워크 mutation은 모두 0건이었다.
+
+### Wave 3 체크포인트
+
+- 앱의 실제 `doIMG()`와 `doPDF()`를 합성 1~5차 상태에서 실행했다. 두 `html2canvas` clone의 행 높이는 `[38,38,38,38,38]`, 각 막대의 행 내부 y 중심은 모두 19px였고 출력 전후 live DOM도 동일했다.
+- 실제 PNG는 2156x1736, PDF는 A3 가로 1페이지였다. PNG와 `pdftoppm` 재렌더를 직접 열어 1~5차 단일 중앙 행, 짧은 막대의 차수 번호, 본문 clipping/ellipsis, 특별 날짜 세로선과 하단 일정 카드가 정상임을 확인했다.
+- desktop/mobile 화면과 PNG/PDF에서 막대·텍스트 겹침, 잘림, 행 이탈은 0건이었다. 1일 막대는 `[N차]`를 남기고 상세 문구만 제한한다.
+- 출력 브라우저는 Calendar fetch를 window 단계에서 합성 응답해 네트워크 전에 차단했고, 외부에서는 html2canvas/jsPDF 정적 자산만 허용했다. 예상 밖 요청·mutation·console error·page error·request failure는 모두 0건이었다.
+- 직접 관찰 캡처: `/tmp/ig-ism-single-row-wave2-20260807a/chart-single-row-desktop.png`, `/tmp/ig-ism-single-row-wave2-20260807a/chart-single-row-mobile.png`, `/tmp/ig-ism-single-row-final-exports-20260807a/schedule.png`, `/tmp/ig-ism-single-row-final-exports-20260807a/schedule-rendered.png`.
 
 ## 2026-08-07 특별 날짜 세로선과 하단 카드 양방향 편집 복구
 
