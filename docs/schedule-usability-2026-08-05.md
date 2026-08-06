@@ -38,9 +38,9 @@
 
 | ID | 목표 | 상태 | 우선순위 | 현재 근거 | 완료 기준 |
 |---|---|---:|---:|---|---|
-| SR-01 | 차수 수와 무관한 38px 공종 행 | deviant | P0 | 1차 38px, 2~5차 56px | 1~5차 실제 행 높이 모두 38px |
-| SR-02 | 1~5차 막대의 동일 세로 중앙 | deviant | P0 | 홀수/짝수 `laneTop=4/30px` | 모든 막대의 행 내부 중심 19px, 최대 편차 1px 이하 |
-| SR-03 | 짧은 막대의 차수 번호와 말줄임 | partial | P0 | 차수 번호 span과 본문 ellipsis는 있으나 단일 행 실제 회귀가 없음 | 1일 막대에서도 차수 번호는 보이고 나머지 문구만 경계 안에서 ellipsis |
+| SR-01 | 차수 수와 무관한 38px 공종 행 | parity | P0 | desktop/mobile 1~5차 실제 행 높이 모두 38px | 1~5차 실제 행 높이 모두 38px |
+| SR-02 | 1~5차 막대의 동일 세로 중앙 | parity | P0 | 레인 계산·속성을 제거하고 모든 막대를 `top:50%`에 배치 | 모든 막대의 행 내부 중심 19px, 최대 편차 1px 이하 |
+| SR-03 | 짧은 막대의 차수 번호와 말줄임 | parity | P0 | 1일 막대의 고정 차수 span과 본문 ellipsis를 실제 bbox로 검증 | 1일 막대에서도 차수 번호는 보이고 나머지 문구만 경계 안에서 ellipsis |
 | SR-04 | drag·resize·undo/redo·autosave 불변 | parity | P0 | 포인터 로직은 x축과 phase id에만 의존 | 1~5차 이동·좌·우 조절이 독립적으로 동작하고 비대상 phase 불변 |
 | SR-05 | 화면·PNG·PDF 동일 단일 행 | missing | P0 | 출력은 공통 DOM이나 새 계약 산출물은 아직 없음 | 실제 PNG/PDF와 PDF 재렌더에서 38px·19px 계약 확인 |
 | SR-06 | 특별 날짜 양방향 기능 불변 | parity | P0 | 별도 650ms long-press/card/dateMode 테스트 존재 | desktop/mobile 5개 항목의 기존 회귀 전체 통과 |
@@ -53,6 +53,14 @@
 | 1 | Production 기준 재현, 경쟁 가설, 갭 기록 | 실제 기준 캡처와 별도 `[audit]` 커밋 |
 | 2 | `rG()`의 38px 단일 중앙 행과 기하 회귀 | 1~5차 높이·중심·텍스트·포인터 편집 자동 검증 |
 | 3 | 화면·PNG·PDF와 특별 날짜 포함 전체 회귀 | 실제 산출물 직접 관찰, 전체 test/typecheck/build/UI 통과 후 배포 |
+
+### Wave 2 체크포인트
+
+- `rG()`에서 다차수 `56px`, 홀짝 `laneTop`, `data-lane`, inline `transform:none`과 미사용 레인 CSS를 제거했다. 모든 공종 행은 38px이고 모든 phase 막대는 `top:50%; transform:translateY(-50%)`를 사용한다.
+- 실제 Chromium desktop/mobile 합성 fixture에서 1~5차 행 높이는 모두 38px, 각 막대의 행 내부 중심은 모두 19px, 한 행 내 최대 중심 편차는 0px였다. 막대·텍스트의 2D 겹침, 경계 이탈, 차수 번호 손실은 0건이었다.
+- 1~5차 각각의 이동·왼쪽 resize·오른쪽 resize 15회를 실제 mouse로 수행했다. 각 조작은 대상 phase만 바꾸고 undo 후 원본 JSON으로 복원됐다.
+- 특별 날짜 코드는 변경하지 않았다. desktop/mobile에서 5개 long-press drag, 5개 카드 달력 변경, 동일 날짜 no-op, 자동 복귀, undo/redo/reload, 읽기 전용 차단이 모두 통과했다.
+- `npm test` 16/16, typecheck, build와 전체 UI 회귀가 통과했다. console error, page error, request failure, 예상 밖 네트워크 mutation은 모두 0건이었다.
 
 ## 2026-08-07 특별 날짜 세로선과 하단 카드 양방향 편집 복구
 
