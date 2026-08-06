@@ -48,8 +48,8 @@
 | MF-02 | 항상 보이는 완료 버튼과 저장 확정 | parity | P0 | scroll 전후 footer top 오차 1px 이하, 완료 직전 active input 즉시 저장 | phase 5까지 scroll해도 완료가 viewport 안에 있고 blur·기존 autosave flush 후 닫힘 |
 | MF-03 | 사용자 공종 삭제 danger 분리 | parity | P1 | body 끝 `chart-task-danger-zone`으로 이동 | body 끝 별도 danger 영역, footer에는 차수와 완료만 존재 |
 | MF-04 | 읽기 전용 닫기와 mutation 차단 | parity | P0 | read-only 완료/X 전후 전체 state JSON 동일 | 완료/X는 닫고, 추가·제거·편집·삭제는 disabled이며 state mutation 0 |
-| EX-01 | 화면·PNG·PDF 동일 2단 배치 | partial | P0 | 동일 DOM 캡처이지만 현재 DOM이 회귀 상태 | 실제 PNG와 PDF 렌더에서 고정 2단 좌표·행 높이 확인 |
-| QA-06 | desktop/mobile 실제 Chromium 회귀 | missing | P0 | 현 구현 기준선만 측정 | 1440x1000·390x844 조작, 캡처 직접 관찰, 오류·외부 mutation 0 |
+| EX-01 | 화면·PNG·PDF 동일 2단 배치 | parity | P0 | 실제 `doIMG()`·`doPDF()` 산출물과 PDF 재렌더 직접 관찰 | 실제 PNG와 PDF 렌더에서 고정 2단 좌표·행 높이 확인 |
+| QA-06 | desktop/mobile 실제 Chromium 회귀 | parity | P0 | 1440x1000·390x844 실제 조작·bbox·캡처 완료 | desktop/mobile 실제 조작, 캡처 직접 관찰, 오류·외부 mutation 0 |
 
 ### 이번 Wave 계획
 
@@ -76,6 +76,15 @@
 - focus된 4차 설명 input에서 곧바로 완료를 누른 뒤 800ms debounce를 기다리지 않고 local draft를 재파싱했다. 입력값이 저장됐고 modal은 닫혔다.
 - 읽기 전용에서는 완료와 X만 닫기로 동작했다. 두 경로와 직접 mutation 함수 호출 전후 전체 state JSON이 동일했다.
 - 사용자 공종 삭제는 scroll body 끝의 별도 danger 영역으로 이동했고 차수 footer에는 포함되지 않았다.
+
+### Wave 4 로컬 최종 게이트
+
+- 전체 `npm test` 16/16, `npm run typecheck`, `npm run build`, `npm run test:ui`, `git diff --check`가 통과했다.
+- 실제 Chromium 1440x1000과 390x844에서 1~5차 합성 일정, 공종 관리 modal/bottom sheet, 차수별 pointer 편집을 다시 실행했다. console error, page error, request failure, 외부 mutation은 모두 0건이었다.
+- 앱의 실제 `doIMG()`와 `doPDF()`를 호출해 PNG와 jsPDF A3 1페이지를 생성했다. 출력 전후 DOM 행 높이는 모두 `38/56/56/56/56px`였고 홀수/짝수 중심은 `15.5/41.5px`로 유지됐다.
+- 출력 검증은 Calendar config POST 1건만 로컬 합성 응답했고 나머지 비-GET을 브라우저 route에서 차단했다. unexpected mutation, console/page/request 오류는 모두 0건이었다.
+- 직접 관찰 캡처: `/tmp/ig-ism-two-lane-final/chart-two-lane-desktop.png`, `/tmp/ig-ism-two-lane-final/chart-two-lane-mobile.png`, `/tmp/ig-ism-two-lane-final/chart-phase-desktop.png`, `/tmp/ig-ism-two-lane-final/chart-phase-mobile.png`.
+- 실제 저장 산출물: `/tmp/ig-ism-two-lane-final-exports/schedule.png`, `/tmp/ig-ism-two-lane-final-exports/schedule.pdf`, PDF 재렌더 `/tmp/ig-ism-two-lane-final-exports/schedule-rendered.png`. 화면·PNG·PDF에서 1/3/5 상단, 2/4 하단과 고정 행이 동일하고 막대·텍스트 겹침, 잘림, 행 이탈은 0건이었다.
 
 ## 2026-08-07 차트 공종 관리 복구
 
