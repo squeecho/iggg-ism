@@ -630,9 +630,18 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .bh{position:absolute;top:0;bottom:0;width:16px;background:transparent;cursor:ew-resize;z-index:4;touch-action:none;}
 .bh.l{left:-6px;}
 .bh.r{right:-6px;}
-.bt{font-size:10px;color:#111;white-space:nowrap;padding:0 3px;pointer-events:none;overflow:hidden;font-weight:700;position:relative;z-index:4;display:flex;align-items:center;gap:3px;width:100%;min-width:0;}
+.chart-bar-label-layer{position:absolute;inset:0;overflow:visible;pointer-events:none;z-index:3;}
+.chart-bar-label{position:absolute;top:50%;transform:translateY(-50%);height:11px;line-height:11px;font-size:10px;color:#111;white-space:nowrap;padding:0 3px;box-sizing:border-box;pointer-events:none;font-weight:700;display:inline-flex;align-items:center;gap:3px;width:max-content;max-width:none;overflow:visible;}
+.chart-bar-label[data-label-lane="upper"]{top:8px;transform:none;}
+.chart-bar-label[data-label-lane="lower"]{top:19px;transform:none;}
+.chart-bar-label.is-constrained{overflow:hidden;}
+.chart-bar-label.is-constrained .chart-bar-copy{min-width:0;overflow:hidden;}
 .bt-phase{flex:0 0 auto;font-size:9px;}
-.bt-copy{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.chart-bar-copy{display:flex;min-width:0;overflow:visible;white-space:nowrap;}
+.chart-bar-required{flex:0 0 auto;}
+.chart-bar-detail{display:block;min-width:0;overflow:visible;text-overflow:clip;white-space:nowrap;}
+.chart-bar-label.is-constrained .chart-bar-detail{overflow:hidden;text-overflow:ellipsis;}
+.chart-bar-label[data-cleaning="1"].is-constrained .chart-bar-detail{display:none;}
 /* schedule check */
 .sw{margin-top:8px;background:var(--sf);border-radius:0;border:2px solid #b8b2a8;overflow:hidden;}
 .sh2{background:#e8e5de;padding:8px 14px;border-bottom:1.5px solid #c8c3bb;}
@@ -1158,7 +1167,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 .cw{border-color:var(--bd)!important;}
 
 /* ⑤ 바 라벨 텍스트 (기존 #111 → 흰색) */
-.bt{color:#e8e5de!important;}
+.chart-bar-label{color:#e8e5de!important;}
 
 /* ⑥ 테이블 행 셀 텍스트 대비 */
 .d1{color:var(--mu2)!important;}
@@ -4049,7 +4058,7 @@ function _initChartStickyObserver(){
 }
 window.addEventListener('scroll',_syncStickyScroll,{passive:true});
 document.addEventListener('scroll',_syncStickyScroll,{passive:true});
-window.addEventListener('resize',function(){_removeStickyHeader();_initChartStickyObserver();});
+window.addEventListener('resize',function(){_removeStickyHeader();_initChartStickyObserver();_scheduleChartBarLabelLayout();});
 document.addEventListener('DOMContentLoaded',function(){
   var cs=document.querySelector('#pc .cs');
   if(cs)cs.addEventListener('scroll',_syncStickyScroll,{passive:true});
@@ -4080,6 +4089,213 @@ function _showNoteDragTip(cx,cy,label,date){
 function _hideDragTip(){
   var tip=document.getElementById('dragTip');
   if(tip)tip.style.display='none';
+}
+var _chartBarLabelFrame=0,_chartBarLabelTarget=null;
+function _chartBarForLabel(cell,label){
+  var taskId=label.dataset.taskId,phase=label.dataset.phase;
+  return Array.prototype.find.call(cell.querySelectorAll('.bar'),function(bar){
+    return bar.dataset.taskId===taskId&&bar.dataset.phase===phase;
+  });
+}
+function _chartLabelOverlap(a,b){
+  return Math.min(a.right,b.right)-Math.max(a.left,b.left)>.25
+    &&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>.25;
+}
+function _resetChartBarLabel(label){
+  label.classList.remove('is-constrained');
+  label.dataset.labelLane='center';
+  label.dataset.labelDirection='right';
+  label.style.left='0px';
+  label.style.maxWidth='none';
+}
+function _positionChartBarLabel(cell,label,bar){
+  var cellRect=cell.getBoundingClientRect(),barRect=bar.getBoundingClientRect();
+  var cellWidth=cell.clientWidth||cellRect.width;
+  var width=label.getBoundingClientRect().width;
+  if(width>cellWidth){
+    label.classList.add('is-constrained');
+    label.style.maxWidth=Math.max(1,cellWidth)+'px';
+    width=label.getBoundingClientRect().width;
+  }
+  var barLeft=barRect.left-cellRect.left;
+  var barRight=barRect.right-cellRect.left;
+  var direction='right',left=barLeft;
+  if(left+width>cellWidth){direction='left';left=barRight-width;}
+  left=Math.max(0,Math.min(left,Math.max(0,cellWidth-width)));
+  label.dataset.labelDirection=direction;
+  label.style.left=left+'px';
+  var rect=label.getBoundingClientRect();
+  return {label:label,bar:bar,left:rect.left,right:rect.right,barLeft:barRect.left,barRight:barRect.right,localLeft:left,width:rect.width};
+}
+function _minimumChartBarLabelWidth(label){
+  var style=getComputedStyle(label);
+  var padding=(parseFloat(style.paddingLeft)||0)+(parseFloat(style.paddingRight)||0);
+  var phase=label.querySelector('.bt-phase'),required=label.querySelector('.chart-bar-required');
+  var width=padding;
+  if(phase)width+=phase.getBoundingClientRect().width+(parseFloat(style.columnGap)||0);
+  if(required)width+=required.getBoundingClientRect().width;
+  return Math.ceil(Math.max(8,width));
+}
+function _setChartBarLabelLeft(cell,item,left){
+  var cellWidth=cell.clientWidth||cell.getBoundingClientRect().width;
+  var width=item.label.getBoundingClientRect().width;
+  left=Math.max(0,Math.min(left,Math.max(0,cellWidth-width)));
+  item.label.style.left=left+'px';
+  var cellRect=cell.getBoundingClientRect(),barRect=item.bar.getBoundingClientRect();
+  var barLeft=barRect.left-cellRect.left,barRight=barRect.right-cellRect.left;
+  item.label.dataset.labelDirection=Math.abs(left+width-barRight)<Math.abs(left-barLeft)?'left':'right';
+  var rect=item.label.getBoundingClientRect();
+  item.left=rect.left;item.right=rect.right;item.localLeft=left;item.width=rect.width;
+}
+function _packChartBarLabelLane(cell,items,allowLongShift){
+  if(items.length<2)return true;
+  var gap=.5,cellWidth=cell.clientWidth||cell.getBoundingClientRect().width;
+  items.sort(function(a,b){return a.barLeft-b.barLeft||Number(a.label.dataset.phase)-Number(b.label.dataset.phase);});
+  var positions=[],right=-Infinity;
+  items.forEach(function(item,index){
+    item.width=item.label.getBoundingClientRect().width;
+    var desired=item.localLeft;
+    positions[index]=Math.max(desired,index?right+gap:0);
+    right=positions[index]+item.width;
+  });
+  if(right>cellWidth){
+    var last=items.length-1;
+    positions[last]=Math.min(positions[last],cellWidth-items[last].width);
+    for(var i=last-1;i>=0;i--){
+      positions[i]=Math.min(positions[i],positions[i+1]-gap-items[i].width);
+    }
+  }
+  if(positions[0]<-.25)return false;
+  if(!allowLongShift&&positions.some(function(left,index){return Math.abs(left-items[index].localLeft)>CW;}))return false;
+  items.forEach(function(item,index){_setChartBarLabelLeft(cell,item,positions[index]);});
+  return true;
+}
+function _constrainChartBarLabelItem(cell,item){
+  var minWidth=_minimumChartBarLabelWidth(item.label);
+  var barWidth=item.bar.getBoundingClientRect().width;
+  var maxWidth=Math.max(minWidth,barWidth);
+  if(item.label.getBoundingClientRect().width<=maxWidth+.25)return false;
+  item.label.classList.add('is-constrained');
+  item.label.style.maxWidth=maxWidth+'px';
+  var positioned=_positionChartBarLabel(cell,item.label,item.bar);
+  Object.keys(positioned).forEach(function(key){item[key]=positioned[key];});
+  return true;
+}
+function _layoutChartBarLabelCell(cell){
+  if(!cell||!cell.isConnected||cell.getBoundingClientRect().width<=0)return;
+  var labels=Array.prototype.slice.call(cell.querySelectorAll('.chart-bar-label'));
+  if(!labels.length)return;
+  labels.forEach(_resetChartBarLabel);
+  var items=labels.map(function(label){
+    var bar=_chartBarForLabel(cell,label);
+    return bar?_positionChartBarLabel(cell,label,bar):null;
+  }).filter(Boolean).sort(function(a,b){
+    return a.barLeft-b.barLeft||Number(a.label.dataset.phase)-Number(b.label.dataset.phase);
+  });
+  var forcedPairs=[],resolved=false;
+  for(var attempt=0;attempt<6&&!resolved;attempt++){
+    items.forEach(function(item){
+      item.label.dataset.labelLane='center';
+      var positioned=_positionChartBarLabel(cell,item.label,item.bar);
+      Object.keys(positioned).forEach(function(key){item[key]=positioned[key];});
+    });
+    var parents=items.map(function(_,index){return index;});
+    function rootOf(index){while(parents[index]!==index){parents[index]=parents[parents[index]];index=parents[index];}return index;}
+    function unite(a,b){a=rootOf(a);b=rootOf(b);if(a!==b)parents[b]=a;}
+    for(var i=0;i<items.length;i++){
+      for(var j=i+1;j<items.length;j++){
+        if(Math.min(items[i].right,items[j].right)-Math.max(items[i].left,items[j].left)>.25)unite(i,j);
+      }
+    }
+    forcedPairs.forEach(function(pair){unite(pair[0],pair[1]);});
+    var componentMap={};
+    items.forEach(function(item,index){var root=rootOf(index);(componentMap[root]||(componentMap[root]=[])).push(item);});
+    Object.keys(componentMap).forEach(function(key){
+      var component=componentMap[key];
+      if(component.length<2)return;
+      component.sort(function(a,b){return a.barLeft-b.barLeft||Number(a.label.dataset.phase)-Number(b.label.dataset.phase);});
+      component.forEach(function(item,index){item.label.dataset.labelLane=index%2===0?'upper':'lower';});
+    });
+    var retry=false;
+    ['upper','lower'].forEach(function(lane){
+      var laneItems=items.filter(function(item){return item.label.dataset.labelLane===lane;});
+      if(_packChartBarLabelLane(cell,laneItems,false))return;
+      var changed=false;
+      laneItems.forEach(function(item){if(_constrainChartBarLabelItem(cell,item))changed=true;});
+      if(changed){retry=true;return;}
+      _packChartBarLabelLane(cell,laneItems,true);
+    });
+    if(retry)continue;
+    var collisionPairs=[];
+    for(i=0;i<items.length;i++){
+      for(j=i+1;j<items.length;j++){
+        if(_chartLabelOverlap(items[i].label.getBoundingClientRect(),items[j].label.getBoundingClientRect()))collisionPairs.push([i,j]);
+      }
+    }
+    if(!collisionPairs.length){resolved=true;break;}
+    collisionPairs.forEach(function(pair){
+      if(!forcedPairs.some(function(existing){return existing[0]===pair[0]&&existing[1]===pair[1];}))forcedPairs.push(pair);
+    });
+  }
+  var collisions=0;
+  for(var i=0;i<labels.length;i++){
+    for(var j=i+1;j<labels.length;j++){
+      if(_chartLabelOverlap(labels[i].getBoundingClientRect(),labels[j].getBoundingClientRect()))collisions++;
+    }
+  }
+  var cellRect=cell.getBoundingClientRect(),outside=labels.some(function(label){
+    var rect=label.getBoundingClientRect();
+    return rect.left<cellRect.left-.5||rect.right>cellRect.right+.5||rect.top<cellRect.top-.5||rect.bottom>cellRect.bottom+.5;
+  });
+  var layer=cell.querySelector('.chart-bar-label-layer');
+  if(layer){layer.dataset.layoutCollisions=String(collisions);layer.dataset.layoutOutside=outside?'1':'0';}
+}
+function _layoutChartBarLabels(root){
+  var cells=[];
+  if(root&&root.matches&&root.matches('td.dg'))cells=[root];
+  else if(root&&root.querySelectorAll)cells=Array.prototype.slice.call(root.querySelectorAll('td.dg'));
+  else cells=Array.prototype.slice.call(document.querySelectorAll('#gt td.dg'));
+  cells.forEach(_layoutChartBarLabelCell);
+}
+function _scheduleChartBarLabelLayout(target){
+  _chartBarLabelTarget=target&&target.isConnected?target:document.getElementById('gt');
+  if(_chartBarLabelFrame)return;
+  _chartBarLabelFrame=requestAnimationFrame(function(){
+    _chartBarLabelFrame=0;
+    var root=_chartBarLabelTarget;_chartBarLabelTarget=null;
+    _layoutChartBarLabels(root);
+  });
+}
+function _layoutChartBarLabelsAfterFonts(){
+  if(document.fonts&&document.fonts.ready){
+    document.fonts.ready.then(function(){_scheduleChartBarLabelLayout();}).catch(function(){});
+  }
+}
+function _chartLabelFrameOrTimeout(){
+  return new Promise(function(resolve){
+    var done=false;
+    var timer=setTimeout(function(){if(!done){done=true;resolve();}},120);
+    requestAnimationFrame(function(){if(!done){done=true;clearTimeout(timer);resolve();}});
+  });
+}
+function _assertChartBarLabelLayout(){
+  var invalid=Array.prototype.some.call(document.querySelectorAll('#gt .chart-bar-label-layer'),function(layer){
+    return Number(layer.dataset.layoutCollisions||0)>0||Number(layer.dataset.layoutOutside||0)>0;
+  });
+  if(invalid)throw new Error('차트 막대 텍스트 배치를 완료하지 못했습니다.');
+}
+async function _settleChartBarLabels(){
+  try{
+    if(document.fonts&&document.fonts.ready){
+      var fontTimedOut=false;
+      await Promise.race([document.fonts.ready,new Promise(function(resolve){setTimeout(function(){fontTimedOut=true;resolve();},1500);})]);
+      if(fontTimedOut&&document.fonts.status==='loading')throw new Error('차트 글꼴 로딩이 완료되지 않았습니다.');
+    }
+  }catch(e){if(e&&e.message==='차트 글꼴 로딩이 완료되지 않았습니다.')throw e;}
+  _layoutChartBarLabels(document.getElementById('gt'));
+  await _chartLabelFrameOrTimeout();await _chartLabelFrameOrTimeout();
+  _layoutChartBarLabels(document.getElementById('gt'));
+  _assertChartBarLabelLayout();
 }
 function rChart(){
   if(_cloudView){
@@ -4139,17 +4355,26 @@ function rG(){
       }
     });
   });
+    var labelHtml='<div class="chart-bar-label-layer" aria-hidden="true">';
     if(t.on)phases.forEach(function(phase){
       var si=d2i(phase.sd),ei=Math.min(d2i(phase.ed),N-1);
       if(ei<si||si>=N)return;
       var legacyAttr=phase.index===1?' data-id="'+t.id+'"':phase.index===2?' data-id2="'+t.id+'"':phase.index===3?' data-id3="'+t.id+'"':'';
       var opacity=Math.max(.68,1-(phase.index-1)*.08);
       var fullLabel=phase.name+(phase.desc?' | '+phase.desc:'');
-      h+='<div class="bar"'+legacyAttr+' data-task-id="'+t.id+'" data-phase="'+phase.index+'" title="'+esc((hasMultiplePhases?'['+phase.index+'차] ':'')+fullLabel)+'" style="left:'+(si*CW)+'px;width:'+((ei-si+1)*CW)+'px;position:absolute;top:50%;transform:translateY(-50%);z-index:2;background:'+barColor+';opacity:'+opacity+'" onmousedown="dSPhase(event,'+t.id+',\'mv\','+phase.index+')" ontouchstart="tI('+t.id+',event,\'mv\','+phase.index+')"><div class="bh l" onmousedown="dSPhase(event,'+t.id+',\'l\','+phase.index+');event.stopPropagation()" ontouchstart="tI('+t.id+',event,\'l\','+phase.index+');event.stopPropagation()"></div><span class="bt">'+(hasMultiplePhases?'<span class="bt-phase">['+phase.index+'차]</span>':'')+'<span class="bt-copy">'+esc(fullLabel)+'</span></span><div class="bh r" onmousedown="dSPhase(event,'+t.id+',\'r\','+phase.index+');event.stopPropagation()" ontouchstart="tI('+t.id+',event,\'r\','+phase.index+');event.stopPropagation()"></div></div>';
+      var displayTitle=(hasMultiplePhases?'['+phase.index+'차] ':'')+fullLabel;
+      var preserveCleaning=isCl&&phase.name.indexOf('준공청소')===0;
+      var cleaningDetail=preserveCleaning?(phase.name.substring(4)+(phase.desc?' | '+phase.desc:'')):'';
+      var labelCopy=preserveCleaning?'<span class="chart-bar-required">준공청소</span>'+(cleaningDetail?'<span class="chart-bar-detail">'+esc(cleaningDetail)+'</span>':''):'<span class="chart-bar-detail">'+esc(fullLabel)+'</span>';
+      h+='<div class="bar"'+legacyAttr+' data-task-id="'+t.id+'" data-phase="'+phase.index+'" title="'+esc(displayTitle)+'" style="left:'+(si*CW)+'px;width:'+((ei-si+1)*CW)+'px;position:absolute;top:50%;transform:translateY(-50%);z-index:2;background:'+barColor+';opacity:'+opacity+'" onmousedown="dSPhase(event,'+t.id+',\'mv\','+phase.index+')" ontouchstart="tI('+t.id+',event,\'mv\','+phase.index+')"><div class="bh l" onmousedown="dSPhase(event,'+t.id+',\'l\','+phase.index+');event.stopPropagation()" ontouchstart="tI('+t.id+',event,\'l\','+phase.index+');event.stopPropagation()"></div><div class="bh r" onmousedown="dSPhase(event,'+t.id+',\'r\','+phase.index+');event.stopPropagation()" ontouchstart="tI('+t.id+',event,\'r\','+phase.index+');event.stopPropagation()"></div></div>';
+      labelHtml+='<span class="chart-bar-label" data-task-id="'+t.id+'" data-phase="'+phase.index+'" data-cleaning="'+(preserveCleaning?'1':'0')+'" data-label-lane="center" data-label-direction="right" title="'+esc(displayTitle)+'" style="left:'+(si*CW)+'px">'+(hasMultiplePhases?'<span class="bt-phase">['+phase.index+'차]</span>':'')+'<span class="chart-bar-copy">'+labelCopy+'</span></span>';
     });
+    h+=labelHtml+'</div>';
     h+='</td></tr>';
   });
   h+='</tbody>';document.getElementById('gt').innerHTML=h;
+  _layoutChartBarLabels(document.getElementById('gt'));
+  _layoutChartBarLabelsAfterFonts();
   _renderChartGuides();
   _initChartStickyObserver(); /* 차트 재렌더링 시 observer 재설정 */
 }
@@ -4272,6 +4497,7 @@ function oMM(e){
   var sel='.bar[data-task-id="'+drag.id+'"][data-phase="'+drag.phaseIndex+'"]';
   var bar=document.querySelector(sel);
   if(bar){var si=Math.max(0,d2i(t[sk])),ei=Math.max(0,d2i(t[ek]));bar.style.left=(si*CW)+'px';bar.style.width=(Math.max(1,ei-si+1)*CW)+'px';}
+  if(bar)_scheduleChartBarLabelLayout(bar.closest('td.dg'));
   _renderChartGuides();
   _showDragTip(e.clientX,e.clientY,t[sk],t[ek]);
 }
@@ -4452,6 +4678,7 @@ function oTM(e){
   var sel='.bar[data-task-id="'+drag.id+'"][data-phase="'+drag.phaseIndex+'"]';
   var bar=document.querySelector(sel);
   if(bar){var si=Math.max(0,d2i(t[sk])),ei=Math.max(0,d2i(t[ek]));bar.style.left=(si*CW)+'px';bar.style.width=(Math.max(1,ei-si+1)*CW)+'px';}
+  if(bar)_scheduleChartBarLabelLayout(bar.closest('td.dg'));
   _renderChartGuides();
   _showDragTip(touch.clientX,touch.clientY,t[sk],t[ek]);
 }
@@ -4466,9 +4693,10 @@ function oTU(){
 /* PDF */
 
 /* 캡처 시 라이트모드 강제 적용 — CSS 변수 직접 인라인 주입 */
-var _savedInlineStyle='';
+var _savedInlineStyle='',_savedInlineStylePresent=false;
 function _forceLightMode(){
   var r=document.documentElement;
+  _savedInlineStylePresent=r.hasAttribute('style');
   _savedInlineStyle=r.getAttribute('style')||'';
   /* 라이트모드 변수값 직접 주입 (prefers-color-scheme 미디어쿼리 무력화) */
   var light=[
@@ -4487,33 +4715,47 @@ function _forceLightMode(){
 }
 function _restoreLightMode(){
   var r=document.documentElement;
-  if(_savedInlineStyle){r.setAttribute('style',_savedInlineStyle);}
+  if(_savedInlineStylePresent){r.setAttribute('style',_savedInlineStyle);}
   else{r.removeAttribute('style');}
   r.removeAttribute('data-force-light');
 }
+function _captureInlineStyles(elements){
+  return Array.prototype.map.call(elements||[],function(el){
+    return {el:el,styleText:el.getAttribute('style')};
+  });
+}
+function _restoreInlineStyles(entries){
+  (entries||[]).forEach(function(entry){
+    if(entry.styleText===null)entry.el.removeAttribute('style');
+    else entry.el.setAttribute('style',entry.styleText);
+  });
+}
+var _chartExportBusy=false;
 async function doIMG(){
   if(typeof html2canvas==='undefined'){toast('캡처 라이브러리 로딩 중...');return;}
+  if(_chartExportBusy){toast('파일 저장을 마친 뒤 다시 시도해주세요.');return;}
+  _chartExportBusy=true;
   /* no-print 숨기기 */
   var noprints=document.querySelectorAll('.no-print');
+  var noprintStyles=_captureInlineStyles(noprints);
   noprints.forEach(function(el){el.style.visibility='hidden';});
   /* 오버플로우 컨테이너 확장 */
   var cs=document.querySelector('.cs');
   var cw=document.querySelector('.cw');
-  var csOvf=cs?cs.style.overflow:'';
-  var csW=cs?cs.style.width:'';
-  var cwOvf=cw?cw.style.overflow:'';
+  var overflowStyles=_captureInlineStyles([cs,cw].filter(Boolean));
   if(cs){cs.style.overflow='visible';cs.style.width='max-content';}
   if(cw){cw.style.overflow='visible';}
   /* sticky 해제 */
   var sels=document.querySelectorAll('.sc');
-  var selPos=[];
-  sels.forEach(function(el){selPos.push(el.style.position);el.style.position='static';});
+  var stickyStyles=_captureInlineStyles(sels);
+  sels.forEach(function(el){el.style.position='static';});
   _forceLightMode();
   await new Promise(function(r){setTimeout(r,150);});
+  var tbl=null,sw2=null,captureWidthStyles=[];
   try{
-    var tbl=document.getElementById('pa');
-    var gtF=document.getElementById('gt');var cW=gtF?(gtF.offsetWidth+4):tbl.scrollWidth;var oPW=tbl.style.width;tbl.style.width=cW+'px';var sw2=document.getElementById('scw');var oSW=sw2?sw2.style.width:'';if(sw2)sw2.style.width=cW+'px';await new Promise(function(r){setTimeout(r,80);});var cH=tbl.scrollHeight;
-    var canvas=await html2canvas(tbl,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,scrollX:0,scrollY:-window.scrollY,width:cW,height:cH,windowWidth:cW,onclone:function(doc){var r=doc.documentElement;r.setAttribute('style','--bg:#f2f0eb;--sf:#fff;--bd:#e0dbd2;--bmd:#ccc7bc;--tx:#18170f;--mu:#7a7870;--mu2:#b5b0a8;--bar:#cbd5e1;--barh:#94a3b8;--al:#eef2fd;--sc:rgba(255,60,60,.07);--sh:#fde8e8;--ac:rgba(60,100,255,.07);--ah:#e4eaff;--hc:rgba(255,140,0,.10);--hh:#fff3cd;--hd:#1a1916;--ht:#f2f0eb;--rd:#dc2626;--gn:#86efac;--am:#b45309;--cl-hl:#d1fae5;--bar-tx:#475569;--gn-tx:#15803d');r.setAttribute('data-force-light','1');var styles=doc.querySelectorAll('style');styles.forEach(function(s){  s.textContent=s.textContent.replace(/@media\s*\(prefers-color-scheme:\s*dark\)[^{]*\{[\s\S]*?\}\s*\}/g,'');});},});tbl.style.width=oPW;if(sw2)sw2.style.width=oSW;
+    tbl=document.getElementById('pa');
+    var gtF=document.getElementById('gt');var cW=gtF?(gtF.offsetWidth+4):tbl.scrollWidth;sw2=document.getElementById('scw');captureWidthStyles=_captureInlineStyles([tbl,sw2].filter(Boolean));tbl.style.width=cW+'px';if(sw2)sw2.style.width=cW+'px';await new Promise(function(r){setTimeout(r,80);});await _settleChartBarLabels();var cH=tbl.scrollHeight;
+    var canvas=await html2canvas(tbl,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,scrollX:0,scrollY:-window.scrollY,width:cW,height:cH,windowWidth:cW,onclone:function(doc){var r=doc.documentElement;r.setAttribute('style','--bg:#f2f0eb;--sf:#fff;--bd:#e0dbd2;--bmd:#ccc7bc;--tx:#18170f;--mu:#7a7870;--mu2:#b5b0a8;--bar:#cbd5e1;--barh:#94a3b8;--al:#eef2fd;--sc:rgba(255,60,60,.07);--sh:#fde8e8;--ac:rgba(60,100,255,.07);--ah:#e4eaff;--hc:rgba(255,140,0,.10);--hh:#fff3cd;--hd:#1a1916;--ht:#f2f0eb;--rd:#dc2626;--gn:#86efac;--am:#b45309;--cl-hl:#d1fae5;--bar-tx:#475569;--gn-tx:#15803d');r.setAttribute('data-force-light','1');var styles=doc.querySelectorAll('style');styles.forEach(function(s){  s.textContent=s.textContent.replace(/@media\s*\(prefers-color-scheme:\s*dark\)[^{]*\{[\s\S]*?\}\s*\}/g,'');});},});
     /* PDF와 동일한 여백 적용: A3 가로(420x297mm) 기준 10mm 마진 */
     var marginRatioX=10/420,marginRatioY=10/297;
     var padX=Math.round(canvas.width*marginRatioX/(1-2*marginRatioX));
@@ -4534,39 +4776,46 @@ async function doIMG(){
     toast('이미지 저장 완료!');
   }catch(e){console.error(e);toast('이미지 저장 실패: '+e.message);}
   finally{
+    _restoreInlineStyles(captureWidthStyles);
     _restoreLightMode();
-    if(cs){cs.style.overflow=csOvf;cs.style.width=csW;}
-    if(cw){cw.style.overflow=cwOvf;}
-    sels.forEach(function(el,i){el.style.position=selPos[i]||'';});
-    noprints.forEach(function(el){el.style.visibility='';});
+    _restoreInlineStyles(overflowStyles);
+    _restoreInlineStyles(stickyStyles);
+    _restoreInlineStyles(noprintStyles);
+    _scheduleChartBarLabelLayout();
+    _chartExportBusy=false;
   }
 }
 async function doPDF(){
+  if(typeof html2canvas==='undefined'||!window.jspdf||!window.jspdf.jsPDF){toast('PDF 라이브러리 로딩 중...');return;}
+  if(_chartExportBusy){toast('파일 저장을 마친 뒤 다시 시도해주세요.');return;}
+  _chartExportBusy=true;
   var pg=document.getElementById('pc');
+  var csEl=document.querySelector('.cs'),cwEl=document.querySelector('.cw');
+  var overflowStyles=_captureInlineStyles([csEl,cwEl].filter(Boolean));
   document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
   document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on');});
   pg.classList.add('on');document.getElementById('tc2').classList.add('on');rChart();
-  var ca=document.getElementById('ca');ca.style.visibility='hidden';
-  document.querySelectorAll('.no-print').forEach(function(el){el.style.display='none';});
-  document.getElementById('pov').style.display='flex';
+  var ca=document.getElementById('ca'),pov=document.getElementById('pov');
+  var controlStyles=_captureInlineStyles([ca,pov]);
+  ca.style.visibility='hidden';
+  var noprints=document.querySelectorAll('.no-print');
+  var noprintStyles=_captureInlineStyles(noprints);
+  noprints.forEach(function(el){el.style.display='none';});
+  pov.style.display='flex';
   var sels=document.querySelectorAll('.sc');
-  sels.forEach(function(el){el.dataset.op=el.style.position;el.style.position='static';});
+  var stickyStyles=_captureInlineStyles(sels);
+  sels.forEach(function(el){el.style.position='static';});
   _forceLightMode();
   await new Promise(function(r){setTimeout(r,400);});
+  var target=null,swEl2=null,captureWidthStyles=[];
   try{
     var jsPDF=window.jspdf.jsPDF;
     /* 스크롤 컨테이너 overflow 해제 → 전체 테이블 캡처 */
-    var csEl=document.querySelector('.cs');
-    var cwEl=document.querySelector('.cw');
-    var csOv=csEl?csEl.style.overflow:'';
-    var cwOv=cwEl?cwEl.style.overflow:'';
     if(csEl)csEl.style.overflow='visible';
     if(cwEl)cwEl.style.overflow='visible';
     await new Promise(function(r){setTimeout(r,100);});
-    var target=document.getElementById('pa');
-    var gtFinal=document.getElementById('gt');var captureW=gtFinal?(gtFinal.offsetWidth+4):target.scrollWidth;var origPW=target.style.width;target.style.width=captureW+'px';var swEl2=document.getElementById('scw');var origSW2=swEl2?swEl2.style.width:'';if(swEl2)swEl2.style.width=captureW+'px';await new Promise(function(r){setTimeout(r,80);});var captureH=target.scrollHeight;var canvas=await html2canvas(target,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,scrollX:0,scrollY:-window.scrollY,width:captureW,height:captureH,windowWidth:captureW,onclone:function(doc){var r=doc.documentElement;r.setAttribute('style','--bg:#f2f0eb;--sf:#fff;--bd:#e0dbd2;--bmd:#ccc7bc;--tx:#18170f;--mu:#7a7870;--mu2:#b5b0a8;--bar:#cbd5e1;--barh:#94a3b8;--al:#eef2fd;--sc:rgba(255,60,60,.07);--sh:#fde8e8;--ac:rgba(60,100,255,.07);--ah:#e4eaff;--hc:rgba(255,140,0,.10);--hh:#fff3cd;--hd:#1a1916;--ht:#f2f0eb;--rd:#dc2626;--gn:#86efac;--am:#b45309;--cl-hl:#d1fae5;--bar-tx:#475569;--gn-tx:#15803d');r.setAttribute('data-force-light','1');var styles=doc.querySelectorAll('style');styles.forEach(function(s){  s.textContent=s.textContent.replace(/@media\s*\(prefers-color-scheme:\s*dark\)[^{]*\{[\s\S]*?\}\s*\}/g,'');});},});target.style.width=origPW;if(swEl2)swEl2.style.width=origSW2;
-    if(csEl)csEl.style.overflow=csOv;
-    if(cwEl)cwEl.style.overflow=cwOv;
+    target=document.getElementById('pa');
+    var gtFinal=document.getElementById('gt');var captureW=gtFinal?(gtFinal.offsetWidth+4):target.scrollWidth;swEl2=document.getElementById('scw');captureWidthStyles=_captureInlineStyles([target,swEl2].filter(Boolean));target.style.width=captureW+'px';if(swEl2)swEl2.style.width=captureW+'px';await new Promise(function(r){setTimeout(r,80);});await _settleChartBarLabels();var captureH=target.scrollHeight;var canvas=await html2canvas(target,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,scrollX:0,scrollY:-window.scrollY,width:captureW,height:captureH,windowWidth:captureW,onclone:function(doc){var r=doc.documentElement;r.setAttribute('style','--bg:#f2f0eb;--sf:#fff;--bd:#e0dbd2;--bmd:#ccc7bc;--tx:#18170f;--mu:#7a7870;--mu2:#b5b0a8;--bar:#cbd5e1;--barh:#94a3b8;--al:#eef2fd;--sc:rgba(255,60,60,.07);--sh:#fde8e8;--ac:rgba(60,100,255,.07);--ah:#e4eaff;--hc:rgba(255,140,0,.10);--hh:#fff3cd;--hd:#1a1916;--ht:#f2f0eb;--rd:#dc2626;--gn:#86efac;--am:#b45309;--cl-hl:#d1fae5;--bar-tx:#475569;--gn-tx:#15803d');r.setAttribute('data-force-light','1');var styles=doc.querySelectorAll('style');styles.forEach(function(s){  s.textContent=s.textContent.replace(/@media\s*\(prefers-color-scheme:\s*dark\)[^{]*\{[\s\S]*?\}\s*\}/g,'');});},});
     var iw=canvas.width,ih=canvas.height;
     /* A3 가로: 420x297mm, 여백 8mm */
     var margin=10,pw=420-margin*2,ph=297-margin*2;
@@ -4578,7 +4827,7 @@ async function doPDF(){
     var fn=today().replace(/-/g,'').substring(2)+' '+( (_cloudView&&_cloudView.pn) ? _cloudView.pn : (S.pn||'현장명') )+' 일정표';pdf.save(fn+'.pdf');
     toast('PDF 저장 완료!');
   }catch(err){console.error(err);toast('PDF 오류 — 브라우저 인쇄(Ctrl+P)로 저장해주세요.');}
-  finally{_restoreLightMode();sels.forEach(function(el){el.style.position=el.dataset.op||'';});ca.style.visibility='';document.getElementById('pov').style.display='none';document.querySelectorAll('.no-print').forEach(function(el){el.style.display='';});}
+  finally{_restoreInlineStyles(captureWidthStyles);_restoreInlineStyles(overflowStyles);_restoreLightMode();_restoreInlineStyles(stickyStyles);_restoreInlineStyles(controlStyles);_restoreInlineStyles(noprintStyles);_scheduleChartBarLabelLayout();_chartExportBusy=false;}
 }
 
 /* READONLY */

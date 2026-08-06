@@ -22,14 +22,16 @@ def read_single_row_geometry(page, task_ids):
         taskIds => taskIds.map(taskId => {
           const row = document.querySelector('#gt tbody tr[data-task-id="' + taskId + '"]');
           const rowRect = row.getBoundingClientRect();
+          const cell = row.querySelector('td.dg');
+          const cellRect = cell.getBoundingClientRect();
           const bars = Array.from(row.querySelectorAll('.bar')).map(bar => {
             const rect = bar.getBoundingClientRect();
-            const text = bar.querySelector('.bt');
-            const textRect = text.getBoundingClientRect();
-            const phaseLabel = bar.querySelector('.bt-phase');
+            const label = row.querySelector(
+              '.chart-bar-label[data-task-id="' + taskId + '"][data-phase="' + bar.dataset.phase + '"]'
+            );
+            const labelRect = label.getBoundingClientRect();
+            const phaseLabel = label.querySelector('.bt-phase');
             const phaseRect = phaseLabel ? phaseLabel.getBoundingClientRect() : null;
-            const copy = bar.querySelector('.bt-copy');
-            const copyStyle = getComputedStyle(copy);
             return {
               phase:Number(bar.dataset.phase),
               hasLaneAttribute:bar.hasAttribute('data-lane'),
@@ -42,11 +44,18 @@ def read_single_row_geometry(page, task_ids):
               centerY:(rect.top + rect.bottom) / 2,
               relativeCenterY:(rect.top + rect.bottom) / 2 - rowRect.top,
               bounded:rect.top >= rowRect.top - .5 && rect.bottom <= rowRect.bottom + .5,
-              textBounded:textRect.left >= rect.left - .5 && textRect.right <= rect.right + .5,
-              textClipped:getComputedStyle(text).overflowX === 'hidden',
-              copyEllipsis:copyStyle.overflowX === 'hidden' && copyStyle.textOverflow === 'ellipsis',
-              phaseVisible:!phaseRect || (phaseRect.width > 0 && phaseRect.left >= rect.left - .5 && phaseRect.right <= rect.right + .5),
-              hasTitle:!!bar.getAttribute('title')
+              labelLeft:labelRect.left,
+              labelRight:labelRect.right,
+              labelTop:labelRect.top,
+              labelBottom:labelRect.bottom,
+              labelLane:label.dataset.labelLane,
+              labelDirection:label.dataset.labelDirection,
+              labelBounded:labelRect.left >= cellRect.left - .5 && labelRect.right <= cellRect.right + .5
+                && labelRect.top >= rowRect.top - .5 && labelRect.bottom <= rowRect.bottom + .5,
+              pointerEvents:getComputedStyle(label).pointerEvents,
+              phaseVisible:!phaseRect || (phaseRect.width > 0 && phaseRect.left >= labelRect.left - .5 && phaseRect.right <= labelRect.right + .5),
+              hasTitle:!!bar.getAttribute('title') && bar.getAttribute('title') === label.getAttribute('title'),
+              internalLabelCount:bar.querySelectorAll('.bt,.chart-bar-label').length
             };
           });
           let overlaps = 0;
@@ -57,12 +66,26 @@ def read_single_row_geometry(page, task_ids):
               if (xOverlap > .5 && yOverlap > .5) overlaps++;
             }
           }
+          let labelOverlaps = 0;
+          for (let i = 0; i < bars.length; i++) {
+            for (let j = i + 1; j < bars.length; j++) {
+              const xOverlap = Math.min(bars[i].labelRight, bars[j].labelRight)
+                - Math.max(bars[i].labelLeft, bars[j].labelLeft);
+              const yOverlap = Math.min(bars[i].labelBottom, bars[j].labelBottom)
+                - Math.max(bars[i].labelTop, bars[j].labelTop);
+              if (xOverlap > .25 && yOverlap > .25) labelOverlaps++;
+            }
+          }
+          const layer = row.querySelector('.chart-bar-label-layer');
           return {
             taskId,
             height:Math.round(rowRect.height),
             rowCenter:rowRect.height / 2,
             bars,
-            overlaps
+            overlaps,
+            labelOverlaps,
+            layoutCollisions:Number(layer.dataset.layoutCollisions),
+            layoutOutside:Number(layer.dataset.layoutOutside)
           };
         })
         """,
@@ -74,18 +97,249 @@ def assert_single_row_geometry(metrics):
     for row in metrics:
         assert row["height"] == 38, row
         assert row["overlaps"] == 0, row
+        assert row["labelOverlaps"] == 0, row
+        assert row["layoutCollisions"] == 0, row
+        assert row["layoutOutside"] == 0, row
         assert all(bar["bounded"] for bar in row["bars"]), row
-        assert all(
-            bar["textBounded"] and bar["textClipped"] and bar["copyEllipsis"]
-            for bar in row["bars"]
-        ), row
+        assert all(bar["labelBounded"] and bar["pointerEvents"] == "none" for bar in row["bars"]), row
         assert all(bar["phaseVisible"] and bar["hasTitle"] for bar in row["bars"]), row
+        assert all(bar["internalLabelCount"] == 0 for bar in row["bars"]), row
         assert all(not bar["hasLaneAttribute"] for bar in row["bars"]), row
         assert all(bar["inlineTop"] == "50%" for bar in row["bars"]), row
         assert all(bar["inlineTransform"] == "translateY(-50%)" for bar in row["bars"]), row
         centers = [bar["relativeCenterY"] for bar in row["bars"]]
         assert all(abs(center - row["rowCenter"]) <= 1 for center in centers), row
         assert max(centers) - min(centers) <= 1, row
+
+
+def read_chart_label_contract(page, task_ids):
+    return page.evaluate(
+        """
+        taskIds => taskIds.map(taskId => {
+          const row = document.querySelector('#gt tbody tr[data-task-id="' + taskId + '"]');
+          const rowRect = row.getBoundingClientRect();
+          const cell = row.querySelector('td.dg');
+          const cellRect = cell.getBoundingClientRect();
+          const labels = Array.from(row.querySelectorAll('.chart-bar-label')).map(label => {
+            const bar = row.querySelector(
+              '.bar[data-task-id="' + taskId + '"][data-phase="' + label.dataset.phase + '"]'
+            );
+            const rect = label.getBoundingClientRect();
+            const barRect = bar.getBoundingClientRect();
+            const copy = label.querySelector('.chart-bar-copy');
+            const copyStyle = getComputedStyle(copy);
+            const range = document.createRange();
+            range.selectNodeContents(copy);
+            const glyph = range.getBoundingClientRect();
+            let visibleLeft = glyph.left;
+            let visibleRight = glyph.right;
+            for (let node = copy; node && node !== row; node = node.parentElement) {
+              const style = getComputedStyle(node);
+              if (['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowX)) {
+                const clip = node.getBoundingClientRect();
+                visibleLeft = Math.max(visibleLeft, clip.left);
+                visibleRight = Math.min(visibleRight, clip.right);
+              }
+            }
+            visibleLeft = Math.max(visibleLeft, cellRect.left);
+            visibleRight = Math.min(visibleRight, cellRect.right);
+            const phase = label.querySelector('.bt-phase');
+            const phaseRect = phase ? phase.getBoundingClientRect() : null;
+            const required = label.querySelector('.chart-bar-required');
+            const requiredRect = required ? required.getBoundingClientRect() : null;
+            const requiredVisibleLeft = requiredRect ? Math.max(requiredRect.left, rect.left, cellRect.left) : 0;
+            const requiredVisibleRight = requiredRect ? Math.min(requiredRect.right, rect.right, cellRect.right) : 0;
+            const task = S.tasks.find(item => item.id === taskId);
+            const taskPhase = ScheduleCore.getTaskPhase(task, Number(label.dataset.phase));
+            const expectedTitle = (ScheduleCore.getTaskPhaseCount(task) > 1
+              ? '[' + label.dataset.phase + '차] ' : '')
+              + taskPhase.name + (taskPhase.desc ? ' | ' + taskPhase.desc : '');
+            return {
+              phase:Number(label.dataset.phase),
+              lane:label.dataset.labelLane,
+              direction:label.dataset.labelDirection,
+              constrained:label.classList.contains('is-constrained'),
+              left:rect.left, right:rect.right, top:rect.top, bottom:rect.bottom,
+              centerY:(rect.top + rect.bottom) / 2 - rowRect.top,
+              barLeft:barRect.left, barRight:barRect.right,
+              barCenterY:(barRect.top + barRect.bottom) / 2 - rowRect.top,
+              barWidth:barRect.width,
+              expectedBarWidth:(dif(taskPhase.sd, taskPhase.ed) + 1) * CW,
+              text:copy.textContent,
+              glyphLeft:glyph.left, glyphRight:glyph.right,
+              glyphWidth:glyph.width,
+              visibleGlyphLeft:visibleLeft,
+              visibleGlyphRight:visibleRight,
+              visibleGlyphWidth:Math.max(0, visibleRight - visibleLeft),
+              copyOverflow:copyStyle.overflowX,
+              copyTextOverflow:copyStyle.textOverflow,
+              pointerEvents:getComputedStyle(label).pointerEvents,
+              title:label.getAttribute('title'),
+              expectedTitle,
+              phaseText:phase ? phase.textContent : '',
+              phaseWidth:phaseRect ? phaseRect.width : 0,
+              phaseFullyVisible:!phaseRect || (
+                phaseRect.left >= rect.left - .5 && phaseRect.right <= rect.right + .5
+                && phaseRect.left >= cellRect.left - .5 && phaseRect.right <= cellRect.right + .5
+              ),
+              requiredText:required ? required.textContent : '',
+              requiredGlyphWidth:requiredRect ? requiredRect.width : 0,
+              requiredVisibleWidth:requiredRect ? Math.max(0, requiredVisibleRight - requiredVisibleLeft) : 0,
+              insideBarY:rect.top >= barRect.top - .5 && rect.bottom <= barRect.bottom + .5,
+              independentlyBounded:rect.left >= cellRect.left - .5 && rect.right <= cellRect.right + .5
+                && rect.top >= rowRect.top - .5 && rect.bottom <= rowRect.bottom + .5
+            };
+          });
+          let overlaps = 0;
+          for (let i = 0; i < labels.length; i++) {
+            for (let j = i + 1; j < labels.length; j++) {
+              const x = Math.min(labels[i].right, labels[j].right) - Math.max(labels[i].left, labels[j].left);
+              const y = Math.min(labels[i].bottom, labels[j].bottom) - Math.max(labels[i].top, labels[j].top);
+              if (x > .25 && y > .25) overlaps++;
+            }
+          }
+          return {
+            taskId,
+            rowHeight:rowRect.height,
+            rowCenter:rowRect.height / 2,
+            cellLeft:cellRect.left,
+            cellRight:cellRect.right,
+            cw:CW,
+            dateColumnWidths:Array.from(document.querySelectorAll('#gt thead .hw:not(.sc)'))
+              .map(column => column.getBoundingClientRect().width),
+            labels,
+            overlaps,
+            layoutCollisions:Number(cell.querySelector('.chart-bar-label-layer').dataset.layoutCollisions),
+            layoutOutside:Number(cell.querySelector('.chart-bar-label-layer').dataset.layoutOutside)
+          };
+        })
+        """,
+        task_ids,
+    )
+
+
+def exercise_chart_export_restoration(page):
+    return page.evaluate(
+        """
+        async () => {
+          await new Promise(resolve => setTimeout(resolve, 850));
+          await _settleChartBarLabels();
+          const originalCanvas = window.html2canvas;
+          const originalJspdf = window.jspdf;
+          const originalClick = HTMLAnchorElement.prototype.click;
+          const originalError = console.error;
+          const snapshot = () => ({
+            rootStyle:document.documentElement.getAttribute('style'),
+            forceLight:document.documentElement.getAttribute('data-force-light'),
+            pa:document.getElementById('pa').style.width,
+            scw:document.getElementById('scw').style.width,
+            cs:document.querySelector('.cs').style.cssText,
+            cw:document.querySelector('.cw').style.cssText,
+            sticky:Array.from(document.querySelectorAll('.sc')).map(el => el.style.position),
+            noPrint:Array.from(document.querySelectorAll('.no-print')).map(el => [el.style.visibility, el.style.display]),
+            ca:document.getElementById('ca').style.visibility,
+            pov:document.getElementById('pov').style.display,
+            labels:Array.from(document.querySelectorAll('.chart-bar-label')).map(label => {
+              const rect=label.getBoundingClientRect();
+              return [label.dataset.taskId,label.dataset.phase,label.dataset.labelLane,label.dataset.labelDirection,
+                label.style.left,label.style.maxWidth,rect.left,rect.right,rect.top,rect.bottom];
+            }),
+            state:JSON.stringify(S), undo:_undoStack.length, redo:_redoStack.length,
+            recent:localStorage.getItem('cs_recent'), busy:_chartExportBusy
+          });
+          const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
+          const differences = (a,b) => Object.keys(a).filter(
+            key => JSON.stringify(a[key]) !== JSON.stringify(b[key])
+          );
+          const fakeCanvas = () => {
+            const canvas=document.createElement('canvas'); canvas.width=32; canvas.height=24; return canvas;
+          };
+          const settleRestore = async () => {
+            await _chartLabelFrameOrTimeout(); _layoutChartBarLabels(document.getElementById('gt'));
+          };
+          const base=snapshot();
+          let imageSuccess=false,imageFailure=false,pdfSuccess=false,pdfFailure=false;
+          const mismatchFields={};
+          try {
+            HTMLAnchorElement.prototype.click=function(){};
+            window.html2canvas=async () => fakeCanvas();
+            await doIMG(); await settleRestore(); let current=snapshot(); imageSuccess=same(current,base);
+            mismatchFields.imageSuccess=differences(current,base);
+            console.error=function(){};
+            window.html2canvas=async () => { throw new Error('synthetic capture failure'); };
+            await doIMG(); await settleRestore(); current=snapshot(); imageFailure=same(current,base);
+            mismatchFields.imageFailure=differences(current,base);
+            window.html2canvas=async () => fakeCanvas();
+            window.jspdf={jsPDF:function(){this.addImage=function(){};this.save=function(){};}};
+            await doPDF(); await settleRestore(); current=snapshot(); pdfSuccess=same(current,base);
+            mismatchFields.pdfSuccess=differences(current,base);
+            window.html2canvas=async () => { throw new Error('synthetic capture failure'); };
+            await doPDF(); await settleRestore(); current=snapshot(); pdfFailure=same(current,base);
+            mismatchFields.pdfFailure=differences(current,base);
+          } finally {
+            window.html2canvas=originalCanvas; window.jspdf=originalJspdf;
+            HTMLAnchorElement.prototype.click=originalClick; console.error=originalError;
+          }
+          return {imageSuccess,imageFailure,pdfSuccess,pdfFailure,busy:_chartExportBusy,mismatchFields};
+        }
+        """
+    )
+
+
+def exercise_narrow_cleaning_label_pack(page):
+    return page.evaluate(
+        """
+        async () => {
+          if (document.fonts && document.fonts.ready) await document.fonts.ready;
+          const cell=document.createElement('div');
+          cell.className='dg';
+          cell.style.cssText='position:fixed;left:0;top:0;width:210px;height:38px;padding:0;z-index:-1;';
+          const layer=document.createElement('div');
+          layer.className='chart-bar-label-layer';
+          cell.appendChild(layer);
+          [30,60,90,150,150].forEach((left,index) => {
+            const phase=index+1;
+            const bar=document.createElement('div');
+            bar.className='bar';
+            bar.dataset.taskId='900';
+            bar.dataset.phase=String(phase);
+            bar.style.cssText='left:'+left+'px;width:30px;top:50%;transform:translateY(-50%);';
+            cell.appendChild(bar);
+            const label=document.createElement('div');
+            label.className='chart-bar-label';
+            label.dataset.taskId='900';
+            label.dataset.phase=String(phase);
+            label.dataset.cleaning='1';
+            label.innerHTML='<span class="bt-phase">['+phase+'차]</span>'
+              +'<span class="chart-bar-copy"><span class="chart-bar-required">준공청소</span></span>';
+            layer.appendChild(label);
+          });
+          document.body.appendChild(cell);
+          try {
+            _layoutChartBarLabelCell(cell);
+            const labels=Array.from(layer.querySelectorAll('.chart-bar-label')).map(label => {
+              const rect=label.getBoundingClientRect();
+              return {phase:Number(label.dataset.phase),lane:label.dataset.labelLane,
+                left:rect.left,right:rect.right,width:rect.width};
+            });
+            const lanes={upper:labels.filter(label => label.lane==='upper'),lower:labels.filter(label => label.lane==='lower')};
+            const minGap = group => group.length < 2 ? null : Math.min(...group.slice(1).map(
+              (label,index) => label.left-group[index].right
+            ));
+            return {
+              cellWidth:cell.getBoundingClientRect().width,
+              collisions:Number(layer.dataset.layoutCollisions),
+              outside:Number(layer.dataset.layoutOutside),
+              labels,
+              upperGap:minGap(lanes.upper),
+              lowerGap:minGap(lanes.lower)
+            };
+          } finally {
+            cell.remove();
+          }
+        }
+        """
+    )
 
 
 def exercise_phase_pointer_edits(page, task_id):
@@ -388,6 +642,160 @@ def run_chart_task_management(
     assert pointer_edit_operations == 15
     assert_single_row_geometry(read_single_row_geometry(page, [1, 2, 3, 4, 5]))
 
+    before_label_fixture = page.evaluate("JSON.stringify(S)")
+    label_fixture_state = page.evaluate(
+        """
+        async () => {
+          S.sd = '2026-08-05';
+          S.ed = '2026-09-01';
+          S.notes = [];
+          S.tasks.forEach(task => { task.on = false; });
+          const setCount = (task, count) => {
+            while (ScheduleCore.getTaskPhaseCount(task) > count) ScheduleCore.removeLastTaskPhase(task);
+            while (ScheduleCore.getTaskPhaseCount(task) < count) {
+              ScheduleCore.addTaskPhase(task, {name:task.name, desc:'', mode:'manual'});
+            }
+            task.on = true;
+          };
+          const setPhase = (task, phase, date, name, desc = '') => {
+            ScheduleCore.updateTaskPhase(task, phase, {sd:date, ed:date, name, desc, mode:'manual'});
+          };
+          const collision = S.tasks.find(task => task.id === 1);
+          setCount(collision, 3);
+          setPhase(collision, 1, '2026-08-05', '기준');
+          setPhase(collision, 2, '2026-08-12', '앞쪽 인접 장문 공종 텍스트', '실측 폭 충돌');
+          setPhase(collision, 3, '2026-08-13', '뒤쪽 인접 장문 공종 텍스트', '실측 폭 충돌');
+          const separated = S.tasks.find(task => task.id === 2);
+          setCount(separated, 2);
+          setPhase(separated, 1, '2026-08-07', '짧음');
+          setPhase(separated, 2, '2026-08-25', '짧음');
+          const leftEdge = S.tasks.find(task => task.id === 3);
+          setCount(leftEdge, 1);
+          setPhase(leftEdge, 1, '2026-08-05', '차트 시작 긴 텍스트', '오른쪽 전개');
+          const rightEdge = S.tasks.find(task => task.id === 13);
+          setCount(rightEdge, 1);
+          setPhase(rightEdge, 1, '2026-09-01', '차트 끝의 매우 긴 텍스트', '왼쪽 전개 확인');
+          const cleaning = S.tasks.find(task => task.id === 14);
+          cleaning.name = '준공청소';
+          setCount(cleaning, 5);
+          for (let phase = 1; phase <= 5; phase++) {
+            setPhase(
+              cleaning,
+              phase,
+              addD('2026-08-28', phase - 1),
+              '준공청소',
+              phase === 5 ? '오른쪽 경계 전체 내용 확인' : ''
+            );
+          }
+          rChart();
+          await _settleChartBarLabels();
+          return JSON.parse(JSON.stringify(S));
+        }
+        """
+    )
+    label_contract = read_chart_label_contract(page, [1, 2, 3, 13, 14])
+    label_rows = {row["taskId"]: row for row in label_contract}
+    assert all(row["rowHeight"] == 38 for row in label_contract), label_contract
+    assert all(row["overlaps"] == 0 and row["layoutCollisions"] == 0 for row in label_contract), label_contract
+    assert all(row["layoutOutside"] == 0 for row in label_contract), label_contract
+    assert all(row["cw"] == 30 and all(abs(width - 30) <= 0.5 for width in row["dateColumnWidths"]) for row in label_contract), label_contract
+    assert all(
+        abs(label["barCenterY"] - 19) <= 1
+        and label["pointerEvents"] == "none"
+        and abs(label["barWidth"] - label["expectedBarWidth"]) <= 0.5
+        and label["insideBarY"]
+        and label["independentlyBounded"]
+        and label["phaseFullyVisible"]
+        and label["title"] == label["expectedTitle"]
+        and (not label["phaseText"] or label["phaseText"] == f'[{label["phase"]}차]')
+        for row in label_contract
+        for label in row["labels"]
+    ), label_contract
+    collision_labels = {label["phase"]: label for label in label_rows[1]["labels"]}
+    assert collision_labels[1]["lane"] == "center", collision_labels
+    assert collision_labels[2]["lane"] == "upper", collision_labels
+    assert collision_labels[3]["lane"] == "lower", collision_labels
+    assert collision_labels[2]["centerY"] < 19 < collision_labels[3]["centerY"], collision_labels
+    assert all(label["lane"] == "center" for label in label_rows[2]["labels"]), label_rows[2]
+    assert all(abs(label["centerY"] - 19) <= 1 for label in label_rows[2]["labels"]), label_rows[2]
+    assert label_rows[3]["labels"][0]["direction"] == "right", label_rows[3]
+    assert label_rows[13]["labels"][0]["direction"] == "left", label_rows[13]
+    assert abs(label_rows[13]["labels"][0]["right"] - label_rows[13]["labels"][0]["barRight"]) <= 0.5, label_rows[13]
+    assert len(label_rows[14]["labels"]) == 5, label_rows[14]
+    assert all(
+        label["requiredText"] == "준공청소"
+        and abs(label["requiredVisibleWidth"] - label["requiredGlyphWidth"]) <= 0.5
+        for label in label_rows[14]["labels"]
+    ), label_rows[14]
+    cleaning_label = label_rows[14]["labels"][0]
+    assert cleaning_label["text"] == "준공청소", cleaning_label
+    assert cleaning_label["constrained"] is False, cleaning_label
+    assert cleaning_label["copyOverflow"] == "visible", cleaning_label
+    assert cleaning_label["copyTextOverflow"] == "clip", cleaning_label
+    assert cleaning_label["glyphLeft"] >= cleaning_label["left"] - 0.5, cleaning_label
+    assert cleaning_label["glyphRight"] <= cleaning_label["right"] + 0.5, cleaning_label
+    assert abs(cleaning_label["visibleGlyphWidth"] - cleaning_label["glyphWidth"]) <= 0.5, cleaning_label
+    assert cleaning_label["right"] - cleaning_label["left"] > cleaning_label["barWidth"], cleaning_label
+    assert cleaning_label["title"] == "[1차] 준공청소", cleaning_label
+    narrow_cleaning_pack = exercise_narrow_cleaning_label_pack(page)
+    assert abs(narrow_cleaning_pack["cellWidth"] - 210) <= 0.5, narrow_cleaning_pack
+    assert narrow_cleaning_pack["collisions"] == 0 and narrow_cleaning_pack["outside"] == 0, narrow_cleaning_pack
+    assert [label["phase"] for label in narrow_cleaning_pack["labels"] if label["lane"] == "upper"] == [1, 3, 5], narrow_cleaning_pack
+    assert [label["phase"] for label in narrow_cleaning_pack["labels"] if label["lane"] == "lower"] == [2, 4], narrow_cleaning_pack
+    assert narrow_cleaning_pack["upperGap"] >= 0.49 and narrow_cleaning_pack["lowerGap"] >= 0.49, narrow_cleaning_pack
+    layout_purity = page.evaluate(
+        """
+        async () => {
+          const before = {
+            state:JSON.stringify(S), undo:_undoStack.length, redo:_redoStack.length,
+            recent:localStorage.getItem('cs_recent')
+          };
+          _layoutChartBarLabels(document.getElementById('gt'));
+          await _settleChartBarLabels();
+          return {
+            state:before.state === JSON.stringify(S),
+            undo:before.undo === _undoStack.length,
+            redo:before.redo === _redoStack.length,
+            recent:before.recent === localStorage.getItem('cs_recent')
+          };
+        }
+        """
+    )
+    assert all(layout_purity.values()), layout_purity
+    export_restoration = exercise_chart_export_restoration(page)
+    assert all(
+        export_restoration[key]
+        for key in ("imageSuccess", "imageFailure", "pdfSuccess", "pdfFailure")
+    ), export_restoration
+    assert export_restoration["busy"] is False, export_restoration
+    if screenshot_dir:
+        page.locator("#pc").screenshot(path=str(screenshot_dir / "chart-label-layout-desktop.png"))
+
+    recentered = page.evaluate(
+        """
+        async () => {
+          const task = S.tasks.find(item => item.id === 1);
+          ScheduleCore.updateTaskPhase(task, 3, {sd:'2026-08-22', ed:'2026-08-22', mode:'manual'});
+          rChart();
+          await _settleChartBarLabels();
+          return Array.from(document.querySelectorAll(
+            '#gt tr[data-task-id="1"] .chart-bar-label[data-phase="2"], #gt tr[data-task-id="1"] .chart-bar-label[data-phase="3"]'
+          )).map(label => label.dataset.labelLane);
+        }
+        """
+    )
+    assert recentered == ["center", "center"], recentered
+    page.evaluate(
+        """
+        async serialized => {
+          S = ScheduleCore.normalizeScheduleState(JSON.parse(serialized));
+          rEdit(); rChart();
+          await _settleChartBarLabels();
+        }
+        """,
+        before_label_fixture,
+    )
+
     page.locator("#chartAddTask").click()
     page.locator("#chartCustomName").fill("차트 사용자 공종 A")
     page.locator("#chartCustomDesc").fill("차트 생성")
@@ -574,6 +982,36 @@ def run_chart_task_management(
         mobile_page.locator("#pc").screenshot(path=str(screenshot_dir / "chart-single-row-mobile.png"))
     mobile_page.evaluate(
         """
+        async state => {
+          S = ScheduleCore.normalizeScheduleState(state);
+          rChart();
+          await _settleChartBarLabels();
+        }
+        """,
+        label_fixture_state,
+    )
+    mobile_label_contract = read_chart_label_contract(mobile_page, [1, 2, 3, 13, 14])
+    mobile_label_rows = {row["taskId"]: row for row in mobile_label_contract}
+    assert all(row["overlaps"] == 0 and row["layoutCollisions"] == 0 for row in mobile_label_contract), mobile_label_contract
+    assert all(row["layoutOutside"] == 0 and row["rowHeight"] == 38 for row in mobile_label_contract), mobile_label_contract
+    assert mobile_label_rows[1]["labels"][1]["lane"] == "upper", mobile_label_rows[1]
+    assert mobile_label_rows[1]["labels"][2]["lane"] == "lower", mobile_label_rows[1]
+    assert mobile_label_rows[3]["labels"][0]["direction"] == "right", mobile_label_rows[3]
+    assert mobile_label_rows[13]["labels"][0]["direction"] == "left", mobile_label_rows[13]
+    assert abs(mobile_label_rows[13]["labels"][0]["right"] - mobile_label_rows[13]["labels"][0]["barRight"]) <= 0.5, mobile_label_rows[13]
+    mobile_cleaning = mobile_label_rows[14]["labels"][0]
+    assert len(mobile_label_rows[14]["labels"]) == 5, mobile_label_rows[14]
+    assert all(
+        label["requiredText"] == "준공청소"
+        and abs(label["requiredVisibleWidth"] - label["requiredGlyphWidth"]) <= 0.5
+        for label in mobile_label_rows[14]["labels"]
+    ), mobile_label_rows[14]
+    assert mobile_cleaning["text"] == "준공청소" and mobile_cleaning["constrained"] is False, mobile_cleaning
+    assert abs(mobile_cleaning["visibleGlyphWidth"] - mobile_cleaning["glyphWidth"]) <= 0.5, mobile_cleaning
+    if screenshot_dir:
+        mobile_page.locator("#pc").screenshot(path=str(screenshot_dir / "chart-label-layout-mobile.png"))
+    mobile_page.evaluate(
+        """
         state => {
           S = ScheduleCore.normalizeScheduleState(state);
           _origPn = state.pn;
@@ -679,6 +1117,15 @@ def run_chart_task_management(
             }
             for row in mobile_single_row
         ],
+        "label_layout": {
+            "desktop_collisions": sum(row["overlaps"] for row in label_contract),
+            "mobile_collisions": sum(row["overlaps"] for row in mobile_label_contract),
+            "cleaning_text": cleaning_label["text"],
+            "cleaning_bar_width": round(cleaning_label["barWidth"], 2),
+            "cleaning_label_width": round(cleaning_label["right"] - cleaning_label["left"], 2),
+            "narrow_cleaning_pack": narrow_cleaning_pack,
+            "export_restoration": export_restoration,
+        },
     }
 
 
