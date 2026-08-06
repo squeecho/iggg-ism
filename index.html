@@ -796,8 +796,12 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 
 
 
-.dg-note-line{position:absolute;top:0;bottom:0;width:16px;margin-left:-8px;z-index:4;cursor:ew-resize;opacity:.7;touch-action:none;}
-.dg-note-line::after{content:'';position:absolute;left:7px;top:0;bottom:0;width:2px;border-left:2px dashed #a16207;}.dg-note-line.dragging::after{border-left:2px dashed #10b981;}
+.dg-note-line{position:absolute;top:0;bottom:0;width:16px;margin-left:-8px;z-index:4;cursor:default;opacity:.7;touch-action:auto;}
+.dg-note-line.editable{cursor:ew-resize;touch-action:none;}
+.dg-note-line::after{content:'';position:absolute;left:7px;top:0;bottom:0;width:2px;border-left:2px dashed #a16207;}
+.dg-note-line.longpress-wait::after{border-left-color:#d97706;}
+.dg-note-line.dragging{opacity:1;}
+.dg-note-line.dragging::after{border-left:2px dashed #10b981;}
 
 @keyframes chipPop {
   0%   { transform:scale(1);   box-shadow:0 0 0 0 rgba(22,163,74,.6); }
@@ -4062,6 +4066,16 @@ function _showDragTip(cx,cy,sd,ed){
   if(ty<0)ty=cy+20;
   tip.style.left=tx+'px';tip.style.top=ty+'px';
 }
+function _showNoteDragTip(cx,cy,label,date){
+  var tip=document.getElementById('dragTip');
+  if(!tip){tip=document.createElement('div');tip.id='dragTip';tip.className='drag-tooltip';document.body.appendChild(tip);}
+  tip.innerHTML='<strong>'+esc(label)+'</strong><br>'+dspK(date);
+  tip.style.display='block';
+  var tx=cx+14,ty=cy-50;
+  if(tx+tip.offsetWidth>window.innerWidth)tx=cx-tip.offsetWidth-10;
+  if(ty<0)ty=cy+20;
+  tip.style.left=tx+'px';tip.style.top=ty+'px';
+}
 function _hideDragTip(){
   var tip=document.getElementById('dragTip');
   if(tip)tip.style.display='none';
@@ -4118,8 +4132,8 @@ function rG(){
     S.notes.forEach(function(n){
       if(nDt(n)===d.ds){
         var editable=!IS_RO;
-        h+='<div class="dg-note-line" data-nid="'+n.id+'" style="left:'+((di+0.5)*CW)+'px'+(editable?';cursor:pointer':'')+'"'
-          +(editable?' onclick="openNCal('+n.id+')"':'')
+        h+='<div class="dg-note-line'+(editable?' editable':'')+'" data-nid="'+n.id+'" style="left:'+((di+0.5)*CW)+'px"'
+          +(editable?' title="길게 눌러 날짜 이동" onpointerdown="nDragStart(event,'+n.id+')" onclick="nDragClick(event)" oncontextmenu="event.preventDefault()"':'')
           +'></div>';
       }
     });
@@ -4292,6 +4306,88 @@ function oMU(){
   }
   document.removeEventListener('mousemove',oMM);document.removeEventListener('mouseup',oMU);
 }
+
+/* 특별 날짜 세로선: long-press 후 날짜 칸 단위 이동 */
+var NOTE_LONG_PRESS_MS=650;
+var NOTE_PRESS_CANCEL_PX=8;
+var _notePress=null;
+function _noteLineEls(nid){return document.querySelectorAll('.dg-note-line[data-nid="'+nid+'"]');}
+function _clearNotePress(){
+  var press=_notePress;if(!press)return;
+  clearTimeout(press.timer);
+  document.removeEventListener('pointermove',_moveNotePress);
+  document.removeEventListener('pointerup',_endNotePress);
+  document.removeEventListener('pointercancel',_endNotePress);
+  window.removeEventListener('blur',_endNotePress);
+  if(press.target&&press.target.releasePointerCapture){try{press.target.releasePointerCapture(press.pointerId);}catch(e){}}
+  _noteLineEls(press.nid).forEach(function(line){line.classList.remove('longpress-wait','dragging');});
+  _hideDragTip();
+  _notePress=null;
+}
+function _activateNotePress(){
+  var press=_notePress;if(!press||press.active||IS_RO)return;
+  var note=S.notes.find(function(item){return item.id===press.nid;});if(!note){_clearNotePress();return;}
+  var currentDate=nDt(note);if(!currentDate){_clearNotePress();return;}
+  var bounds=chartBounds();
+  press.active=true;
+  press.startX=press.currentX;
+  press.startDate=currentDate;
+  press.chartStart=bounds.start;
+  press.maxIndex=Math.max(0,tot()-1);
+  press.baseIndex=Math.max(0,Math.min(press.maxIndex,dif(press.chartStart,currentDate)));
+  press.lastDate=currentDate;
+  press.pre=JSON.stringify(S);
+  _noteLineEls(press.nid).forEach(function(line){line.classList.remove('longpress-wait');line.classList.add('dragging');});
+  if(navigator.vibrate)navigator.vibrate(30);
+  toast('좌우로 이동하세요');
+  _showNoteDragTip(press.currentX,press.currentY,note.label,currentDate);
+}
+function nDragStart(e,nid){
+  if(IS_RO||!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0))return;
+  e.preventDefault();e.stopPropagation();
+  _clearNotePress();
+  _notePress={nid:nid,pointerId:e.pointerId,pointerType:e.pointerType,target:e.currentTarget||e.target,
+    originX:e.clientX,originY:e.clientY,currentX:e.clientX,currentY:e.clientY,active:false,changed:false};
+  _noteLineEls(nid).forEach(function(line){line.classList.add('longpress-wait');});
+  if(_notePress.target&&_notePress.target.setPointerCapture){try{_notePress.target.setPointerCapture(e.pointerId);}catch(err){}}
+  _notePress.timer=setTimeout(_activateNotePress,NOTE_LONG_PRESS_MS);
+  document.addEventListener('pointermove',_moveNotePress,{passive:false});
+  document.addEventListener('pointerup',_endNotePress);
+  document.addEventListener('pointercancel',_endNotePress);
+  window.addEventListener('blur',_endNotePress);
+}
+function _moveNotePress(e){
+  var press=_notePress;if(!press||e.pointerId!==press.pointerId)return;
+  press.currentX=e.clientX;press.currentY=e.clientY;
+  if(!press.active){
+    if(Math.abs(e.clientX-press.originX)>NOTE_PRESS_CANCEL_PX||Math.abs(e.clientY-press.originY)>NOTE_PRESS_CANCEL_PX)_clearNotePress();
+    return;
+  }
+  e.preventDefault();
+  var delta=Math.round((e.clientX-press.startX)/CW);
+  var targetIndex=Math.max(0,Math.min(press.maxIndex,press.baseIndex+delta));
+  var nextDate=addD(press.chartStart,targetIndex);
+  var note=S.notes.find(function(item){return item.id===press.nid;});if(!note||!nextDate)return;
+  if(nextDate!==press.lastDate){
+    ScheduleCore.setNoteManualDate(note,nextDate);
+    press.lastDate=nextDate;press.changed=true;
+    var left=(targetIndex+.5)*CW;
+    _noteLineEls(press.nid).forEach(function(line){line.style.left=left+'px';});
+  }
+  _showNoteDragTip(e.clientX,e.clientY,note.label,nextDate);
+}
+function _endNotePress(e){
+  var press=_notePress;if(!press)return;
+  if(e&&e.pointerId!==undefined&&e.pointerId!==press.pointerId)return;
+  if(e&&press.active)e.preventDefault();
+  var previous=press.pre;
+  var changed=!!(press.active&&press.changed&&previous&&JSON.stringify(S)!==previous);
+  _clearNotePress();
+  if(!changed)return;
+  _undoStack.push(previous);if(_undoStack.length>30)_undoStack.shift();_redoStack=[];_updUR();
+  rNE();rChart();sync();
+}
+function nDragClick(e){e.preventDefault();e.stopPropagation();}
 function chartTaskClick(id){
   openChartTaskManager(id);
 }
