@@ -39,11 +39,11 @@
 
 | ID | 목표 | 상태 | 우선순위 | 현재 근거 | 완료 기준 |
 |---|---|---:|---:|---|---|
-| TL-01 | 2~5차가 모두 동일한 고정 1행 | deviant | P0 | 실제 높이 `60/86/112/138px` | 2~5차의 DOM 행 높이가 모두 동일하고 막대가 행 내부에 포함 |
-| TL-02 | 홀수 차수 상단, 짝수 차수 하단 | deviant | P0 | 현재 phase 배열 순번마다 새 `lane` 사용 | 1/3/5 중심 y 동일, 2/4 중심 y 동일, 두 레인 비겹침 |
-| TL-03 | 단일 1차 중앙 배치 | deviant | P0 | 현재 1차도 `top:4px` 고정 | 38px 행의 수직 중앙과 막대 중심 오차 1px 이하 |
-| TL-04 | 1일 막대 문구의 이웃 침범 차단 | deviant | P0 | `.bt`가 `overflow:visible` | 차수 표시는 유지하고 상세만 ellipsis, 실제 text bbox가 막대 경계를 이탈하지 않음 |
-| TL-05 | drag·resize·guide·undo·autosave 불변 | partial | P0 | 핸들러는 phase ID와 x 좌표를 사용해 수직 lane과 독립 | 각 차수 독립 이동·좌우 조절, 비대상 phase 불변, 저장·undo/redo 통과 |
+| TL-01 | 2~5차가 모두 동일한 고정 1행 | parity | P0 | 2~5차 실제 높이 모두 `56px` | 2~5차의 DOM 행 높이가 모두 동일하고 막대가 행 내부에 포함 |
+| TL-02 | 홀수 차수 상단, 짝수 차수 하단 | parity | P0 | 홀수 중심 `15.5px`, 짝수 중심 `41.5px` | 1/3/5 중심 y 동일, 2/4 중심 y 동일, 두 레인 비겹침 |
+| TL-03 | 단일 1차 중앙 배치 | parity | P0 | 38px 행에서 막대 중심 `19px` | 38px 행의 수직 중앙과 막대 중심 오차 1px 이하 |
+| TL-04 | 1일 막대 문구의 이웃 침범 차단 | parity | P0 | `.bt`만 clip하고 resize handle은 기존 overflow 유지 | 차수 표시는 유지하고 상세만 ellipsis, 실제 text bbox가 막대 경계를 이탈하지 않음 |
+| TL-05 | drag·resize·guide·undo·autosave 불변 | parity | P0 | 5개 차수별 이동·좌·우 조절 15회 실제 포인터 검증 | 각 차수 독립 이동·좌우 조절, 비대상 phase 불변, 저장·undo/redo 통과 |
 | MF-01 | footer 첫 줄 제거 왼쪽·추가 오른쪽 | missing | P0 | 현재 추가가 먼저이며 제거에 `-` 없음 | 좌우 bbox와 `- N차 제거`/`+ N차 추가` 문구 검증 |
 | MF-02 | 항상 보이는 완료 버튼과 저장 확정 | missing | P0 | 완료 버튼이 없고 body의 flex shrink 계약이 없음 | phase 5까지 scroll해도 완료가 viewport 안에 있고 blur·기존 autosave flush 후 닫힘 |
 | MF-03 | 사용자 공종 삭제 danger 분리 | deviant | P1 | 삭제가 차수 action과 같은 영역 | body 끝 별도 danger 영역, footer에는 차수와 완료만 존재 |
@@ -59,6 +59,14 @@
 | 2 | `rG()` 고정 2단 표시와 막대 텍스트 경계 | 1~5차 좌표·행 높이·2D 겹침·drag/resize·출력 공통 DOM 테스트 |
 | 3 | 공종 관리 sticky footer와 저장 완료 동작 | desktop/mobile 좌우 버튼·항상 보이는 완료·read-only·danger 분리·autosave 테스트 |
 | 4 | 전체 회귀·실제 출력·Preview·Production | test/typecheck/build/UI, PNG/PDF와 Preview 직접 관찰 후에만 fast-forward 배포 |
+
+### Wave 2 체크포인트
+
+- 실제 Chromium에서 1~5차 합성 공종의 행 높이는 `38/56/56/56/56px`였다. 2~5차는 phase 수가 늘어도 높이가 증가하지 않는다.
+- 1·3·5차의 행 내부 중심은 모두 `15.5px`, 2·4차는 모두 `41.5px`였다. 같은 레인의 날짜 x 구간을 포함한 실제 2D 교집합은 0건이었다.
+- 1일 폭 30px 막대에서도 `[N차]` 표식이 막대 경계 안에 남았고 상세 문구는 ellipsis 처리됐다. 전체 문구는 막대 `title`로 유지했다.
+- 막대 바깥 resize hit area는 보존하고 텍스트 span만 clip했다. 5개 차수 각각의 이동·왼쪽 시작일 조절·오른쪽 종료일 조절 15회를 실제 mouse로 수행했으며 비대상 차수는 바뀌지 않았고 각 조작의 undo가 원문 phase JSON으로 복원됐다.
+- Node test 16/16, typecheck, 정적 build, 전체 UI 회귀가 통과했다. UI 실행에서 외부 mutation·console error·page error·request failure는 각각 0건이었다.
 
 ## 2026-08-07 차트 공종 관리 복구
 

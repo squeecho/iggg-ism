@@ -632,7 +632,9 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .bh{position:absolute;top:0;bottom:0;width:16px;background:transparent;cursor:ew-resize;z-index:4;touch-action:none;}
 .bh.l{left:-6px;}
 .bh.r{right:-6px;}
-.bt{font-size:10px;color:#111;white-space:nowrap;padding:0 8px;pointer-events:none;overflow:visible;font-weight:700;position:relative;z-index:4;}
+.bt{font-size:10px;color:#111;white-space:nowrap;padding:0 3px;pointer-events:none;overflow:hidden;font-weight:700;position:relative;z-index:4;display:flex;align-items:center;gap:3px;width:100%;min-width:0;}
+.bt-phase{flex:0 0 auto;font-size:9px;}
+.bt-copy{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* schedule check */
 .sw{margin-top:8px;background:var(--sf);border-radius:0;border:2px solid #b8b2a8;overflow:hidden;}
 .sh2{background:#e8e5de;padding:8px 14px;border-bottom:1.5px solid #c8c3bb;}
@@ -4080,7 +4082,8 @@ function rG(){
   h+='</tr></thead><tbody>';
   ScheduleCore.orderedTasks(S.tasks).forEach(function(t,i){
     var phases=ScheduleCore.getTaskPhases(t,{activeOnly:true,validOnly:true});
-    var rowHeight=Math.max(38,phases.length*26+8);
+    var hasPhaseLanes=phases.length>1;
+    var rowHeight=hasPhaseLanes?56:38;
     var isCl=(t.id===14);
     var barColor=isCl?'var(--gn)':'var(--bar)';
     h+='<tr class="'+(t.on?'':'ia')+'" data-task-id="'+t.id+'" style="height:'+rowHeight+'px"><td class="d1 sc s1" style="left:0">'+zz(i+1)+'</td><td class="d2 sc s2 chart-task-name" data-task-id="'+t.id+'" style="left:32px;border-right:2px solid var(--bmd);cursor:pointer;text-align:center'+(phases.length>1?';text-decoration:underline;text-underline-offset:3px':'')+'" onclick="chartTaskClick('+t.id+')">'+esc(t.name)+'</td>';
@@ -4096,12 +4099,15 @@ function rG(){
       }
     });
   });
-    if(t.on)phases.forEach(function(phase,lane){
+    if(t.on)phases.forEach(function(phase){
       var si=d2i(phase.sd),ei=Math.min(d2i(phase.ed),N-1);
       if(ei<si||si>=N)return;
       var legacyAttr=phase.index===1?' data-id="'+t.id+'"':phase.index===2?' data-id2="'+t.id+'"':phase.index===3?' data-id3="'+t.id+'"':'';
       var opacity=Math.max(.68,1-(phase.index-1)*.08);
-      h+='<div class="bar"'+legacyAttr+' data-task-id="'+t.id+'" data-phase="'+phase.index+'" style="left:'+(si*CW)+'px;width:'+((ei-si+1)*CW)+'px;position:absolute;top:'+(4+lane*26)+'px;transform:none;z-index:2;background:'+barColor+';opacity:'+opacity+'" onmousedown="dSPhase(event,'+t.id+',\'mv\','+phase.index+')" ontouchstart="tI('+t.id+',event,\'mv\','+phase.index+')"><div class="bh l" onmousedown="dSPhase(event,'+t.id+',\'l\','+phase.index+');event.stopPropagation()" ontouchstart="tI('+t.id+',event,\'l\','+phase.index+');event.stopPropagation()"></div><span class="bt">'+(phases.length>1?'['+phase.index+'차] ':'')+esc(phase.name)+(phase.desc?' | '+esc(phase.desc):'')+'</span><div class="bh r" onmousedown="dSPhase(event,'+t.id+',\'r\','+phase.index+');event.stopPropagation()" ontouchstart="tI('+t.id+',event,\'r\','+phase.index+');event.stopPropagation()"></div></div>';
+      var lane=hasPhaseLanes?(phase.index%2===1?'upper':'lower'):'single';
+      var laneTop=lane==='single'?8:(lane==='upper'?4:30);
+      var fullLabel=phase.name+(phase.desc?' | '+phase.desc:'');
+      h+='<div class="bar"'+legacyAttr+' data-task-id="'+t.id+'" data-phase="'+phase.index+'" data-lane="'+lane+'" title="'+esc((hasPhaseLanes?'['+phase.index+'차] ':'')+fullLabel)+'" style="left:'+(si*CW)+'px;width:'+((ei-si+1)*CW)+'px;position:absolute;top:'+laneTop+'px;transform:none;z-index:2;background:'+barColor+';opacity:'+opacity+'" onmousedown="dSPhase(event,'+t.id+',\'mv\','+phase.index+')" ontouchstart="tI('+t.id+',event,\'mv\','+phase.index+')"><div class="bh l" onmousedown="dSPhase(event,'+t.id+',\'l\','+phase.index+');event.stopPropagation()" ontouchstart="tI('+t.id+',event,\'l\','+phase.index+');event.stopPropagation()"></div><span class="bt">'+(hasPhaseLanes?'<span class="bt-phase">['+phase.index+'차]</span>':'')+'<span class="bt-copy">'+esc(fullLabel)+'</span></span><div class="bh r" onmousedown="dSPhase(event,'+t.id+',\'r\','+phase.index+');event.stopPropagation()" ontouchstart="tI('+t.id+',event,\'r\','+phase.index+');event.stopPropagation()"></div></div>';
     });
     h+='</td></tr>';
   });

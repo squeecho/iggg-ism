@@ -16,6 +16,156 @@ class QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
+def read_two_lane_geometry(page, task_ids):
+    return page.evaluate(
+        """
+        taskIds => taskIds.map(taskId => {
+          const row = document.querySelector('#gt tbody tr[data-task-id="' + taskId + '"]');
+          const rowRect = row.getBoundingClientRect();
+          const bars = Array.from(row.querySelectorAll('.bar')).map(bar => {
+            const rect = bar.getBoundingClientRect();
+            const text = bar.querySelector('.bt');
+            const textRect = text.getBoundingClientRect();
+            const phaseLabel = bar.querySelector('.bt-phase');
+            const phaseRect = phaseLabel ? phaseLabel.getBoundingClientRect() : null;
+            return {
+              phase:Number(bar.dataset.phase),
+              lane:bar.dataset.lane,
+              left:rect.left,
+              right:rect.right,
+              top:rect.top,
+              bottom:rect.bottom,
+              centerY:(rect.top + rect.bottom) / 2,
+              relativeCenterY:(rect.top + rect.bottom) / 2 - rowRect.top,
+              bounded:rect.top >= rowRect.top - .5 && rect.bottom <= rowRect.bottom + .5,
+              textBounded:textRect.left >= rect.left - .5 && textRect.right <= rect.right + .5,
+              textClipped:getComputedStyle(text).overflowX === 'hidden',
+              phaseVisible:!phaseRect || (phaseRect.width > 0 && phaseRect.left >= rect.left - .5 && phaseRect.right <= rect.right + .5),
+              hasTitle:!!bar.getAttribute('title')
+            };
+          });
+          let overlaps = 0;
+          for (let i = 0; i < bars.length; i++) {
+            for (let j = i + 1; j < bars.length; j++) {
+              const xOverlap = Math.min(bars[i].right, bars[j].right) - Math.max(bars[i].left, bars[j].left);
+              const yOverlap = Math.min(bars[i].bottom, bars[j].bottom) - Math.max(bars[i].top, bars[j].top);
+              if (xOverlap > .5 && yOverlap > .5) overlaps++;
+            }
+          }
+          return {
+            taskId,
+            height:Math.round(rowRect.height),
+            rowCenter:rowRect.height / 2,
+            bars,
+            overlaps
+          };
+        })
+        """,
+        task_ids,
+    )
+
+
+def assert_two_lane_geometry(metrics):
+    for row in metrics:
+        assert row["height"] == (38 if len(row["bars"]) == 1 else 56), row
+        assert row["overlaps"] == 0, row
+        assert all(bar["bounded"] for bar in row["bars"]), row
+        assert all(bar["textBounded"] and bar["textClipped"] for bar in row["bars"]), row
+        assert all(bar["phaseVisible"] and bar["hasTitle"] for bar in row["bars"]), row
+        if len(row["bars"]) == 1:
+            assert row["bars"][0]["lane"] == "single", row
+            assert abs(row["bars"][0]["relativeCenterY"] - row["rowCenter"]) <= 1, row
+            continue
+        upper = [bar["relativeCenterY"] for bar in row["bars"] if bar["phase"] % 2 == 1]
+        lower = [bar["relativeCenterY"] for bar in row["bars"] if bar["phase"] % 2 == 0]
+        assert {bar["lane"] for bar in row["bars"] if bar["phase"] % 2 == 1} == {"upper"}, row
+        assert {bar["lane"] for bar in row["bars"] if bar["phase"] % 2 == 0} == {"lower"}, row
+        assert max(upper) - min(upper) <= 1, row
+        assert max(lower) - min(lower) <= 1, row
+        assert min(lower) - max(upper) >= 25, row
+
+
+def exercise_phase_pointer_edits(page, task_id):
+    page.evaluate(
+        """
+        taskId => {
+          const task = S.tasks.find(item => item.id === taskId);
+          for (let phaseIndex = 1; phaseIndex <= 5; phaseIndex++) {
+            const sd = addD('2026-08-06', (phaseIndex - 1) * 4);
+            ScheduleCore.updateTaskPhase(task, phaseIndex, {
+              sd, ed:addD(sd, 1), mode:'auto'
+            });
+          }
+          sync(); rEdit(); rChart();
+        }
+        """,
+        task_id,
+    )
+    operations = 0
+    for phase_index in range(1, 6):
+        selector = f'.bar[data-task-id="{task_id}"][data-phase="{phase_index}"]'
+        for mode in ("move", "left", "right"):
+            before = page.evaluate(
+                """
+                taskId => ScheduleCore.getTaskPhases(
+                  S.tasks.find(item => item.id === taskId), {activeOnly:true}
+                )
+                """,
+                task_id,
+            )
+            bar = page.locator(selector)
+            bar.scroll_into_view_if_needed()
+            box = bar.bounding_box()
+            assert box is not None
+            if mode == "left":
+                start_x = box["x"] + 2
+            elif mode == "right":
+                start_x = box["x"] + box["width"] - 2
+            else:
+                start_x = box["x"] + box["width"] / 2
+            y = box["y"] + box["height"] / 2
+            page.mouse.move(start_x, y)
+            page.mouse.down()
+            page.mouse.move(start_x + 31, y, steps=2)
+            page.mouse.up()
+            after = page.evaluate(
+                """
+                taskId => ScheduleCore.getTaskPhases(
+                  S.tasks.find(item => item.id === taskId), {activeOnly:true}
+                )
+                """,
+                task_id,
+            )
+            assert all(
+                index == phase_index - 1 or phase == before[index]
+                for index, phase in enumerate(after)
+            ), {"phase": phase_index, "mode": mode, "before": before, "after": after}
+            target_before = before[phase_index - 1]
+            target_after = after[phase_index - 1]
+            if mode == "move":
+                assert target_after["sd"] > target_before["sd"]
+                assert target_after["ed"] > target_before["ed"]
+            elif mode == "left":
+                assert target_after["sd"] > target_before["sd"]
+                assert target_after["ed"] == target_before["ed"]
+            else:
+                assert target_after["sd"] == target_before["sd"]
+                assert target_after["ed"] > target_before["ed"]
+            assert target_after["mode"] == "manual"
+            page.evaluate("doUndo()")
+            restored = page.evaluate(
+                """
+                taskId => ScheduleCore.getTaskPhases(
+                  S.tasks.find(item => item.id === taskId), {activeOnly:true}
+                )
+                """,
+                task_id,
+            )
+            assert restored == before, {"phase": phase_index, "mode": mode, "restored": restored}
+            operations += 1
+    return operations
+
+
 def run_chart_task_management(
     browser,
     origin,
@@ -54,6 +204,22 @@ def run_chart_task_management(
             task.ed = addD(task.sd, 2);
             task.scheduleMode = 'auto';
           });
+          state.tasks.slice(1, 5).forEach((task, taskIndex) => {
+            const phaseCount = taskIndex + 2;
+            while (ScheduleCore.getTaskPhaseCount(task) < phaseCount) {
+              ScheduleCore.addTaskPhase(task, {name:task.name, desc:'', mode:'manual'});
+            }
+            for (let phaseIndex = 1; phaseIndex <= phaseCount; phaseIndex++) {
+              const day = addD(state.sd, (phaseIndex - 1) * 3);
+              ScheduleCore.updateTaskPhase(task, phaseIndex, {
+                sd:day,
+                ed:day,
+                name:'좁은 막대 ' + phaseIndex + '차',
+                desc:'이웃 막대 침범 방지 확인',
+                mode:'manual'
+              });
+            }
+          });
           const record = {
             pn:state.pn, sd:state.sd, ed:state.ed, confirmed:false,
             savedAt:'2026-08-07 09:00', snap:JSON.stringify(state)
@@ -75,6 +241,12 @@ def run_chart_task_management(
         }
         """
     )
+
+    initial_two_lane = read_two_lane_geometry(page, [1, 2, 3, 4, 5])
+    assert [len(row["bars"]) for row in initial_two_lane] == [1, 2, 3, 4, 5]
+    assert_two_lane_geometry(initial_two_lane)
+    if screenshot_dir:
+        page.locator("#pc").screenshot(path=str(screenshot_dir / "chart-two-lane-desktop.png"))
 
     initial_on = page.evaluate("S.tasks.find(task => task.id === 1).on")
     page.locator('.chart-task-name[data-task-id="1"]').click()
@@ -145,6 +317,9 @@ def run_chart_task_management(
     if screenshot_dir:
         page.screenshot(path=str(screenshot_dir / "chart-phase-desktop.png"), full_page=False)
     page.locator("#chartTaskOv .chart-task-close").click()
+    pointer_edit_operations = exercise_phase_pointer_edits(page, 1)
+    assert pointer_edit_operations == 15
+    assert_two_lane_geometry(read_two_lane_geometry(page, [1, 2, 3, 4, 5]))
 
     page.locator("#chartAddTask").click()
     page.locator("#chartCustomName").fill("차트 사용자 공종 A")
@@ -293,6 +468,10 @@ def run_chart_task_management(
         """,
         mobile_state,
     )
+    mobile_two_lane = read_two_lane_geometry(mobile_page, [1, 2, 3, 4, 5])
+    assert_two_lane_geometry(mobile_two_lane)
+    if screenshot_dir:
+        mobile_page.locator("#pc").screenshot(path=str(screenshot_dir / "chart-two-lane-mobile.png"))
     mobile_page.locator('.chart-task-name[data-task-id="1"]').tap()
     mobile_bounds = mobile_page.evaluate(
         """
@@ -329,6 +508,7 @@ def run_chart_task_management(
         "readonly_unchanged": True,
         "desktop_in_viewport": True,
         "mobile_in_viewport": True,
+        "pointer_edit_operations": pointer_edit_operations,
     }
 
 
@@ -901,11 +1081,21 @@ def run():
                   const guideRects = guides.map(guide => guide.getBoundingClientRect());
                   const rows = Array.from(document.querySelectorAll('#gt tbody tr'));
                   const lanesClear = rows.every(row => {
-                    const bars = Array.from(row.querySelectorAll('.bar'))
-                      .map(item => item.getBoundingClientRect())
-                      .sort((a, b) => a.top - b.top);
-                    return bars.every((item, index) => index === 0 || bars[index - 1].bottom <= item.top + 0.5);
+                    const bars = Array.from(row.querySelectorAll('.bar')).map(item => item.getBoundingClientRect());
+                    return bars.every((first, index) => bars.slice(index + 1).every(second => {
+                      const xOverlap = Math.min(first.right, second.right) - Math.max(first.left, second.left);
+                      const yOverlap = Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top);
+                      return xOverlap <= .5 || yOverlap <= .5;
+                    }));
                   });
+                  const selectedRow = bar.closest('tr');
+                  const selectedBars = Array.from(selectedRow.querySelectorAll('.bar'));
+                  const center = item => {
+                    const rect = item.getBoundingClientRect();
+                    return (rect.top + rect.bottom) / 2;
+                  };
+                  const oddCenters = selectedBars.filter(item => Number(item.dataset.phase) % 2 === 1).map(center);
+                  const evenCenters = selectedBars.filter(item => Number(item.dataset.phase) % 2 === 0).map(center);
                   const allBounded = Array.from(document.querySelectorAll('#gt .bar')).every(item => {
                     const style = getComputedStyle(item);
                     return style.borderLeftWidth === '1px' && style.borderRightWidth === '1px';
@@ -922,6 +1112,9 @@ def run():
                     layerZ:Number(getComputedStyle(layer).zIndex),
                     barZ:Number(getComputedStyle(bar).zIndex),
                     lanesClear,
+                    fixedRowHeight:Math.round(selectedRow.getBoundingClientRect().height),
+                    oddAligned:Math.max(...oddCenters) - Math.min(...oddCenters) <= 1,
+                    evenAligned:Math.max(...evenCenters) - Math.min(...evenCenters) <= 1,
                     allBounded
                   };
                 }
@@ -937,6 +1130,9 @@ def run():
             assert desktop_chart_metrics["pointerEvents"] == "none"
             assert desktop_chart_metrics["layerZ"] < desktop_chart_metrics["barZ"]
             assert desktop_chart_metrics["lanesClear"] is True
+            assert desktop_chart_metrics["fixedRowHeight"] == 56
+            assert desktop_chart_metrics["oddAligned"] is True
+            assert desktop_chart_metrics["evenAligned"] is True
             assert desktop_chart_metrics["allBounded"] is True
             page.mouse.up()
             assert page.locator(".chart-range-guide").count() == 2
@@ -1013,9 +1209,19 @@ def run():
                   const bodyRect = tbody.getBoundingClientRect();
                   const headRect = thead.getBoundingClientRect();
                   const guideRects = guides.map(guide => guide.getBoundingClientRect());
-                  const selectedRowBars = Array.from(bar.closest('tr').querySelectorAll('.bar'))
-                    .map(item => item.getBoundingClientRect())
-                    .sort((a, b) => a.top - b.top);
+                  const selectedRow = bar.closest('tr');
+                  const selectedRowBars = Array.from(selectedRow.querySelectorAll('.bar')).map(item => ({
+                    phase:Number(item.dataset.phase),
+                    lane:item.dataset.lane,
+                    rect:item.getBoundingClientRect()
+                  }));
+                  const lanesClear = selectedRowBars.every((first, index) => selectedRowBars.slice(index + 1).every(second => {
+                    const xOverlap = Math.min(first.rect.right, second.rect.right) - Math.max(first.rect.left, second.rect.left);
+                    const yOverlap = Math.min(first.rect.bottom, second.rect.bottom) - Math.max(first.rect.top, second.rect.top);
+                    return xOverlap <= .5 || yOverlap <= .5;
+                  }));
+                  const oddCenters = selectedRowBars.filter(item => item.phase % 2 === 1).map(item => (item.rect.top + item.rect.bottom) / 2);
+                  const evenCenters = selectedRowBars.filter(item => item.phase % 2 === 0).map(item => (item.rect.top + item.rect.bottom) / 2);
                   return {
                     width:window.innerWidth,
                     guides:guides.length,
@@ -1025,7 +1231,10 @@ def run():
                     bottomError:Math.abs(guideRects[0].bottom - bodyRect.bottom),
                     headerClear:guideRects[0].top >= headRect.bottom - 1,
                     layerBehind:Number(getComputedStyle(layer).zIndex) < Number(getComputedStyle(bar).zIndex),
-                    lanesClear:selectedRowBars.every((item, index) => index === 0 || selectedRowBars[index - 1].bottom <= item.top + 0.5)
+                    lanesClear,
+                    fixedRowHeight:Math.round(selectedRow.getBoundingClientRect().height),
+                    oddAligned:Math.max(...oddCenters) - Math.min(...oddCenters) <= 1,
+                    evenAligned:Math.max(...evenCenters) - Math.min(...evenCenters) <= 1
                   };
                 }
                 """
@@ -1039,6 +1248,9 @@ def run():
             assert mobile_chart_metrics["headerClear"] is True
             assert mobile_chart_metrics["layerBehind"] is True
             assert mobile_chart_metrics["lanesClear"] is True
+            assert mobile_chart_metrics["fixedRowHeight"] == 56
+            assert mobile_chart_metrics["oddAligned"] is True
+            assert mobile_chart_metrics["evenAligned"] is True
             if screenshot_dir:
                 mobile_page.evaluate(
                     "document.querySelector('.bar[data-task-id=\"1\"][data-phase=\"4\"]').scrollIntoView({block:'center',inline:'center'})"
