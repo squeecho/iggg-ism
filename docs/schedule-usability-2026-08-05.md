@@ -6,6 +6,57 @@
 - 범위: 직원 요청 6건의 데이터 정확성, 일정 편집, 차트 가독성
 - 안전 경계: 운영 Firebase, Google Calendar, 고객 데이터, 기존 사용자 브라우저 저장소에 접근하거나 변경하지 않는다.
 
+## 2026-08-07 차트 막대 텍스트 충돌 회피와 준공청소 전체 표시
+
+- 기준 커밋: `bb5370c9f2a6bd1bdd172e9ef61cad673d696db0`
+- 작업 브랜치: `fix/chart-label-collision-layout-20260807`
+- 범위: 막대의 날짜 폭과 y 기하는 유지하고, 실제 DOM 글리프 폭에 따른 label 방향·중앙/상단/하단 배치만 변경한다.
+- 안전 경계: A3 크기·배율, 날짜 열 30px, 행 38px, 막대 중심 19px, 일정 데이터, 특별 날짜 기능을 변경하지 않는다. 운영 검증은 root와 정적 자산만 사용한다.
+
+### 원문과 현재 구현 대조
+
+| 근거 | 직접 확인한 사실 | 판정 범위 |
+|---|---|---|
+| Production 기준 `.bt/.bt-copy` | 막대 너비 100% 안에서 `overflow:hidden`과 `text-overflow:ellipsis`를 강제한다. | 1일 준공청소와 장문이 구조적으로 잘리는 직접 원인이다. |
+| 실제 Chromium 준공청소 fixture | 1일 막대 30px, label client 28px, 실제 글리프 폭 36.81px이며 화면에는 `준...`만 보인다. | 전체 4글자를 표시하려면 막대 폭이 아니라 label만 날짜 칸 밖으로 전개해야 한다. |
+| 실제 Chromium 인접 장문 fixture | 두 1일 막대 중심은 모두 19px이나 자연 텍스트 영역은 123.56px 겹친다. | clip 제거만 하면 충돌하므로 실제 bbox 기반 별도 배치가 필요하다. |
+| 현재 `.bar` stacking context | 각 bar가 `z-index:2`이고 내부 label을 가진다. | 앞 label을 단순 overflow하면 뒤 bar 배경 아래로 가려질 수 있어 cell 직계 render-only layer가 필요하다. |
+| `doIMG()`와 `doPDF()` | 같은 live `#pa/#gt` DOM을 clone하며 clone 안에서는 label JS를 다시 실행하지 않는다. | live DOM의 확정 class·inline 위치를 capture 전에 settle해야 화면·PNG·PDF가 같다. |
+
+### 경쟁 가설과 판정
+
+| 가설 | 판정 | 근거 |
+|---|---|---|
+| 날짜 열이나 1일 막대 폭이 너무 작아 A3 배율을 바꿔야 한다. | 기각 | 요구는 날짜 폭 불변이며 36.81px 글자는 30px 막대에서 label만 6.81px 전개하면 표시 가능하다. |
+| CSS ellipsis만 제거하면 해결된다. | 기각 | 인접 장문의 자연 영역이 123.56px 겹치고 bar stacking context가 overflow label을 가릴 수 있다. |
+| 막대 자체를 홀짝 위·아래로 이동해야 한다. | 기각 | 막대 중심 19px은 정상이며 text layer만 bar 내부 상단/하단으로 분리할 수 있다. |
+| 화면과 PNG/PDF는 별도 label renderer가 필요하다. | 기각 | 두 출력 모두 같은 live DOM을 clone하므로 단일 DOM layout 결과를 재사용해야 한다. |
+| 폰트 로드와 capture 폭 변경은 배치에 영향을 주지 않는다. | 기각 | label 폭은 실제 렌더 폰트와 capture 직전 cell 폭에 의존하므로 fonts-ready 및 폭 변경 후 재측정이 필요하다. |
+
+### 갭 스코어보드
+
+상태 값: `parity` 충족, `partial` 일부 충족, `deviant` 의도와 다른 구현, `missing` 미구현, `oos` 이번 범위 밖.
+
+| ID | 목표 | 상태 | 우선순위 | 현재 근거 | 완료 기준 |
+|---|---|---:|---:|---|---|
+| CL-01 | 1일 준공청소 전체 4글자 | deviant | P0 | client 28px, 글리프 36.81px, ellipsis 적용 | visible glyph가 `준공청소` 전체이고 ellipsis/clip 없음 |
+| CL-02 | 실제 텍스트 충돌 기반 상·하 분리 | missing | P0 | 현재는 모든 label 중앙+clip | 충돌 pair 앞 upper·뒤 lower, glyph 교집합 0 |
+| CL-03 | 비충돌 label 중앙 복귀 | missing | P0 | 동적 layout 단계 없음 | 날짜 변경 후 충돌이 사라지면 center로 결정적 복귀 |
+| CL-04 | 차트 양끝 방향 전환 | missing | P0 | label이 bar 폭에 갇혀 방향 개념 없음 | 첫날 right, 마지막날 left, grid 경계 이탈 0 |
+| CL-05 | phase 번호와 전체 tooltip | partial | P0 | bar title은 전체이나 visible phase 계약과 분리되지 않음 | `[N차]` shrink 0, bar title에 전체 name/desc 유지 |
+| CL-06 | 막대/A3/단일 행 기하 불변 | parity | P0 | 30px 열, 38px 행, 19px 중심, A3 landscape | 화면·PNG·PDF에서 동일 수치 유지 |
+| CL-07 | drag/resize 중 label 재배치 | missing | P0 | live path는 bar left/width만 갱신 | mouse/touch 이동 중 row-local layout, drop 후 최종 일치 |
+| CL-08 | 특별 날짜 양방향 기능 불변 | parity | P0 | 별도 650ms long-press/card/dateMode 회귀 존재 | desktop/mobile 기존 회귀 전체 통과 |
+| CL-09 | 출력과 운영 안전 | partial | P0 | 공통 DOM이나 새 label 결과 미검증 | PNG/A3 PDF 직접 관찰, 운영 API 호출·mutation 0 |
+
+### 이번 Wave 계획
+
+| Wave | 변경 범위 | 완료 게이트 |
+|---|---|---|
+| 1 | Production 기준 재현·경쟁 가설·갭 기록 | 실제 bbox와 기준 캡처, 별도 `[audit]` 커밋 |
+| 2 | render-only label layer와 DOM 충돌 배치 | 준공청소·충돌·비충돌·양끝·폰트·drag 재계산 자동 검증 |
+| 3 | 화면·PNG·A3 PDF 및 전체 회귀 | 실제 산출물 직접 관찰, 전체 test/typecheck/build/UI 통과 후 배포 |
+
 ## 2026-08-07 차트 차수 막대 단일 중앙 행 전환
 
 - 기준 커밋: `fb9400e25478739b69ff338048d490e25ed794b4`
