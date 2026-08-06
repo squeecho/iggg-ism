@@ -386,6 +386,7 @@
     }, attrs);
     task.id = id;
     task.custom = true;
+    task.customOrder = nextCustomTaskOrder(state.tasks);
     if (Array.isArray(task.contractors)) task.contractors = task.contractors.slice();
     normalizeTask(task);
     state.tasks.push(task);
@@ -404,26 +405,74 @@
     return true;
   }
 
+  function nextCustomTaskOrder(tasks) {
+    var maxOrder = 0;
+    var customCount = 0;
+    (Array.isArray(tasks) ? tasks : []).forEach(function(task) {
+      if (!task || task.custom !== true) return;
+      customCount++;
+      var order = Number(task.customOrder);
+      if (Number.isSafeInteger(order) && order > maxOrder) maxOrder = order;
+    });
+    return Math.max(maxOrder, customCount) + 1;
+  }
+
   function orderedTaskIds(states, baseOrder) {
     var observed = [];
     var observedSet = {};
+    var customMeta = {};
     visitScheduleStates(states, function(state) {
       state.tasks.forEach(function(task) {
         var id = toSafeTaskId(task && task.id);
-        if (id == null || observedSet[id]) return;
-        observedSet[id] = true;
-        observed.push(id);
+        if (id == null) return;
+        var isExtension = !!(task && task.custom === true) ||
+          id >= MIN_CUSTOM_TASK_ID || DEFAULT_TASK_ORDER.indexOf(id) < 0;
+        if (isExtension && !customMeta[id]) {
+          var order = Number(task && task.customOrder);
+          customMeta[id] = {
+            explicitOrder: Number.isSafeInteger(order) && order > 0 ? order : null
+          };
+        }
+        if (!observedSet[id]) {
+          observedSet[id] = true;
+          observed.push(id);
+        }
       });
     });
     var result = [];
+    var extensionIds = observed.filter(function(id) { return !!customMeta[id]; });
+    extensionIds.sort(function(left, right) {
+      var a = customMeta[left], b = customMeta[right];
+      if (a.explicitOrder != null && b.explicitOrder != null && a.explicitOrder !== b.explicitOrder) {
+        return a.explicitOrder - b.explicitOrder;
+      }
+      return observed.indexOf(left) - observed.indexOf(right);
+    });
     (Array.isArray(baseOrder) ? baseOrder : DEFAULT_TASK_ORDER).forEach(function(value) {
       var id = toSafeTaskId(value);
-      if (id != null && observedSet[id] && result.indexOf(id) < 0) result.push(id);
+      if (id == null || id === 13 || id === 12 || id === 14 || customMeta[id]) return;
+      if (observedSet[id] && result.indexOf(id) < 0) result.push(id);
     });
+    if (observedSet[13]) result.push(13);
+    extensionIds.forEach(function(id) { if (result.indexOf(id) < 0) result.push(id); });
+    if (observedSet[12]) result.push(12);
+    if (observedSet[14]) result.push(14);
     observed.forEach(function(id) {
       if (result.indexOf(id) < 0) result.push(id);
     });
     return result;
+  }
+
+  function orderedTasks(tasks, baseOrder) {
+    var list = Array.isArray(tasks) ? tasks : [];
+    var byId = {};
+    list.forEach(function(task) {
+      var id = toSafeTaskId(task && task.id);
+      if (id != null && !byId[id]) byId[id] = task;
+    });
+    return orderedTaskIds([{ tasks: list }], baseOrder).map(function(id) {
+      return byId[id];
+    }).filter(Boolean);
   }
 
   function resolveTaskName(id, states, fallback) {
@@ -692,7 +741,9 @@
     createCustomTaskId: createCustomTaskId,
     createCustomTask: createCustomTask,
     deleteCustomTask: deleteCustomTask,
+    nextCustomTaskOrder: nextCustomTaskOrder,
     orderedTaskIds: orderedTaskIds,
+    orderedTasks: orderedTasks,
     resolveTaskName: resolveTaskName,
     hasAutomaticNoteRule: hasAutomaticNoteRule,
     getAutoNoteDate: getAutoNoteDate,

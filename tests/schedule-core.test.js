@@ -294,19 +294,43 @@ test('custom tasks survive reload, use normal phase editing, and protect default
   assert.equal(reloaded.tasks.some((task) => task.id === saved.id), false);
 });
 
-test('task ordering keeps the established default order and appends custom tasks by first appearance', () => {
+test('task ordering places custom tasks between other work and gas without changing IDs', () => {
   const firstCustom = 1000000020;
   const secondCustom = 1000000021;
   const states = [{
     tasks: [
-      { id: firstCustom },
+      { id: firstCustom, custom: true },
       { id: 14 },
       { id: 1 },
-      { id: secondCustom },
-      { id: 13 }
+      { id: secondCustom, custom: true },
+      { id: 13 },
+      { id: 12 }
     ]
   }];
-  assert.deepEqual(core.orderedTaskIds(states), [1, 13, 14, firstCustom, secondCustom]);
+  assert.deepEqual(core.orderedTaskIds(states), [1, 13, firstCustom, secondCustom, 12, 14]);
+  assert.deepEqual(core.orderedTasks(states[0].tasks).map((task) => task.id), [1, 13, firstCustom, secondCustom, 12, 14]);
+  assert.deepEqual(states[0].tasks.map((task) => task.id), [firstCustom, 14, 1, secondCustom, 13, 12]);
+});
+
+test('custom creation order survives shuffled storage when ordinals exist and legacy falls back to first appearance', () => {
+  const state = {
+    sd: '2026-08-01',
+    ed: '2026-08-31',
+    tasks: [{ id: 13 }, { id: 12 }, { id: 14 }],
+    notes: []
+  };
+  const first = core.createCustomTask(state, { id: 1000000030, name: '사용자 A' });
+  const second = core.createCustomTask(state, { id: 1000000031, name: '사용자 B' });
+  assert.equal(first.customOrder, 1);
+  assert.equal(second.customOrder, 2);
+
+  const shuffled = [state.tasks[0], second, state.tasks[1], first, state.tasks[2]];
+  assert.deepEqual(core.orderedTasks(shuffled).map((task) => task.id), [13, first.id, second.id, 12, 14]);
+
+  const legacyA = { id: 1000000040, custom: true };
+  const legacyB = { id: 1000000041, custom: true };
+  const legacy = [{ id: 13 }, { id: 12 }, { id: 14 }, legacyB, legacyA];
+  assert.deepEqual(core.orderedTasks(legacy).map((task) => task.id), [13, legacyB.id, legacyA.id, 12, 14]);
 });
 
 test('automatic note rules use the latest active phase and preserve legacy overrides', () => {
