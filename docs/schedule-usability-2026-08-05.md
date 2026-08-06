@@ -6,6 +6,60 @@
 - 범위: 직원 요청 6건의 데이터 정확성, 일정 편집, 차트 가독성
 - 안전 경계: 운영 Firebase, Google Calendar, 고객 데이터, 기존 사용자 브라우저 저장소에 접근하거나 변경하지 않는다.
 
+## 2026-08-07 차트 고정 2단과 공종 관리 footer 복구
+
+- 기준 커밋: `38468f9f49883be4a61e8c7131fbdcd6708e5bce`
+- 작업 브랜치: `fix/chart-two-lane-modal-footer-20260807`
+- 범위: 차수 표시의 고정 1행·2단 복구, 짧은 막대 텍스트 경계, 공종 관리 modal/sheet의 항상 보이는 완료 footer
+- 안전 경계: 합성 현장과 차단된 네트워크만 사용하며 운영 Firebase, Google Calendar, 고객 데이터, 전자계약, 메시징, SMBM에 접근하거나 mutation하지 않는다.
+
+### 원문과 현재 구현 대조
+
+| 근거 | 직접 확인한 사실 | 판정 범위 |
+|---|---|---|
+| 제공된 실제 공정표 PDF | 1페이지 A2 공정표의 14개 공종 행은 반복 구간이 2~5개여도 동일한 25.44pt 간격을 유지한다. 반복 구간 수에 따라 공종 행이 높아지지 않는다. | 차수 수와 무관한 고정 1행을 입증한다. PDF 자체는 홀수/짝수 2단 위치를 입증하지 않는다. |
+| 과거 `292be05`의 `rG()` | 분할 시 1·3차는 `top:25%`, 2차는 `top:75%`, 단일 1차는 `top:50%`에 렌더한다. | 한 행 안의 상·하 2단 배치와 단일 차수 중앙 배치의 직접 근거다. |
+| 현재 `38468f9`의 `rG()` | `rowHeight=Math.max(38, phases.length*26+8)`과 `top:4+lane*26`을 사용한다. | 각 차수를 별도 세로 행처럼 누적하는 회귀의 직접 원인이다. |
+| 현재 실제 Chromium 기준선 | 1~5차 행 높이가 각각 `38/60/86/112/138px`이고, 차수 중심 y가 26px씩 계속 증가한다. | 정적 코드가 아니라 실제 렌더에서도 회귀가 재현됐다. |
+| `doIMG()`·`doPDF()` | 두 경로 모두 `rChart()`가 만든 동일한 `#pa` DOM을 `html2canvas`로 캡처한다. | 별도 출력 구현이 원인이라는 가설을 기각한다. 차트 DOM 수정이 화면·PNG·PDF에 공통 적용돼야 한다. |
+
+### 경쟁 가설과 판정
+
+| 가설 | 판정 | 근거 |
+|---|---|---|
+| `phases.length * 26` 행 높이와 `lane * 26` 위치가 차수마다 행을 늘린다. | 확인 | 코드 수식과 실제 Chromium의 `38/60/86/112/138px` 측정값이 정확히 일치한다. |
+| 고정 `.dg{height:38px}` 또는 표 셀 CSS가 행을 늘린다. | 기각 | `.dg`는 과거에도 38px였고, 현재 `<tr>` inline height가 차수 수에 따라 직접 달라진다. |
+| 긴 막대 문구가 행 높이를 늘린다. | 근본 원인 기각, 별도 결함 확인 | 막대와 문구는 absolute라 행 높이를 만들지 않는다. 다만 `.bt{overflow:visible}` 때문에 1일 막대 문구가 이웃 막대로 침범할 수 있다. |
+| PDF·이미지 전용 렌더가 화면과 다른 높이를 만든다. | 기각 | 두 저장 경로 모두 화면과 같은 `#pa` 차트 DOM을 캡처한다. |
+| phase 저장 형식이나 자동배치가 차수를 중복 생성한다. | 기각 | 한 공종당 `<tr>` 하나만 생성하며, phase CRUD와 날짜는 정상이다. 표시용 높이·top 계산만 잘못됐다. |
+
+### 갭 스코어보드
+
+상태 값: `parity` 충족, `partial` 일부 충족, `deviant` 의도와 다른 구현, `missing` 미구현, `oos` 이번 범위 밖.
+
+| ID | 목표 | 상태 | 우선순위 | 현재 근거 | 완료 기준 |
+|---|---|---:|---:|---|---|
+| TL-01 | 2~5차가 모두 동일한 고정 1행 | deviant | P0 | 실제 높이 `60/86/112/138px` | 2~5차의 DOM 행 높이가 모두 동일하고 막대가 행 내부에 포함 |
+| TL-02 | 홀수 차수 상단, 짝수 차수 하단 | deviant | P0 | 현재 phase 배열 순번마다 새 `lane` 사용 | 1/3/5 중심 y 동일, 2/4 중심 y 동일, 두 레인 비겹침 |
+| TL-03 | 단일 1차 중앙 배치 | deviant | P0 | 현재 1차도 `top:4px` 고정 | 38px 행의 수직 중앙과 막대 중심 오차 1px 이하 |
+| TL-04 | 1일 막대 문구의 이웃 침범 차단 | deviant | P0 | `.bt`가 `overflow:visible` | 차수 표시는 유지하고 상세만 ellipsis, 실제 text bbox가 막대 경계를 이탈하지 않음 |
+| TL-05 | drag·resize·guide·undo·autosave 불변 | partial | P0 | 핸들러는 phase ID와 x 좌표를 사용해 수직 lane과 독립 | 각 차수 독립 이동·좌우 조절, 비대상 phase 불변, 저장·undo/redo 통과 |
+| MF-01 | footer 첫 줄 제거 왼쪽·추가 오른쪽 | missing | P0 | 현재 추가가 먼저이며 제거에 `-` 없음 | 좌우 bbox와 `- N차 제거`/`+ N차 추가` 문구 검증 |
+| MF-02 | 항상 보이는 완료 버튼과 저장 확정 | missing | P0 | 완료 버튼이 없고 body의 flex shrink 계약이 없음 | phase 5까지 scroll해도 완료가 viewport 안에 있고 blur·기존 autosave flush 후 닫힘 |
+| MF-03 | 사용자 공종 삭제 danger 분리 | deviant | P1 | 삭제가 차수 action과 같은 영역 | body 끝 별도 danger 영역, footer에는 차수와 완료만 존재 |
+| MF-04 | 읽기 전용 닫기와 mutation 차단 | partial | P0 | X는 닫히나 footer 완료가 없음 | 완료/X는 닫고, 추가·제거·편집·삭제는 disabled이며 state mutation 0 |
+| EX-01 | 화면·PNG·PDF 동일 2단 배치 | partial | P0 | 동일 DOM 캡처이지만 현재 DOM이 회귀 상태 | 실제 PNG와 PDF 렌더에서 고정 2단 좌표·행 높이 확인 |
+| QA-06 | desktop/mobile 실제 Chromium 회귀 | missing | P0 | 현 구현 기준선만 측정 | 1440x1000·390x844 조작, 캡처 직접 관찰, 오류·외부 mutation 0 |
+
+### 이번 Wave 계획
+
+| Wave | 변경 범위 | 완료 게이트 |
+|---|---|---|
+| 1 | 원문·Git 이력·실제 렌더 기준선과 경쟁 가설 | 스코어보드 갱신 및 별도 `[audit]` 커밋 |
+| 2 | `rG()` 고정 2단 표시와 막대 텍스트 경계 | 1~5차 좌표·행 높이·2D 겹침·drag/resize·출력 공통 DOM 테스트 |
+| 3 | 공종 관리 sticky footer와 저장 완료 동작 | desktop/mobile 좌우 버튼·항상 보이는 완료·read-only·danger 분리·autosave 테스트 |
+| 4 | 전체 회귀·실제 출력·Preview·Production | test/typecheck/build/UI, PNG/PDF와 Preview 직접 관찰 후에만 fast-forward 배포 |
+
 ## 2026-08-07 차트 공종 관리 복구
 
 - 기준 커밋: `3f4a361095a0f28073fd93f3916b4e2b0ac06b84`
@@ -100,7 +154,7 @@
 | W2-07 | 기존 저장 데이터 무손실 정규화 | parity | P0 | `schedule-core.js`의 `normalizeTask`, `normalizeNote`, `normalizeScheduleState`; `index.html`의 local/cloud/hash load 경로 | 모든 상태 진입점에서 같은 정규화를 호출하고 기존 2·3차 flat 필드와 특별 날짜 의미를 보존한다. |
 | W3-01 | 모든 공종 막대 좌우 끝 경계 | parity | P1 | `index.html`의 `.bar`, `.ig-cal-bar.range-start`, `.ig-cal-bar.range-end`; `renderOneMonth` | 메인 차트는 각 기간 막대 양 끝에 1px 경계를 두고, 통합 일정은 실제 시작일·종료일 조각에만 경계를 표시한다. |
 | W3-02 | 선택/드래그 중 시작·종료 세로 가이드 | parity | P1 | `index.html`의 `_selectedChartPhase`, `_renderChartGuides`, `dSPhase`, `tI` | 포인터 이벤트 없는 전용 레이어를 막대 뒤와 날짜 헤더 아래에 두고 바깥 선택/Escape 해제를 지원한다. 인쇄·PDF에서는 제외한다. |
-| W3-03 | 1~5차 막대 겹침 방지 | parity | P0 | `index.html`의 `rG`, `renderOneMonth` | 메인 차트 행과 통합 달력 주 높이를 활성 phase/lane 수에 맞춰 계산한다. 5개 막대가 셀 안에 포함되는지 격리 DOM 좌표로 검증했다. |
+| W3-03 | 1~5차 막대 겹침 방지 | deviant | P0 | `index.html`의 `rG`, `renderOneMonth` | 통합 달력의 날짜 셀은 차수별 stack을 유지한다. 메인 차트만 고정 1행·2단으로 복구하고 실제 2D 막대 교집합 0을 검증한다. |
 | QA-01 | 기존 데이터 정규화와 저장/재로드 자동 테스트 | parity | P0 | `tests/schedule-core.test.js` | Node 기본 test runner로 순수 helper의 1~5차, legacy, 사용자 공종, 날짜 모드를 검증한다. |
 | QA-02 | 격리 브라우저 실제 UI 검증 | parity | P0 | `tests/ui_regression.py` | 임시 브라우저 프로필과 합성 localStorage만 사용하고 외부 mutation을 차단한다. console/page error 및 mutation 0건을 테스트 종료 조건으로 둔다. |
 | QA-03 | 데스크톱·모바일 시각 검증 | parity | P1 | `tests/ui_regression.py`의 `wave_three` 검증 | 1440x1000 데스크톱과 390x844 터치 모바일 화면을 캡처하고 막대, 가이드, 헤더, 차수별 lane을 직접 확인했다. |
@@ -157,7 +211,7 @@
 - 선택 가이드: 데스크톱에서 4차 막대를 실제 mouse down·drag하고 모바일 터치 context에서 실제 tap했다. 두 환경 모두 시작·종료 가이드 2개가 막대 양 끝과 1px 이내로 일치했다.
 - 레이어 안전성: 가이드는 `tbody` 상하 범위에만 표시돼 날짜 헤더를 침범하지 않고, `pointer-events:none`과 막대보다 낮은 z-index로 편집을 가리지 않는다. 바깥 선택과 Escape에서 즉시 제거되며 인쇄에서는 숨긴다.
 - 선택 무변경: 이동하지 않은 mouse/touch 선택은 공사기간, 일정 mode, undo, autosave를 변경하지 않는다. 실제 날짜가 달라진 drag에만 기존 저장 파이프라인을 실행한다.
-- 겹침·통합 일정: 데스크톱 전체 행과 모바일 선택 행에서 1~5차 lane의 DOM 경계가 겹치지 않았다. 통합 일정의 같은 날짜에 5개 차수를 합성해 높이 116px 이상, 셀 내부 포함, 시작·종료 경계 각 5개를 확인했다.
+- 겹침·통합 일정: 이 체크포인트의 메인 차트 차수별 세로 lane은 이후 실제 PDF와 과거 구현 대조에서 회귀로 판정됐다. 통합 일정의 같은 날짜 5개 차수 stack과 셀 내부 포함 계약은 유지한다.
 - 시각 확인: 1440x1000과 390x844 캡처를 직접 열어 공종명·날짜 헤더·다른 막대와 가이드가 겹치지 않고 1~5차가 분리되는지 확인했다.
 - 네트워크·오류: Calendar `action=config`만 로컬 합성 응답으로 허용하고 다른 POST를 실패 처리했다. 격리 Chromium의 외부 mutation 0건, console error 0건, page error 0건이었다.
 
