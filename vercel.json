@@ -1,4 +1,7 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": null,
+  "outputDirectory": ".",
   "rewrites": [
     { "source": "/api/calendar", "destination": "/api/calendar" },
     { "source": "/calendar.ics", "destination": "/api/calendar?action=ics&cal=detail" },
