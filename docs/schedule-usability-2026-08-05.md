@@ -41,11 +41,11 @@
 |---|---|---:|---:|---|---|
 | QE-01 | 기타공사 차트 라벨에서 차수 접두어 제거 | parity | P1 | ID 13의 render-only `showPhaseLabel`만 false | 1~5차 데이터는 유지하되 visible label/title에서 차수 접두어 0건 |
 | QE-02 | 1~5차에서 공종 관리 sheet 크기와 footer 좌표 고정 | parity | P0 | `#chartTaskOv`에만 반응형 고정 height 적용 | desktop/mobile에서 1~5차 sheet 크기와 add footer 중심 좌표 편차 1px 이하 |
-| QE-03 | 차트에 명시적인 설명 편집 모드 | missing | P0 | 차트 toolbar에 추가/자동배치만 존재 | 연필 버튼의 pressed 상태가 명확하고 읽기 전용에서는 활성화 불가 |
-| QE-04 | 편집 모드에서 막대 click/tap으로 해당 phase 설명 열기 | missing | P0 | changed=false release는 guide만 갱신 | 기존 manager를 열고 정확한 phase 설명을 focus·scroll, task/phase state 무변경 |
-| QE-05 | 실제 drag/resize와 click 편집의 충돌 방지 | partial | P0 | release에 changed 판정은 있으나 편집 분기 없음 | 날짜가 바뀐 drag/resize 후 manager 0회, 짧은 move release만 1회 |
-| QE-06 | 기존 undo·autosave·reload·read-only 계약 보존 | partial | P0 | manager update 파이프라인은 존재 | 설명 변경 1회당 undo 1건, 저장/reload 유지, 확정 현장 mutation 0건 |
-| QE-07 | 반응형·오류·네트워크 안전 | partial | P0 | 기존 격리 Playwright harness 존재 | 1440x1000/390x844 캡처, 겹침·이탈·console/page/request error·외부 mutation 0건 |
+| QE-03 | 차트에 명시적인 설명 편집 모드 | parity | P0 | `chartBarEditToggle`의 pressed/on 상태와 read-only fail-close 적용 | 연필 버튼의 pressed 상태가 명확하고 읽기 전용에서는 활성화 불가 |
+| QE-04 | 편집 모드에서 막대 click/tap으로 해당 phase 설명 열기 | parity | P0 | 기존 release가 `openChartTaskManager(id, phase)`로 정확한 설명 input을 focus·scroll | 기존 manager를 열고 정확한 phase 설명을 focus·scroll, task/phase state 무변경 |
+| QE-05 | 실제 drag/resize와 click 편집의 충돌 방지 | parity | P0 | 무변경 move release와 14px tap slop만 편집으로 인정 | 날짜가 바뀐 drag/resize 후 manager 0회, 짧은 move release만 1회 |
+| QE-06 | 기존 undo·autosave·reload·read-only 계약 보존 | parity | P0 | 기존 `updateTaskPhase`/undo/sync와 완료 flush를 재사용 | 설명 변경 1회당 undo 1건, 저장/reload 유지, 확정·공유 보기 mutation 0건 |
+| QE-07 | 반응형·오류·네트워크 안전 | parity | P0 | 격리 Playwright의 desktop/mobile 실입력·캡처와 요청 차단 통과 | 1440x1000/390x844 캡처, 겹침·이탈·console/page/request error·외부 mutation 0건 |
 
 ### 이번 Wave 계획
 
@@ -64,6 +64,24 @@
 - manager rerender 뒤 다음 추가 버튼에 포커스를 복원하고, 5차에서는 완료 버튼으로 이동시켜 키보드 연속 추가도 끊기지 않게 했다.
 - 기존 전체 UI 기준선의 날짜 guide 실패는 4차를 옮긴 뒤 합성 5차가 같은 x 범위에 남아 실제 pointer hit이 달라지는 fixture 문제였다. 5차 날짜를 명시해 assertion 완화 없이 결정적으로 고정했다.
 - `npm run test:ui`에서 phase pointer 편집 15건, 특별 날짜 desktop/mobile 20건, console/page/request failure 및 외부 mutation 0건이 통과했다.
+
+### Wave 3 체크포인트
+
+- 차트 toolbar에 저장 데이터와 무관한 session-only `설명 편집` 토글을 추가했다. 활성 상태는 `aria-pressed`와 명확한 배경색으로 표시하고 확정 현장 또는 공유 보기에서는 즉시 해제·비활성화한다.
+- mouse/touch의 기존 `dSPhase`/`tI` 종료 경로를 확장했다. move handle, 날짜 무변경, 이동 거리 14px 이하, 수정 가능 상태가 모두 참일 때만 기존 공종 manager를 열며 별도 click handler나 설명 저장 모델을 만들지 않았다.
+- desktop 10px·mobile 10px의 무해한 포인터 흔들림은 정확한 차수 설명 input을 열었다. 15px 수직 이동은 일정·undo를 바꾸지 않고 manager도 열지 않았으며, 실제 move/left resize/right resize 15건의 manager 오픈은 0건이었다.
+- 막대 4차 설명 변경은 대상 phase만 바뀌고 다른 1~3·5차 JSON은 동일했다. undo는 정확히 1건이었다. focus된 입력에서 바로 완료, Tab 직후 완료, Tab 후 900ms debounce 완료 뒤 완료의 세 경로 모두 계측된 `autoSave()`와 local draft persist가 각각 정확히 1회였다. hidden overlay의 후속 click은 멱등 차단하고 이미 저장된 snapshot은 다시 persist하지 않는다.
+- keyboard Enter는 정확한 phase 설명 input에 포커스하고 X로 닫으면 원래 막대로 복귀한다. focus 중인 마지막 차수를 제거한 경우 존재하지 않는 `N차 설명 편집` 상태를 즉시 정리한다.
+- 확정 현장의 실제 막대 click과 직접 mutation entry 호출, `_cloudView` 공유 보기의 toggle/update/keyboard 호출을 수행했다. 전체 일정 state는 동일하고 manager 오픈은 0건이었다.
+
+### Wave 4 로컬 최종 게이트
+
+- 전체 `npm test` 16/16, `npm run typecheck`, `npm run build`, `npm run test:ui`, `git diff --check`가 통과했다. build verifier는 inline script 3개를 모두 파싱했다.
+- 실제 Chromium 1440x1000과 390x844에서 최초 추가 버튼의 같은 화면 좌표로 1→5차를 연속 추가했다. desktop sheet는 `top 120px / height 760px`, 추가 버튼 중심은 `(873px, 794px)`이었다. mobile sheet는 `top 67.53px / height 776.47px`, 추가 버튼 중심은 `(285.5px, 758px)`이었다. 각 단계의 sheet와 추가 버튼 최대 편차는 두 화면 모두 `0px`이었다.
+- 직접 관찰 캡처: `/tmp/ig-ism-chart-quick-edit-20260811/chart-task-modal-desktop-phase1.png`, `chart-task-modal-desktop-phase5.png`, `chart-task-modal-mobile-phase1.png`, `chart-task-modal-mobile-phase5.png`, `chart-bar-edit-desktop.png`, `chart-bar-edit-mobile.png`, `chart-other-task-no-phase-prefix.png`.
+- 캡처에서 desktop/modal과 mobile/bottom sheet의 외곽·footer는 1차와 5차가 같고 내용 영역만 스크롤됐다. 완료 버튼과 추가·제거 버튼은 viewport 안에 있으며 입력·텍스트의 겹침, 잘림, 화면 이탈은 없었다. 막대 편집은 해당 차수 section과 설명 input을 강조하되 sheet 크기를 바꾸지 않았다.
+- 격리 브라우저의 console error 0, page error 0, request failure 0, 외부 비-GET mutation 0건이었다. 운영 Firebase, Google Calendar, 고객 데이터, 전자계약, 메시징, SMBM은 조회하거나 변경하지 않았다.
+- feature는 로컬 브랜치에만 유지한다. push, Preview, main, Production은 이번 게이트에서 변경하지 않는다.
 
 ## 2026-08-07 차트 막대 텍스트 충돌 회피와 준공청소 전체 표시
 
