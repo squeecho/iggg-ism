@@ -136,6 +136,42 @@ def read_chart_task_manager_geometry(page):
     )
 
 
+def install_chart_save_counter(page):
+    page.evaluate(
+        """
+        () => {
+          window.__chartEditSaveCounts = {autoSave:0, persist:0};
+          window.__chartEditOriginalAutoSave = autoSave;
+          window.__chartEditOriginalPersist = _persistCurrentLocalDraft;
+          autoSave = function(){
+            window.__chartEditSaveCounts.autoSave += 1;
+            return window.__chartEditOriginalAutoSave.apply(this, arguments);
+          };
+          _persistCurrentLocalDraft = function(){
+            window.__chartEditSaveCounts.persist += 1;
+            return window.__chartEditOriginalPersist.apply(this, arguments);
+          };
+        }
+        """
+    )
+
+
+def read_and_restore_chart_save_counter(page):
+    return page.evaluate(
+        """
+        () => {
+          const counts = {...window.__chartEditSaveCounts};
+          autoSave = window.__chartEditOriginalAutoSave;
+          _persistCurrentLocalDraft = window.__chartEditOriginalPersist;
+          delete window.__chartEditSaveCounts;
+          delete window.__chartEditOriginalAutoSave;
+          delete window.__chartEditOriginalPersist;
+          return counts;
+        }
+        """
+    )
+
+
 def read_chart_label_contract(page, task_ids):
     return page.evaluate(
         """
@@ -383,6 +419,7 @@ def exercise_phase_pointer_edits(page, task_id):
         task_id,
     )
     operations = 0
+    manager_opens = 0
     for phase_index in range(1, 6):
         selector = f'.bar[data-task-id="{task_id}"][data-phase="{phase_index}"]'
         for mode in ("move", "left", "right"):
@@ -409,6 +446,9 @@ def exercise_phase_pointer_edits(page, task_id):
             page.mouse.down()
             page.mouse.move(start_x + 31, y, steps=2)
             page.mouse.up()
+            manager_visible = page.locator("#chartTaskOv").is_visible()
+            manager_opens += int(manager_visible)
+            assert manager_visible is False
             after = page.evaluate(
                 """
                 taskId => ScheduleCore.getTaskPhases(
@@ -444,7 +484,7 @@ def exercise_phase_pointer_edits(page, task_id):
             )
             assert restored == before, {"phase": phase_index, "mode": mode, "restored": restored}
             operations += 1
-    return operations
+    return {"operations": operations, "manager_opens": manager_opens}
 
 
 def run_chart_task_management(
@@ -735,8 +775,187 @@ def run_chart_task_management(
         """
     )
     assert immediate_persist == "완료 버튼 즉시 저장"
-    pointer_edit_operations = exercise_phase_pointer_edits(page, 1)
-    assert pointer_edit_operations == 15
+    page.evaluate(
+        """
+        () => {
+          const task = S.tasks.find(item => item.id === 1);
+          for (let phaseIndex = 1; phaseIndex <= 5; phaseIndex++) {
+            const sd = addD('2026-08-06', (phaseIndex - 1) * 4);
+            ScheduleCore.updateTaskPhase(task, phaseIndex, {
+              sd, ed:addD(sd, 1), mode:'auto'
+            });
+          }
+          sync(); rEdit(); rChart();
+        }
+        """
+    )
+    edit_toggle = page.locator("#chartBarEditToggle")
+    assert edit_toggle.get_attribute("aria-pressed") == "false"
+    assert page.locator("#pc").evaluate("element => element.classList.contains('chart-bar-edit-mode')") is False
+    edit_bar = page.locator('.bar[data-task-id="1"][data-phase="4"]')
+    edit_bar.scroll_into_view_if_needed()
+    edit_box = edit_bar.bounding_box()
+    assert edit_box is not None
+    edit_x = edit_box["x"] + edit_box["width"] / 2
+    edit_y = edit_box["y"] + edit_box["height"] / 2
+    edit_mode_off_before = page.evaluate(
+        "({state:JSON.stringify(S),undo:_undoStack.length})"
+    )
+    page.mouse.move(edit_x, edit_y)
+    page.mouse.down()
+    page.mouse.up()
+    assert page.locator("#chartTaskOv").is_visible() is False
+    assert page.evaluate("JSON.stringify(S)") == edit_mode_off_before["state"]
+    assert page.evaluate("_undoStack.length") == edit_mode_off_before["undo"]
+
+    edit_toggle.click()
+    assert edit_toggle.get_attribute("aria-pressed") == "true"
+    assert page.locator("#pc").evaluate("element => element.classList.contains('chart-bar-edit-mode')") is True
+    assert edit_bar.get_attribute("role") == "button"
+    assert edit_bar.get_attribute("tabindex") == "0"
+    micro_drag_before = page.evaluate("({state:JSON.stringify(S),undo:_undoStack.length})")
+    page.mouse.move(edit_x, edit_y)
+    page.mouse.down()
+    page.mouse.move(edit_x, edit_y + 15)
+    page.mouse.up()
+    assert page.locator("#chartTaskOv").is_visible() is False
+    assert page.evaluate("JSON.stringify(S)") == micro_drag_before["state"]
+    assert page.evaluate("_undoStack.length") == micro_drag_before["undo"]
+
+    edit_phase_before = page.evaluate(
+        """
+        () => ({
+          phases:ScheduleCore.getTaskPhases(S.tasks.find(task => task.id === 1), {activeOnly:true}),
+          undo:_undoStack.length,
+          taskOn:S.tasks.find(task => task.id === 1).on
+        })
+        """
+    )
+    page.mouse.move(edit_x, edit_y)
+    page.mouse.down()
+    page.mouse.move(edit_x + 10, edit_y)
+    page.mouse.up()
+    page.locator("#chartTaskOv").wait_for(state="visible")
+    page.wait_for_function(
+        """
+        () => document.activeElement
+          && document.activeElement.matches('.chart-manager-desc[data-task-id="1"][data-phase="4"]')
+        """
+    )
+    assert page.locator('#chartTaskBody .chart-task-phase[data-phase="4"]').evaluate(
+        "element => element.classList.contains('is-focused')"
+    ) is True
+    assert page.evaluate("S.tasks.find(task => task.id === 1).on") == edit_phase_before["taskOn"]
+    assert page.evaluate("_undoStack.length") == edit_phase_before["undo"]
+    if screenshot_dir:
+        page.screenshot(path=str(screenshot_dir / "chart-bar-edit-desktop.png"), full_page=False)
+    focused_desc = page.locator(
+        '#chartTaskBody .chart-manager-desc[data-task-id="1"][data-phase="4"]'
+    )
+    install_chart_save_counter(page)
+    focused_desc.fill("막대에서 수정한 4차 설명")
+    page.locator("#chartTaskActions .chart-task-done").click()
+    page.locator("#chartTaskOv").wait_for(state="hidden")
+    edit_save_counts = read_and_restore_chart_save_counter(page)
+    assert edit_save_counts == {"autoSave": 1, "persist": 1}
+    edit_phase_after = page.evaluate(
+        """
+        () => ({
+          phases:ScheduleCore.getTaskPhases(S.tasks.find(task => task.id === 1), {activeOnly:true}),
+          undo:_undoStack.length,
+          saved:(() => {
+            const record=JSON.parse(localStorage.getItem('cs_recent')).find(item => item.pn === 'Chart Manager QA');
+            const restored=ScheduleCore.normalizeScheduleState(JSON.parse(record.snap));
+            return ScheduleCore.getTaskPhase(restored.tasks.find(task => task.id === 1),4).desc;
+          })()
+        })
+        """
+    )
+    assert edit_phase_after["phases"][3]["desc"] == "막대에서 수정한 4차 설명"
+    assert all(
+        index == 3 or phase == edit_phase_before["phases"][index]
+        for index, phase in enumerate(edit_phase_after["phases"])
+    )
+    assert edit_phase_after["undo"] == edit_phase_before["undo"] + 1
+    assert edit_phase_after["saved"] == "막대에서 수정한 4차 설명"
+    page.evaluate("doUndo()")
+    assert page.evaluate(
+        "ScheduleCore.getTaskPhase(S.tasks.find(task => task.id === 1),4).desc"
+    ) == edit_phase_before["phases"][3]["desc"]
+    page.evaluate("doRedo()")
+    assert page.evaluate(
+        "ScheduleCore.getTaskPhase(S.tasks.find(task => task.id === 1),4).desc"
+    ) == "막대에서 수정한 4차 설명"
+
+    page.evaluate("openChartTaskManager(1, 3)")
+    page.locator("#chartTaskOv").wait_for(state="visible")
+    page.wait_for_function(
+        """
+        () => document.activeElement
+          && document.activeElement.matches('.chart-manager-desc[data-task-id="1"][data-phase="3"]')
+        """
+    )
+    install_chart_save_counter(page)
+    phase_three_desc = page.locator(
+        '#chartTaskBody .chart-manager-desc[data-task-id="1"][data-phase="3"]'
+    )
+    phase_three_desc.fill("Tab 직후 완료")
+    phase_three_desc.press("Tab")
+    page.locator("#chartTaskActions .chart-task-done").click()
+    page.locator("#chartTaskOv").wait_for(state="hidden")
+    tab_immediate_save_counts = read_and_restore_chart_save_counter(page)
+    assert tab_immediate_save_counts == {"autoSave": 1, "persist": 1}
+
+    page.evaluate("openChartTaskManager(1, 2)")
+    page.locator("#chartTaskOv").wait_for(state="visible")
+    page.wait_for_function(
+        """
+        () => document.activeElement
+          && document.activeElement.matches('.chart-manager-desc[data-task-id="1"][data-phase="2"]')
+        """
+    )
+    install_chart_save_counter(page)
+    phase_two_desc = page.locator(
+        '#chartTaskBody .chart-manager-desc[data-task-id="1"][data-phase="2"]'
+    )
+    phase_two_desc.fill("debounce 후 완료")
+    phase_two_desc.press("Tab")
+    page.wait_for_timeout(900)
+    page.locator("#chartTaskActions .chart-task-done").click()
+    page.locator("#chartTaskOv").wait_for(state="hidden")
+    tab_debounced_save_counts = read_and_restore_chart_save_counter(page)
+    assert tab_debounced_save_counts == {"autoSave": 1, "persist": 1}
+
+    keyboard_bar = page.locator('.bar[data-task-id="1"][data-phase="2"]')
+    keyboard_bar.focus()
+    keyboard_bar.press("Enter")
+    page.locator("#chartTaskOv").wait_for(state="visible")
+    page.wait_for_function(
+        """
+        () => document.activeElement
+          && document.activeElement.matches('.chart-manager-desc[data-task-id="1"][data-phase="2"]')
+        """
+    )
+    page.locator("#chartTaskOv .chart-task-close").click()
+    page.locator("#chartTaskOv").wait_for(state="hidden")
+    page.wait_for_function(
+        """
+        () => document.activeElement
+          && document.activeElement.matches('.bar[data-task-id="1"][data-phase="2"]')
+        """
+    )
+    keyboard_phase_five = page.locator('.bar[data-task-id="1"][data-phase="5"]')
+    keyboard_phase_five.focus()
+    keyboard_phase_five.press("Enter")
+    page.locator("#chartTaskOv").wait_for(state="visible")
+    page.locator('#chartTaskActions .remove-phase-btn[data-task-id="1"]').click()
+    assert page.evaluate("_chartTaskManagerFocusPhase") is None
+    assert "5차 설명 편집" not in page.locator("#chartTaskSub").inner_text()
+    page.locator("#chartTaskOv .chart-task-close").click()
+    page.locator("#chartTaskOv").wait_for(state="hidden")
+    page.evaluate("doUndo()")
+    pointer_edit_result = exercise_phase_pointer_edits(page, 1)
+    assert pointer_edit_result == {"operations": 15, "manager_opens": 0}
     assert_single_row_geometry(read_single_row_geometry(page, [1, 2, 3, 4, 5]))
 
     before_label_fixture = page.evaluate("JSON.stringify(S)")
@@ -959,6 +1178,7 @@ def run_chart_task_management(
 
     page.emulate_media(media="print")
     assert page.locator("#chartAddTask").is_visible() is False
+    assert page.locator("#chartBarEditToggle").is_visible() is False
     assert page.evaluate("getComputedStyle(document.querySelector('#chartAddTask').closest('.no-print')).display") == "none"
     assert page.locator("#chartTaskOv").is_visible() is False
     page.emulate_media(media="screen")
@@ -987,7 +1207,14 @@ def run_chart_task_management(
     page.locator("#tabs > #tc2").click()
     page.evaluate("IS_RO = true; rChart();")
     assert page.locator("#chartAddTask").is_disabled()
+    assert page.locator("#chartBarEditToggle").is_disabled()
+    assert page.locator("#chartBarEditToggle").get_attribute("aria-pressed") == "false"
+    assert page.locator('#gt .bar[role="button"]').count() == 0
     readonly_before = page.evaluate("JSON.stringify(S)")
+    readonly_bar = page.locator('.bar[data-task-id="1"][data-phase="1"]')
+    readonly_bar.click(force=True)
+    assert page.locator("#chartTaskOv").is_visible() is False
+    assert page.evaluate("JSON.stringify(S)") == readonly_before
     page.locator('.chart-task-name[data-task-id="1"]').click()
     assert page.locator('#chartTaskBody input:not([disabled])').count() == 0
     assert page.locator('#chartTaskBody .chart-task-date:not([disabled])').count() == 0
@@ -1000,6 +1227,7 @@ def run_chart_task_management(
           addTaskPhase(1);
           removeTaskPhase(1);
           chartUpdateTaskPhase(1, 1, 'name', '차단 실패');
+          toggleChartBarEditMode();
           deleteCustomTaskConfirm({custom_a});
           openChartCustomTask();
         }}
@@ -1013,7 +1241,28 @@ def run_chart_task_management(
     page.locator("#chartTaskOv .chart-task-close").click()
     page.locator("#chartTaskOv").wait_for(state="hidden")
     assert page.evaluate("JSON.stringify(S)") == readonly_before
-    page.evaluate("IS_RO = false; rChart();")
+    cloud_readonly = page.evaluate(
+        """
+        () => {
+          IS_RO = false;
+          _cloudView = JSON.parse(JSON.stringify(S));
+          const before = JSON.stringify(S);
+          rChart();
+          toggleChartBarEditMode();
+          chartUpdateTaskPhase(1, 1, 'desc', '공유 보기 차단 실패');
+          chartBarKey({key:'Enter',preventDefault(){},stopPropagation(){}}, 1, 1);
+          const result = {
+            unchanged:JSON.stringify(S) === before,
+            disabled:document.getElementById('chartBarEditToggle').disabled,
+            managerHidden:getComputedStyle(document.getElementById('chartTaskOv')).display === 'none'
+          };
+          _cloudView = null;
+          rChart();
+          return result;
+        }
+        """
+    )
+    assert cloud_readonly == {"unchanged": True, "disabled": True, "managerHidden": True}
     mobile_state = page.evaluate("JSON.parse(JSON.stringify(S))")
     mobile_geometry_state = page.evaluate(
         """
@@ -1211,6 +1460,76 @@ def run_chart_task_management(
         mobile_page.screenshot(path=str(screenshot_dir / "chart-phase-mobile.png"), full_page=False)
     mobile_page.locator("#chartTaskActions .chart-task-done").tap()
     mobile_page.locator("#chartTaskOv").wait_for(state="hidden")
+    assert mobile_page.locator("#chartBarEditToggle").get_attribute("aria-pressed") == "false"
+    mobile_page.locator("#chartBarEditToggle").tap()
+    assert mobile_page.locator("#chartBarEditToggle").get_attribute("aria-pressed") == "true"
+    mobile_edit_bar = mobile_page.locator('.bar[data-task-id="1"][data-phase="3"]')
+    mobile_edit_bar.scroll_into_view_if_needed()
+    mobile_edit_box = mobile_edit_bar.bounding_box()
+    assert mobile_edit_box is not None
+    mobile_cdp = mobile_context.new_cdp_session(mobile_page)
+    mobile_edit_point = {
+        "x": mobile_edit_box["x"] + mobile_edit_box["width"] / 2,
+        "y": mobile_edit_box["y"] + mobile_edit_box["height"] / 2,
+        "radiusX": 1,
+        "radiusY": 1,
+        "force": 1,
+        "id": 1,
+    }
+    mobile_jitter_before = mobile_page.evaluate("({state:JSON.stringify(S),undo:_undoStack.length})")
+    mobile_cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [mobile_edit_point]})
+    mobile_blocked_jitter = dict(mobile_edit_point)
+    mobile_blocked_jitter["y"] += 15
+    mobile_cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [mobile_blocked_jitter]})
+    mobile_cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    mobile_page.wait_for_timeout(50)
+    assert mobile_page.locator("#chartTaskOv").is_visible() is False
+    assert mobile_page.evaluate("JSON.stringify(S)") == mobile_jitter_before["state"]
+    assert mobile_page.evaluate("_undoStack.length") == mobile_jitter_before["undo"]
+    mobile_cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [mobile_edit_point]})
+    mobile_allowed_jitter = dict(mobile_edit_point)
+    mobile_allowed_jitter["x"] += 10
+    mobile_cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [mobile_allowed_jitter]})
+    mobile_cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    mobile_page.locator("#chartTaskOv").wait_for(state="visible")
+    mobile_page.wait_for_function(
+        """
+        () => document.activeElement
+          && document.activeElement.matches('.chart-manager-desc[data-task-id="1"][data-phase="3"]')
+        """
+    )
+    if screenshot_dir:
+        mobile_page.screenshot(path=str(screenshot_dir / "chart-bar-edit-mobile.png"), full_page=False)
+    mobile_page.locator("#chartTaskOv .chart-task-close").tap()
+    mobile_page.locator("#chartTaskOv").wait_for(state="hidden")
+
+    mobile_drag_bar = mobile_page.locator('.bar[data-task-id="1"][data-phase="1"]')
+    mobile_drag_bar.scroll_into_view_if_needed()
+    mobile_drag_box = mobile_drag_bar.bounding_box()
+    assert mobile_drag_box is not None
+    mobile_drag_before = mobile_page.evaluate(
+        "ScheduleCore.getTaskPhase(S.tasks.find(task => task.id === 1),1).sd"
+    )
+    mobile_drag_x = mobile_drag_box["x"] + mobile_drag_box["width"] / 2
+    mobile_drag_y = mobile_drag_box["y"] + mobile_drag_box["height"] / 2
+    mobile_point = {
+        "x": mobile_drag_x,
+        "y": mobile_drag_y,
+        "radiusX": 1,
+        "radiusY": 1,
+        "force": 1,
+        "id": 1,
+    }
+    mobile_cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [mobile_point]})
+    mobile_moved = dict(mobile_point)
+    mobile_moved["x"] = mobile_drag_x + 31
+    mobile_cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [mobile_moved]})
+    mobile_cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    mobile_page.wait_for_timeout(50)
+    assert mobile_page.locator("#chartTaskOv").is_visible() is False
+    assert mobile_page.evaluate(
+        "ScheduleCore.getTaskPhase(S.tasks.find(task => task.id === 1),1).sd"
+    ) == mobile_page.evaluate("date => addD(date,1)", mobile_drag_before)
     mobile_page.locator("#chartAddTask").tap()
     mobile_page.locator("#chartCustomName").fill("모바일 사용자 공종")
     if screenshot_dir:
@@ -1229,7 +1548,66 @@ def run_chart_task_management(
         "readonly_unchanged": True,
         "desktop_in_viewport": True,
         "mobile_in_viewport": True,
-        "pointer_edit_operations": pointer_edit_operations,
+        "pointer_edit_operations": pointer_edit_result["operations"],
+        "bar_edit": {
+            "desktop_desc": edit_phase_after["phases"][3]["desc"],
+            "desktop_undo_exact": edit_phase_after["undo"] == edit_phase_before["undo"] + 1,
+            "mobile_phase_focus": 3,
+            "drag_manager_opens": pointer_edit_result["manager_opens"],
+            "save_counts": {
+                "focused_done": edit_save_counts,
+                "tab_then_done": tab_immediate_save_counts,
+                "debounced_then_done": tab_debounced_save_counts,
+            },
+        },
+        "manager_geometry": {
+            "desktop": {
+                "sheet_top": round(desktop_initial_geometry["sheet"]["top"], 2),
+                "sheet_height": round(desktop_initial_geometry["sheet"]["height"], 2),
+                "add_center": {
+                    "x": round(desktop_add_anchor["centerX"], 2),
+                    "y": round(desktop_add_anchor["centerY"], 2),
+                },
+                "max_sheet_drift": round(max(
+                    max(
+                        abs(geometry["sheet"]["top"] - desktop_initial_geometry["sheet"]["top"]),
+                        abs(geometry["sheet"]["height"] - desktop_initial_geometry["sheet"]["height"]),
+                    )
+                    for geometry in desktop_manager_geometries
+                ), 2),
+                "max_add_drift": round(max(
+                    max(
+                        abs(geometry["add"]["centerX"] - desktop_add_anchor["centerX"]),
+                        abs(geometry["add"]["centerY"] - desktop_add_anchor["centerY"]),
+                    )
+                    for geometry in desktop_manager_geometries
+                    if geometry["add"] is not None
+                ), 2),
+            },
+            "mobile": {
+                "sheet_top": round(mobile_initial_geometry["sheet"]["top"], 2),
+                "sheet_height": round(mobile_initial_geometry["sheet"]["height"], 2),
+                "add_center": {
+                    "x": round(mobile_add_anchor["centerX"], 2),
+                    "y": round(mobile_add_anchor["centerY"], 2),
+                },
+                "max_sheet_drift": round(max(
+                    max(
+                        abs(geometry["sheet"]["top"] - mobile_initial_geometry["sheet"]["top"]),
+                        abs(geometry["sheet"]["height"] - mobile_initial_geometry["sheet"]["height"]),
+                    )
+                    for geometry in mobile_manager_geometries
+                ), 2),
+                "max_add_drift": round(max(
+                    max(
+                        abs(geometry["add"]["centerX"] - mobile_add_anchor["centerX"]),
+                        abs(geometry["add"]["centerY"] - mobile_add_anchor["centerY"]),
+                    )
+                    for geometry in mobile_manager_geometries
+                    if geometry["add"] is not None
+                ), 2),
+            },
+        },
         "desktop_geometry": [
             {
                 "phase_count": len(row["bars"]),
