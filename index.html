@@ -673,6 +673,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 /* chart task manager */
 .chart-task-ov{position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:790;display:none;align-items:flex-end;justify-content:center;}
 .chart-task-sheet{background:var(--sf);border-radius:16px 16px 0 0;width:100%;max-width:640px;max-height:92dvh;display:flex;flex-direction:column;box-shadow:0 -8px 28px rgba(0,0,0,.2);padding-bottom:0;overflow:hidden;}
+#chartTaskOv .chart-task-sheet{height:92dvh;}
 .chart-task-head{display:flex;align-items:flex-start;gap:12px;padding:16px 18px 12px;border-bottom:1px solid var(--bd);flex-shrink:0;}
 .chart-task-heading{flex:1;min-width:0;}
 .chart-task-title{font-size:16px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -712,7 +713,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .chart-custom-form{padding:14px 18px 2px;overflow-y:auto;}
 .chart-custom-form .mf:last-of-type{margin-bottom:0;}
 .chart-custom-date-summary{width:100%;border:1.5px solid var(--bd);border-radius:8px;background:var(--bg);padding:10px 12px;text-align:left;color:var(--tx);font:700 13px 'DM Mono',monospace;cursor:pointer;}
-@media(min-width:540px){.chart-task-ov{align-items:center;padding:20px;}.chart-task-sheet{border-radius:16px;max-height:min(82vh,760px);box-shadow:0 16px 42px rgba(0,0,0,.24);}.chart-task-fields{grid-template-columns:1fr 1fr;}}
+@media(min-width:540px){.chart-task-ov{align-items:center;padding:20px;}.chart-task-sheet{border-radius:16px;max-height:min(82vh,760px);box-shadow:0 16px 42px rgba(0,0,0,.24);}#chartTaskOv .chart-task-sheet{height:min(82dvh,760px);}.chart-task-fields{grid-template-columns:1fr 1fr;}}
 /* pdf */
 .po{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:900;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#fff;font-size:15px;font-weight:700;}
 .ps{width:44px;height:44px;border:4px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;}
@@ -3684,6 +3685,11 @@ function addTaskPhase(id){
   if(!added)return;
   _suggestAddedPhase(t,added.index);
   _open=id;sync();rEdit();rChart();_refreshChartTaskManager(id);
+  setTimeout(function(){
+    var next=document.querySelector('#chartTaskActions .add-phase-btn[data-task-id="'+id+'"]')
+      ||document.querySelector('#chartTaskActions .chart-task-done');
+    if(next)next.focus({preventScroll:true});
+  },0);
 }
 function removeTaskPhase(id){
   if(IS_RO)return;
@@ -4362,12 +4368,13 @@ function rG(){
       var legacyAttr=phase.index===1?' data-id="'+t.id+'"':phase.index===2?' data-id2="'+t.id+'"':phase.index===3?' data-id3="'+t.id+'"':'';
       var opacity=Math.max(.68,1-(phase.index-1)*.08);
       var fullLabel=phase.name+(phase.desc?' | '+phase.desc:'');
-      var displayTitle=(hasMultiplePhases?'['+phase.index+'차] ':'')+fullLabel;
+      var showPhaseLabel=hasMultiplePhases&&t.id!==13;
+      var displayTitle=(showPhaseLabel?'['+phase.index+'차] ':'')+fullLabel;
       var preserveCleaning=isCl&&phase.name.indexOf('준공청소')===0;
       var cleaningDetail=preserveCleaning?(phase.name.substring(4)+(phase.desc?' | '+phase.desc:'')):'';
       var labelCopy=preserveCleaning?'<span class="chart-bar-required">준공청소</span>'+(cleaningDetail?'<span class="chart-bar-detail">'+esc(cleaningDetail)+'</span>':''):'<span class="chart-bar-detail">'+esc(fullLabel)+'</span>';
       h+='<div class="bar"'+legacyAttr+' data-task-id="'+t.id+'" data-phase="'+phase.index+'" title="'+esc(displayTitle)+'" style="left:'+(si*CW)+'px;width:'+((ei-si+1)*CW)+'px;position:absolute;top:50%;transform:translateY(-50%);z-index:2;background:'+barColor+';opacity:'+opacity+'" onmousedown="dSPhase(event,'+t.id+',\'mv\','+phase.index+')" ontouchstart="tI('+t.id+',event,\'mv\','+phase.index+')"><div class="bh l" onmousedown="dSPhase(event,'+t.id+',\'l\','+phase.index+');event.stopPropagation()" ontouchstart="tI('+t.id+',event,\'l\','+phase.index+');event.stopPropagation()"></div><div class="bh r" onmousedown="dSPhase(event,'+t.id+',\'r\','+phase.index+');event.stopPropagation()" ontouchstart="tI('+t.id+',event,\'r\','+phase.index+');event.stopPropagation()"></div></div>';
-      labelHtml+='<span class="chart-bar-label" data-task-id="'+t.id+'" data-phase="'+phase.index+'" data-cleaning="'+(preserveCleaning?'1':'0')+'" data-label-lane="center" data-label-direction="right" title="'+esc(displayTitle)+'" style="left:'+(si*CW)+'px">'+(hasMultiplePhases?'<span class="bt-phase">['+phase.index+'차]</span>':'')+'<span class="chart-bar-copy">'+labelCopy+'</span></span>';
+      labelHtml+='<span class="chart-bar-label" data-task-id="'+t.id+'" data-phase="'+phase.index+'" data-cleaning="'+(preserveCleaning?'1':'0')+'" data-label-lane="center" data-label-direction="right" title="'+esc(displayTitle)+'" style="left:'+(si*CW)+'px">'+(showPhaseLabel?'<span class="bt-phase">['+phase.index+'차]</span>':'')+'<span class="chart-bar-copy">'+labelCopy+'</span></span>';
     });
     h+=labelHtml+'</div>';
     h+='</td></tr>';

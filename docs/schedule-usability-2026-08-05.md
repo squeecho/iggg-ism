@@ -39,8 +39,8 @@
 
 | ID | 목표 | 상태 | 우선순위 | 현재 근거 | 완료 기준 |
 |---|---|---:|---:|---|---|
-| QE-01 | 기타공사 차트 라벨에서 차수 접두어 제거 | deviant | P1 | ID 13에도 공통 `[N차]` 생성 | 1~5차 데이터는 유지하되 visible label/title에서 차수 접두어 0건 |
-| QE-02 | 1~5차에서 공종 관리 sheet 크기와 footer 좌표 고정 | deviant | P0 | content 기반 sheet 높이 | desktop/mobile에서 1~5차 sheet 크기와 add footer 중심 좌표 편차 1px 이하 |
+| QE-01 | 기타공사 차트 라벨에서 차수 접두어 제거 | parity | P1 | ID 13의 render-only `showPhaseLabel`만 false | 1~5차 데이터는 유지하되 visible label/title에서 차수 접두어 0건 |
+| QE-02 | 1~5차에서 공종 관리 sheet 크기와 footer 좌표 고정 | parity | P0 | `#chartTaskOv`에만 반응형 고정 height 적용 | desktop/mobile에서 1~5차 sheet 크기와 add footer 중심 좌표 편차 1px 이하 |
 | QE-03 | 차트에 명시적인 설명 편집 모드 | missing | P0 | 차트 toolbar에 추가/자동배치만 존재 | 연필 버튼의 pressed 상태가 명확하고 읽기 전용에서는 활성화 불가 |
 | QE-04 | 편집 모드에서 막대 click/tap으로 해당 phase 설명 열기 | missing | P0 | changed=false release는 guide만 갱신 | 기존 manager를 열고 정확한 phase 설명을 focus·scroll, task/phase state 무변경 |
 | QE-05 | 실제 drag/resize와 click 편집의 충돌 방지 | partial | P0 | release에 changed 판정은 있으나 편집 분기 없음 | 날짜가 바뀐 drag/resize 후 manager 0회, 짧은 move release만 1회 |
@@ -55,6 +55,15 @@
 | 2 | 기타공사 표시 예외와 고정 크기 공종 manager | 데이터/phase 수 불변, 1~5차 desktop/mobile sheet·footer 좌표 검증 |
 | 3 | 차트 편집 모드와 막대 release 통합 | mouse/touch click, drag/resize 억제, 설명 undo/autosave/reload/read-only 검증 |
 | 4 | 전체·시각 회귀와 문서 마감 | 전체 test/typecheck/build/UI, 실제 캡처 직접 관찰, 로컬 커밋 후 중단 |
+
+### Wave 2 체크포인트
+
+- 기본 기타공사 ID 13의 차수·날짜·이름 데이터는 그대로 두고 `rG()`의 visible phase span과 bar/label title 접두어만 생략했다. 합성 3개 차수의 phase index `[1,2,3]`와 render 전후 JSON이 동일했고 `[N차]` DOM은 0건이었다.
+- 공용 `.chart-task-sheet`가 아니라 `#chartTaskOv`에만 모바일 `92dvh`, 데스크톱 `min(82dvh, 760px)` 높이를 적용했다. 사용자 공종 생성 sheet의 크기는 변경하지 않았다.
+- 1440x1000 mouse와 390x844 touch에서 최초 추가 버튼의 같은 화면 좌표를 네 번 사용해 1→5차를 추가했다. 모든 단계의 sheet·footer·완료 버튼 y 좌표와 1~4차 추가 버튼 중심 편차는 1px 이하였다.
+- manager rerender 뒤 다음 추가 버튼에 포커스를 복원하고, 5차에서는 완료 버튼으로 이동시켜 키보드 연속 추가도 끊기지 않게 했다.
+- 기존 전체 UI 기준선의 날짜 guide 실패는 4차를 옮긴 뒤 합성 5차가 같은 x 범위에 남아 실제 pointer hit이 달라지는 fixture 문제였다. 5차 날짜를 명시해 assertion 완화 없이 결정적으로 고정했다.
+- `npm run test:ui`에서 phase pointer 편집 15건, 특별 날짜 desktop/mobile 20건, console/page/request failure 및 외부 mutation 0건이 통과했다.
 
 ## 2026-08-07 차트 막대 텍스트 충돌 회피와 준공청소 전체 표시
 

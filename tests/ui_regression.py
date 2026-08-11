@@ -112,6 +112,30 @@ def assert_single_row_geometry(metrics):
         assert max(centers) - min(centers) <= 1, row
 
 
+def read_chart_task_manager_geometry(page):
+    return page.evaluate(
+        """
+        () => {
+          const sheet = document.querySelector('#chartTaskOv .chart-task-sheet').getBoundingClientRect();
+          const footer = document.getElementById('chartTaskActions').getBoundingClientRect();
+          const done = document.querySelector('#chartTaskActions .chart-task-done').getBoundingClientRect();
+          const add = document.querySelector('#chartTaskActions .add-phase-btn');
+          const addRect = add ? add.getBoundingClientRect() : null;
+          return {
+            sheet:{left:sheet.left, top:sheet.top, width:sheet.width, height:sheet.height, bottom:sheet.bottom},
+            footer:{left:footer.left, top:footer.top, width:footer.width, height:footer.height},
+            done:{left:done.left, top:done.top, width:done.width, height:done.height},
+            add:addRect ? {
+              left:addRect.left, top:addRect.top, width:addRect.width, height:addRect.height,
+              centerX:(addRect.left + addRect.right) / 2,
+              centerY:(addRect.top + addRect.bottom) / 2
+            } : null
+          };
+        }
+        """
+    )
+
+
 def read_chart_label_contract(page, task_ids):
     return page.evaluate(
         """
@@ -151,7 +175,7 @@ def read_chart_label_contract(page, task_ids):
             const requiredVisibleRight = requiredRect ? Math.min(requiredRect.right, rect.right, cellRect.right) : 0;
             const task = S.tasks.find(item => item.id === taskId);
             const taskPhase = ScheduleCore.getTaskPhase(task, Number(label.dataset.phase));
-            const expectedTitle = (ScheduleCore.getTaskPhaseCount(task) > 1
+            const expectedTitle = (ScheduleCore.getTaskPhaseCount(task) > 1 && taskId !== 13
               ? '[' + label.dataset.phase + '차] ' : '')
               + taskPhase.name + (taskPhase.desc ? ' | ' + taskPhase.desc : '');
             return {
@@ -505,6 +529,58 @@ def run_chart_task_management(
     if screenshot_dir:
         page.locator("#pc").screenshot(path=str(screenshot_dir / "chart-single-row-desktop.png"))
 
+    state_before_other_label = page.evaluate("JSON.stringify(S)")
+    other_label_contract = page.evaluate(
+        """
+        async () => {
+          const task = S.tasks.find(item => item.id === 13);
+          while (ScheduleCore.getTaskPhaseCount(task) < 3) {
+            ScheduleCore.addTaskPhase(task, {name:'기타공사', desc:'잔마무리 등', mode:'manual'});
+          }
+          for (let index = 1; index <= 3; index++) {
+            const date = addD(S.sd, 4 + index * 5);
+            ScheduleCore.updateTaskPhase(task, index, {
+              name:'기타공사', desc:'잔마무리 등', sd:date, ed:date, mode:'manual'
+            });
+          }
+          const before = JSON.stringify(ScheduleCore.getTaskPhases(task, {activeOnly:true}));
+          rChart();
+          await _settleChartBarLabels();
+          const row = document.querySelector('#gt tr[data-task-id="13"]');
+          return {
+            before,
+            after:JSON.stringify(ScheduleCore.getTaskPhases(task, {activeOnly:true})),
+            phaseIndexes:ScheduleCore.getTaskPhases(task, {activeOnly:true}).map(phase => phase.index),
+            labels:Array.from(row.querySelectorAll('.chart-bar-label')).map(label => ({
+              phase:Number(label.dataset.phase),
+              phaseText:(label.querySelector('.bt-phase') || {}).textContent || '',
+              title:label.getAttribute('title')
+            })),
+            barTitles:Array.from(row.querySelectorAll('.bar')).map(bar => bar.getAttribute('title'))
+          };
+        }
+        """
+    )
+    assert other_label_contract["before"] == other_label_contract["after"]
+    assert other_label_contract["phaseIndexes"] == [1, 2, 3]
+    assert all(label["phaseText"] == "" for label in other_label_contract["labels"])
+    assert all(not label["title"].startswith("[") for label in other_label_contract["labels"])
+    assert all(not title.startswith("[") for title in other_label_contract["barTitles"])
+    if screenshot_dir:
+        page.locator('#gt tr[data-task-id="13"]').screenshot(
+            path=str(screenshot_dir / "chart-other-task-no-phase-prefix.png")
+        )
+    page.evaluate(
+        """
+        async serialized => {
+          S = ScheduleCore.normalizeScheduleState(JSON.parse(serialized));
+          rChart();
+          await _settleChartBarLabels();
+        }
+        """,
+        state_before_other_label,
+    )
+
     initial_on = page.evaluate("S.tasks.find(task => task.id === 1).on")
     page.locator('.chart-task-name[data-task-id="1"]').click()
     page.locator("#chartTaskOv").wait_for(state="visible")
@@ -512,22 +588,36 @@ def run_chart_task_management(
     assert page.locator('#chartTaskBody .delete-task-btn[data-task-id="1"]').count() == 0
     assert page.locator("#chartTaskActions .chart-task-done").is_visible()
     assert page.locator('#chartTaskActions .remove-phase-btn[data-task-id="1"]').count() == 0
-    desktop_bounds = page.evaluate(
-        """
-        () => {
-          const rect = document.querySelector('#chartTaskOv .chart-task-sheet').getBoundingClientRect();
-          return {left:rect.left, top:rect.top, right:rect.right, bottom:rect.bottom,
-                  width:innerWidth, height:innerHeight};
-        }
-        """
-    )
+    desktop_initial_geometry = read_chart_task_manager_geometry(page)
+    desktop_manager_geometries = [desktop_initial_geometry]
+    desktop_bounds = desktop_initial_geometry["sheet"]
     assert desktop_bounds["left"] >= 0 and desktop_bounds["top"] >= 0
-    assert desktop_bounds["right"] <= desktop_bounds["width"]
-    assert desktop_bounds["bottom"] <= desktop_bounds["height"]
-
+    assert desktop_bounds["left"] + desktop_bounds["width"] <= 1440
+    assert desktop_bounds["bottom"] <= 1000
+    assert desktop_initial_geometry["add"] is not None
+    desktop_add_anchor = desktop_initial_geometry["add"]
+    if screenshot_dir:
+        page.screenshot(path=str(screenshot_dir / "chart-task-modal-desktop-phase1.png"), full_page=False)
     for expected_count in range(2, 6):
-        page.locator('#chartTaskActions .add-phase-btn[data-task-id="1"]').click()
-        assert page.evaluate("ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === 1))") == expected_count
+        page.mouse.click(desktop_add_anchor["centerX"], desktop_add_anchor["centerY"])
+        page.wait_for_function(
+            "expected => ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === 1)) === expected",
+            arg=expected_count,
+        )
+        current_geometry = read_chart_task_manager_geometry(page)
+        desktop_manager_geometries.append(current_geometry)
+        if expected_count < 5:
+            assert current_geometry["add"] is not None
+            assert abs(current_geometry["add"]["centerX"] - desktop_add_anchor["centerX"]) <= 1
+            assert abs(current_geometry["add"]["centerY"] - desktop_add_anchor["centerY"]) <= 1
+            page.wait_for_function(
+                "() => document.activeElement && document.activeElement.matches('#chartTaskActions .add-phase-btn')"
+            )
+        else:
+            assert current_geometry["add"] is None
+            page.wait_for_function(
+                "() => document.activeElement && document.activeElement.matches('#chartTaskActions .chart-task-done')"
+            )
         if expected_count == 2:
             footer_order = page.evaluate(
                 """
@@ -546,6 +636,13 @@ def run_chart_task_management(
             assert footer_order["removeLeft"] < footer_order["addLeft"]
             assert footer_order["removeText"] == "- 2차 제거"
             assert footer_order["addText"] == "+ 3차 추가"
+    for geometry in desktop_manager_geometries:
+        assert abs(geometry["sheet"]["top"] - desktop_initial_geometry["sheet"]["top"]) <= 1
+        assert abs(geometry["sheet"]["height"] - desktop_initial_geometry["sheet"]["height"]) <= 1
+        assert abs(geometry["footer"]["top"] - desktop_initial_geometry["footer"]["top"]) <= 1
+        assert abs(geometry["done"]["top"] - desktop_initial_geometry["done"]["top"]) <= 1
+    if screenshot_dir:
+        page.screenshot(path=str(screenshot_dir / "chart-task-modal-desktop-phase5.png"), full_page=False)
     assert page.locator('#chartTaskActions .add-phase-btn[data-task-id="1"]').count() == 0
     assert page.locator('#chartTaskActions .remove-phase-btn[data-task-id="1"]').inner_text() == "- 5차 제거"
     sticky_footer = page.evaluate(
@@ -1014,6 +1111,8 @@ def run_chart_task_management(
         """
         state => {
           S = ScheduleCore.normalizeScheduleState(state);
+          const task = S.tasks.find(item => item.id === 2);
+          while (ScheduleCore.getTaskPhaseCount(task) > 1) ScheduleCore.removeLastTaskPhase(task);
           _origPn = state.pn;
           sync(); rEdit(); rChips(); sw('c'); rChart();
         }
@@ -1021,22 +1120,52 @@ def run_chart_task_management(
         mobile_state,
     )
     mobile_page.locator('.chart-task-name[data-task-id="2"]').tap()
-    mobile_footer_order = mobile_page.evaluate(
-        """
-        () => {
-          const remove = document.querySelector('#chartTaskActions .remove-phase-btn').getBoundingClientRect();
-          const add = document.querySelector('#chartTaskActions .add-phase-btn').getBoundingClientRect();
-          const done = document.querySelector('#chartTaskActions .chart-task-done').getBoundingClientRect();
-          const sheet = document.querySelector('#chartTaskOv .chart-task-sheet').getBoundingClientRect();
-          return {
-            removeLeft:remove.left,
-            addLeft:add.left,
-            doneVisible:done.top >= sheet.top && done.bottom <= sheet.bottom + .5,
-            footerPosition:getComputedStyle(document.getElementById('chartTaskActions')).position
-          };
-        }
-        """
-    )
+    mobile_initial_geometry = read_chart_task_manager_geometry(mobile_page)
+    mobile_manager_geometries = [mobile_initial_geometry]
+    mobile_add_anchor = mobile_initial_geometry["add"]
+    assert mobile_add_anchor is not None
+    if screenshot_dir:
+        mobile_page.screenshot(path=str(screenshot_dir / "chart-task-modal-mobile-phase1.png"), full_page=False)
+    mobile_footer_order = None
+    for expected_count in range(2, 6):
+        mobile_page.touchscreen.tap(mobile_add_anchor["centerX"], mobile_add_anchor["centerY"])
+        mobile_page.wait_for_function(
+            "expected => ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === 2)) === expected",
+            arg=expected_count,
+        )
+        current_geometry = read_chart_task_manager_geometry(mobile_page)
+        mobile_manager_geometries.append(current_geometry)
+        if expected_count < 5:
+            assert current_geometry["add"] is not None
+            assert abs(current_geometry["add"]["centerX"] - mobile_add_anchor["centerX"]) <= 1
+            assert abs(current_geometry["add"]["centerY"] - mobile_add_anchor["centerY"]) <= 1
+        else:
+            assert current_geometry["add"] is None
+        if expected_count == 2:
+            mobile_footer_order = mobile_page.evaluate(
+                """
+                () => {
+                  const remove = document.querySelector('#chartTaskActions .remove-phase-btn').getBoundingClientRect();
+                  const add = document.querySelector('#chartTaskActions .add-phase-btn').getBoundingClientRect();
+                  const done = document.querySelector('#chartTaskActions .chart-task-done').getBoundingClientRect();
+                  const sheet = document.querySelector('#chartTaskOv .chart-task-sheet').getBoundingClientRect();
+                  return {
+                    removeLeft:remove.left,
+                    addLeft:add.left,
+                    doneVisible:done.top >= sheet.top && done.bottom <= sheet.bottom + .5,
+                    footerPosition:getComputedStyle(document.getElementById('chartTaskActions')).position
+                  };
+                }
+                """
+            )
+    for geometry in mobile_manager_geometries:
+        assert abs(geometry["sheet"]["top"] - mobile_initial_geometry["sheet"]["top"]) <= 1
+        assert abs(geometry["sheet"]["height"] - mobile_initial_geometry["sheet"]["height"]) <= 1
+        assert abs(geometry["footer"]["top"] - mobile_initial_geometry["footer"]["top"]) <= 1
+        assert abs(geometry["done"]["top"] - mobile_initial_geometry["done"]["top"]) <= 1
+    if screenshot_dir:
+        mobile_page.screenshot(path=str(screenshot_dir / "chart-task-modal-mobile-phase5.png"), full_page=False)
+    assert mobile_footer_order is not None
     assert mobile_footer_order["removeLeft"] < mobile_footer_order["addLeft"]
     assert mobile_footer_order["doneVisible"] is True
     assert mobile_footer_order["footerPosition"] == "sticky"
@@ -2133,6 +2262,16 @@ def run():
                 }
                 """
             ) is True
+            page.evaluate(
+                """
+                () => {
+                  const task = S.tasks.find(item => item.id === 1);
+                  ScheduleCore.updateTaskPhase(task, 5, {
+                    sd:'2026-08-23', ed:'2026-08-24', mode:'manual'
+                  });
+                }
+                """
+            )
 
             page.locator(".add-custom-task-btn").click()
             custom_id = page.evaluate("S.tasks.find(task => task.custom === true).id")
