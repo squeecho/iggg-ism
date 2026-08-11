@@ -6,6 +6,56 @@
 - 범위: 직원 요청 6건의 데이터 정확성, 일정 편집, 차트 가독성
 - 안전 경계: 운영 Firebase, Google Calendar, 고객 데이터, 기존 사용자 브라우저 저장소에 접근하거나 변경하지 않는다.
 
+## 2026-08-11 차트 공종 빠른 편집과 공종 관리 모달 안정화
+
+- 기준 커밋: `09fe9012749d272a8c8fd468c22bac83f93601dc`
+- 작업 브랜치: `feat/chart-task-quick-edit-20260811`
+- 범위: 기타공사 차트 라벨, 공종 관리 sheet의 고정된 작업 영역, 차트 막대에서 해당 차수 설명을 여는 편집 모드만 변경한다.
+- 안전 경계: 차수·날짜·자동배치·저장 형식, 막대 드래그/리사이즈, 특별 날짜 양방향 편집은 유지한다. 합성 상태와 차단된 네트워크만 사용하며 운영 Firebase·Calendar·고객 데이터에는 접근하지 않는다.
+
+### 원문과 현재 구현 대조
+
+| 근거 | 직접 확인한 사실 | 판정 범위 |
+|---|---|---|
+| 사용자 제공 실제 화면 | 3개 차수의 공종 관리 sheet가 내용 높이에 맞춰 커지고, 차수 수가 달라지면 하단 추가 버튼의 화면 좌표도 달라진다. | 같은 위치를 연속 클릭해 2~5차를 추가하기 어렵다. |
+| `index.html:674-715`의 `.chart-task-sheet` | 모바일과 데스크톱 모두 `max-height`만 있고 `height`가 없다. footer의 `sticky`는 sheet 내부 위치만 고정하며 sheet 자체 높이 변화는 막지 못한다. | 차수 수에 따른 모달 크기 변화의 직접 원인이다. |
+| `index.html:4340-4371`의 차트 라벨 생성 | 활성 차수가 둘 이상이면 모든 공종에 `[N차]` span과 title 접두어를 일괄 생성한다. | 기본 기타공사 ID 13도 원치 않는 차수 접두어를 받는다. 일정 데이터 문제는 아니다. |
+| `index.html:4451-4537`, `4635-4690`의 막대 이벤트 | mouse/touch 모두 기존 `drag` 객체를 만들고 release 시 날짜 변경 여부를 이미 판정한다. 변경 없는 `move` release에는 별도 동작이 없다. | 새로운 막대 click 저장 경로 없이 기존 종료 분기에서 편집 의도를 구분할 수 있다. |
+| `index.html:3745-3835`의 공종 관리 sheet | 기존 sheet가 phase별 이름·설명·날짜와 `ScheduleCore.updateTaskPhase`, undo, sync, autosave를 이미 사용한다. | 설명 전용 병행 모달이나 별도 상태는 만들 필요가 없다. |
+
+### 경쟁 가설과 판정
+
+| 가설 | 판정 | 근거 |
+|---|---|---|
+| sticky footer가 있으므로 버튼 좌표는 차수 수와 무관하다. | 기각 | footer는 가변 높이 sheet의 하단에 붙을 뿐이며 sheet 높이가 바뀌면 viewport 좌표도 함께 바뀐다. |
+| 차수 추가 때 body만 늘어나는 것이 아니라 전체 sheet에 고정된 반응형 높이가 없어 크기가 변한다. | 확인 | `.chart-task-sheet`에는 `max-height`만 있고 flex body의 남는 공간을 만들 기준 `height`가 없다. |
+| 막대에 단순 `onclick`을 추가하면 mouse와 touch를 함께 처리할 수 있다. | 기각 | touch 시작은 `preventDefault()`를 호출하고, drag 종료 뒤 click fall-through 여부도 입력 방식별로 달라진다. 기존 release의 changed 판정이 공통 정본이다. |
+| 설명 편집에는 새 compact modal과 별도 draft가 필요하다. | 기각 | 기존 manager가 동일 phase의 `desc`와 저장·undo 파이프라인을 이미 소유한다. 새 구현은 동일 목적의 병행 경로가 된다. |
+| 기타공사 차수 표시는 저장된 phase name에 포함돼 있다. | 기각 | 접두어는 `rG()`가 render 시 만든 `.bt-phase`와 title 문자열이며 phase 데이터는 그대로다. |
+
+### 갭 스코어보드
+
+상태 값: `parity` 충족, `partial` 일부 충족, `deviant` 의도와 다른 구현, `missing` 미구현, `oos` 이번 범위 밖.
+
+| ID | 목표 | 상태 | 우선순위 | 현재 근거 | 완료 기준 |
+|---|---|---:|---:|---|---|
+| QE-01 | 기타공사 차트 라벨에서 차수 접두어 제거 | deviant | P1 | ID 13에도 공통 `[N차]` 생성 | 1~5차 데이터는 유지하되 visible label/title에서 차수 접두어 0건 |
+| QE-02 | 1~5차에서 공종 관리 sheet 크기와 footer 좌표 고정 | deviant | P0 | content 기반 sheet 높이 | desktop/mobile에서 1~5차 sheet 크기와 add footer 중심 좌표 편차 1px 이하 |
+| QE-03 | 차트에 명시적인 설명 편집 모드 | missing | P0 | 차트 toolbar에 추가/자동배치만 존재 | 연필 버튼의 pressed 상태가 명확하고 읽기 전용에서는 활성화 불가 |
+| QE-04 | 편집 모드에서 막대 click/tap으로 해당 phase 설명 열기 | missing | P0 | changed=false release는 guide만 갱신 | 기존 manager를 열고 정확한 phase 설명을 focus·scroll, task/phase state 무변경 |
+| QE-05 | 실제 drag/resize와 click 편집의 충돌 방지 | partial | P0 | release에 changed 판정은 있으나 편집 분기 없음 | 날짜가 바뀐 drag/resize 후 manager 0회, 짧은 move release만 1회 |
+| QE-06 | 기존 undo·autosave·reload·read-only 계약 보존 | partial | P0 | manager update 파이프라인은 존재 | 설명 변경 1회당 undo 1건, 저장/reload 유지, 확정 현장 mutation 0건 |
+| QE-07 | 반응형·오류·네트워크 안전 | partial | P0 | 기존 격리 Playwright harness 존재 | 1440x1000/390x844 캡처, 겹침·이탈·console/page/request error·외부 mutation 0건 |
+
+### 이번 Wave 계획
+
+| Wave | 변경 범위 | 완료 게이트 |
+|---|---|---|
+| 1 | 실제 구현·화면 재현, 경쟁 가설, 갭 기준 | 기준 캡처·소스 근거를 기록하고 별도 `[audit]` 커밋 |
+| 2 | 기타공사 표시 예외와 고정 크기 공종 manager | 데이터/phase 수 불변, 1~5차 desktop/mobile sheet·footer 좌표 검증 |
+| 3 | 차트 편집 모드와 막대 release 통합 | mouse/touch click, drag/resize 억제, 설명 undo/autosave/reload/read-only 검증 |
+| 4 | 전체·시각 회귀와 문서 마감 | 전체 test/typecheck/build/UI, 실제 캡처 직접 관찰, 로컬 커밋 후 중단 |
+
 ## 2026-08-07 차트 막대 텍스트 충돌 회피와 준공청소 전체 표시
 
 - 기준 커밋: `bb5370c9f2a6bd1bdd172e9ef61cad673d696db0`
