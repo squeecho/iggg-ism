@@ -1622,7 +1622,7 @@ var _fbReady = false;
 var _cloudInventoryReady = false;
 var _cloudView = null; /* 공유 현장 보기 전용 - S를 덮어쓰지 않음 */
 var _open=null,IS_RO=false,_origPn=null,_cancelPn=null;
-var _chartTaskManagerId=null,_chartTaskManagerFocusPhase=null,_chartTaskManagerRestoreFocus=false,_chartCalendarReturn=null,_chartCustomDraft=null;
+var _chartTaskManagerId=null,_chartTaskManagerFocusPhase=null,_chartTaskManagerRestoreFocus=false,_chartTaskManagerFocusRaf=0,_chartCalendarReturn=null,_chartCustomDraft=null;
 var _chartBarEditMode=false;
 var RK='cs_recent';
 var _undoStack=[],_redoStack=[];
@@ -3782,6 +3782,26 @@ function toggleChartBarEditMode(){
   _chartBarEditMode=!_chartBarEditMode;
   _updateChartTaskControls();
 }
+function _scrollChartTaskManagerInputIntoView(input){
+  if(!input||!input.matches('#chartTaskBody .chart-task-field input'))return;
+  var section=input.closest('.chart-task-phase'),body=document.getElementById('chartTaskBody');
+  if(!section||!body)return;
+  var bodyRect=body.getBoundingClientRect(),sectionRect=section.getBoundingClientRect();
+  var target=sectionRect.height<=bodyRect.height?section:input;
+  var targetRect=target.getBoundingClientRect(),shift=0;
+  if(targetRect.top<bodyRect.top)shift=targetRect.top-bodyRect.top;
+  else if(targetRect.bottom>bodyRect.bottom)shift=targetRect.bottom-bodyRect.bottom;
+  if(shift)body.scrollTop+=shift;
+}
+function _scheduleChartTaskManagerFocusVisibility(input){
+  if(_chartTaskManagerFocusRaf)cancelAnimationFrame(_chartTaskManagerFocusRaf);
+  _chartTaskManagerFocusRaf=requestAnimationFrame(function(){
+    _chartTaskManagerFocusRaf=0;
+    var focused=input||document.activeElement;
+    if(focused!==document.activeElement||!focused.closest||!focused.closest('#chartTaskOv'))return;
+    _scrollChartTaskManagerInputIntoView(focused);
+  });
+}
 function openChartTaskManager(id,focusPhase,restoreFocus){
   var task=_chartTaskById(id);if(!task)return;
   _chartTaskManagerId=id;
@@ -3793,9 +3813,7 @@ function openChartTaskManager(id,focusPhase,restoreFocus){
   setTimeout(function(){
     if(_chartTaskManagerFocusPhase){
       var input=document.querySelector('#chartTaskBody .chart-manager-desc[data-task-id="'+id+'"][data-phase="'+_chartTaskManagerFocusPhase+'"]');
-      var section=input&&input.closest('.chart-task-phase'),body=document.getElementById('chartTaskBody');
-      if(section&&body)body.scrollTop=Math.max(0,section.offsetTop-Math.max(0,(body.clientHeight-section.offsetHeight)/2));
-      if(input){input.focus({preventScroll:true});input.select();return;}
+      if(input){input.focus({preventScroll:true});input.select();_scheduleChartTaskManagerFocusVisibility(input);return;}
     }
     var close=document.querySelector('#chartTaskOv .chart-task-close');if(close)close.focus();
   },0);
@@ -3803,6 +3821,7 @@ function openChartTaskManager(id,focusPhase,restoreFocus){
 function closeChartTaskManager(){
   var restoreId=_chartTaskManagerId,restorePhase=_chartTaskManagerFocusPhase,restoreFocus=_chartTaskManagerRestoreFocus;
   var ov=document.getElementById('chartTaskOv');if(ov)ov.style.display='none';
+  if(_chartTaskManagerFocusRaf){cancelAnimationFrame(_chartTaskManagerFocusRaf);_chartTaskManagerFocusRaf=0;}
   _chartTaskManagerId=null;
   _chartTaskManagerFocusPhase=null;
   _chartTaskManagerRestoreFocus=false;
@@ -4128,7 +4147,8 @@ function _initChartStickyObserver(){
 }
 window.addEventListener('scroll',_syncStickyScroll,{passive:true});
 document.addEventListener('scroll',_syncStickyScroll,{passive:true});
-window.addEventListener('resize',function(){_removeStickyHeader();_initChartStickyObserver();_scheduleChartBarLabelLayout();});
+window.addEventListener('resize',function(){_removeStickyHeader();_initChartStickyObserver();_scheduleChartBarLabelLayout();_scheduleChartTaskManagerFocusVisibility();});
+if(window.visualViewport)window.visualViewport.addEventListener('resize',function(){_scheduleChartTaskManagerFocusVisibility();});
 document.addEventListener('DOMContentLoaded',function(){
   var cs=document.querySelector('#pc .cs');
   if(cs)cs.addEventListener('scroll',_syncStickyScroll,{passive:true});

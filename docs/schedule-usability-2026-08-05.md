@@ -46,6 +46,7 @@
 | QE-05 | 실제 drag/resize와 click 편집의 충돌 방지 | parity | P0 | 무변경 move release와 14px tap slop만 편집으로 인정 | 날짜가 바뀐 drag/resize 후 manager 0회, 짧은 move release만 1회 |
 | QE-06 | 기존 undo·autosave·reload·read-only 계약 보존 | parity | P0 | 기존 `updateTaskPhase`/undo/sync와 완료 flush를 재사용 | 설명 변경 1회당 undo 1건, 저장/reload 유지, 확정·공유 보기 mutation 0건 |
 | QE-07 | 반응형·오류·네트워크 안전 | parity | P0 | 격리 Playwright의 desktop/mobile 실입력·캡처와 요청 차단 통과 | 1440x1000/390x844 캡처, 겹침·이탈·console/page/request error·외부 mutation 0건 |
+| QE-08 | 모바일 키보드 축소 중 focus 차수와 footer 가시성 | parity | P0 | viewport/visual viewport resize 때 현재 focus input의 기존 phase section만 다시 가시화 | 390x844→390x500→390x844에서 1·5차 section, 추가·제거·완료 조작과 sheet 복원 통과 |
 
 ### 이번 Wave 계획
 
@@ -55,6 +56,7 @@
 | 2 | 기타공사 표시 예외와 고정 크기 공종 manager | 데이터/phase 수 불변, 1~5차 desktop/mobile sheet·footer 좌표 검증 |
 | 3 | 차트 편집 모드와 막대 release 통합 | mouse/touch click, drag/resize 억제, 설명 undo/autosave/reload/read-only 검증 |
 | 4 | 전체·시각 회귀와 문서 마감 | 전체 test/typecheck/build/UI, 실제 캡처 직접 관찰, 로컬 커밋 후 중단 |
+| 5 | 모바일 키보드 focus/scroll 게이트 | 1·5차 focus 상태로 390x500 축소·복원, footer 실제 탭과 외부 mutation 0건 검증 |
 
 ### Wave 2 체크포인트
 
@@ -82,6 +84,15 @@
 - 캡처에서 desktop/modal과 mobile/bottom sheet의 외곽·footer는 1차와 5차가 같고 내용 영역만 스크롤됐다. 완료 버튼과 추가·제거 버튼은 viewport 안에 있으며 입력·텍스트의 겹침, 잘림, 화면 이탈은 없었다. 막대 편집은 해당 차수 section과 설명 input을 강조하되 sheet 크기를 바꾸지 않았다.
 - 격리 브라우저의 console error 0, page error 0, request failure 0, 외부 비-GET mutation 0건이었다. 운영 Firebase, Google Calendar, 고객 데이터, 전자계약, 메시징, SMBM은 조회하거나 변경하지 않았다.
 - feature는 로컬 브랜치에만 유지한다. push, Preview, main, Production은 이번 게이트에서 변경하지 않는다.
+
+### Wave 5 모바일 키보드 게이트
+
+- 수정 전 390x844에서 5차 설명 input을 focus한 뒤 390x500으로 줄이면 input이 `top 600px / bottom 639px`에 남고 sticky footer는 `top 381px`부터 시작해 입력 전체가 가려졌다. 1차도 section 하단이 body보다 5px 잘렸다.
+- 원인은 manager open 시 한 번만 `scrollTop`을 계산하고 이후 viewport 또는 `visualViewport` 축소에는 focused section을 재배치하지 않은 것이었다. sticky footer 위치나 sheet 고정 높이 자체가 원인이라는 가설은 footer가 축소 viewport 안에서 고정된 실측으로 기각했다.
+- 기존 manager focus 상태와 body scroll만 재사용한다. focus input이 속한 phase section이 body보다 작으면 section 전체를, 더 크면 input을 가장 가까운 방향으로 옮기며 일정·phase·저장 상태는 건드리지 않는다.
+- 수정 후 390x500에서 1차와 5차 input은 모두 `top 294px / bottom 333px`, section은 `top 169px / bottom 381px`, footer는 `top 381px`이었다. 390x844 복원 뒤 sheet의 top/height 편차는 0px이고 추가·제거·완료 실제 touch 좌표가 모두 조작 가능했다.
+- 전체 UI 회귀에서 1차 축소 scrollTop은 `5px`, 5차는 `857px`, 복원 sheet 기하 편차는 `0px`였다. 기존 phase pointer 편집 15건과 특별 날짜 desktop/mobile 20건, console/page/request failure 및 외부 mutation 0건도 유지됐다.
+- 직접 관찰 캡처: `/tmp/ig-ism-chart-quick-edit-20260811/chart-task-keyboard-phase1-mobile.png`, `/tmp/ig-ism-chart-quick-edit-20260811/chart-task-keyboard-phase5-mobile.png`. 두 화면 모두 focus input과 phase section이 footer 위에 있고 화면 이탈이나 겹침이 없었다.
 
 ## 2026-08-07 차트 막대 텍스트 충돌 회피와 준공청소 전체 표시
 

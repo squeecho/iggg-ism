@@ -136,6 +136,156 @@ def read_chart_task_manager_geometry(page):
     )
 
 
+def read_chart_task_keyboard_geometry(page, task_id, phase):
+    return page.evaluate(
+        """
+        ({taskId, phase}) => {
+          const input = document.querySelector(
+            '#chartTaskBody .chart-manager-desc[data-task-id="' + taskId + '"][data-phase="' + phase + '"]'
+          );
+          const section = input.closest('.chart-task-phase');
+          const body = document.getElementById('chartTaskBody');
+          const footer = document.getElementById('chartTaskActions');
+          const sheet = document.querySelector('#chartTaskOv .chart-task-sheet');
+          const done = footer.querySelector('.chart-task-done');
+          const add = footer.querySelector('.add-phase-btn');
+          const remove = footer.querySelector('.remove-phase-btn');
+          const rect = element => {
+            if (!element) return null;
+            const value = element.getBoundingClientRect();
+            return {
+              left:value.left, top:value.top, right:value.right, bottom:value.bottom,
+              width:value.width, height:value.height,
+              centerX:(value.left + value.right) / 2,
+              centerY:(value.top + value.bottom) / 2
+            };
+          };
+          const hit = element => {
+            if (!element) return null;
+            const value = element.getBoundingClientRect();
+            const target = document.elementFromPoint(
+              (value.left + value.right) / 2, (value.top + value.bottom) / 2
+            );
+            return !!(target && (target === element || element.contains(target)));
+          };
+          const inputRect = rect(input);
+          const sectionRect = rect(section);
+          const bodyRect = rect(body);
+          const footerRect = rect(footer);
+          const doneRect = rect(done);
+          return {
+            viewport:{width:innerWidth, height:innerHeight},
+            active:document.activeElement === input,
+            input:inputRect,
+            section:sectionRect,
+            body:bodyRect,
+            footer:footerRect,
+            sheet:rect(sheet),
+            done:doneRect,
+            add:rect(add),
+            remove:rect(remove),
+            inputVisible:inputRect.top >= bodyRect.top - .5 && inputRect.bottom <= bodyRect.bottom + .5,
+            sectionVisible:sectionRect.height > bodyRect.height || (
+              sectionRect.top >= bodyRect.top - .5 && sectionRect.bottom <= bodyRect.bottom + .5
+            ),
+            inputAboveFooter:inputRect.bottom <= footerRect.top + .5,
+            footerVisible:footerRect.top >= -.5 && footerRect.bottom <= innerHeight + .5,
+            doneVisible:doneRect.top >= -.5 && doneRect.bottom <= innerHeight + .5,
+            hit:{done:hit(done), add:hit(add), remove:hit(remove)},
+            scroll:{top:body.scrollTop, max:Math.max(0, body.scrollHeight - body.clientHeight)}
+          };
+        }
+        """,
+        {"taskId": task_id, "phase": phase},
+    )
+
+
+def assert_chart_task_keyboard_geometry(geometry):
+    assert geometry["active"] is True, geometry
+    assert geometry["inputVisible"] is True, geometry
+    assert geometry["sectionVisible"] is True, geometry
+    assert geometry["inputAboveFooter"] is True, geometry
+    assert geometry["footerVisible"] is True, geometry
+    assert geometry["doneVisible"] is True, geometry
+    assert geometry["hit"]["done"] is True, geometry
+    assert 0 <= geometry["scroll"]["top"] <= geometry["scroll"]["max"] + 1, geometry
+
+
+def run_chart_task_keyboard_case(page, screenshot_dir, task_id, phase, action):
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.evaluate("([id, phase]) => openChartTaskManager(id, phase, true)", [task_id, phase])
+    page.locator("#chartTaskOv").wait_for(state="visible")
+    page.wait_for_function(
+        """
+        ({taskId, phase}) => document.activeElement && document.activeElement.matches(
+          '.chart-manager-desc[data-task-id="' + taskId + '"][data-phase="' + phase + '"]'
+        )
+        """,
+        arg={"taskId": task_id, "phase": phase},
+    )
+    initial = read_chart_task_keyboard_geometry(page, task_id, phase)
+    assert_chart_task_keyboard_geometry(initial)
+
+    page.set_viewport_size({"width": 390, "height": 500})
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    reduced = read_chart_task_keyboard_geometry(page, task_id, phase)
+    assert_chart_task_keyboard_geometry(reduced)
+    assert reduced["viewport"] == {"width": 390, "height": 500}
+    assert reduced["hit"][action] is True, reduced
+    if screenshot_dir:
+        page.screenshot(
+            path=str(screenshot_dir / f"chart-task-keyboard-phase{phase}-mobile.png"),
+            full_page=False,
+        )
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    restored = read_chart_task_keyboard_geometry(page, task_id, phase)
+    assert_chart_task_keyboard_geometry(restored)
+    assert abs(restored["sheet"]["top"] - initial["sheet"]["top"]) <= 1
+    assert abs(restored["sheet"]["height"] - initial["sheet"]["height"]) <= 1
+
+    page.set_viewport_size({"width": 390, "height": 500})
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    compact = read_chart_task_keyboard_geometry(page, task_id, phase)
+    assert_chart_task_keyboard_geometry(compact)
+    before_count = page.evaluate(
+        "id => ScheduleCore.getTaskPhaseCount(S.tasks.find(task => task.id === id))",
+        task_id,
+    )
+    action_rect = compact[action]
+    page.touchscreen.tap(action_rect["centerX"], action_rect["centerY"])
+    expected_count = before_count + 1 if action == "add" else before_count - 1
+    page.wait_for_function(
+        """
+        ({taskId, count}) => ScheduleCore.getTaskPhaseCount(
+          S.tasks.find(task => task.id === taskId)
+        ) === count
+        """,
+        arg={"taskId": task_id, "count": expected_count},
+    )
+    done = page.locator("#chartTaskActions .chart-task-done")
+    done_box = done.bounding_box()
+    assert done_box is not None
+    assert page.evaluate(
+        """
+        ({x, y}) => {
+          const done = document.querySelector('#chartTaskActions .chart-task-done');
+          const target = document.elementFromPoint(x, y);
+          return !!(target && (target === done || done.contains(target)));
+        }
+        """,
+        {"x": done_box["x"] + done_box["width"] / 2, "y": done_box["y"] + done_box["height"] / 2},
+    )
+    page.touchscreen.tap(
+        done_box["x"] + done_box["width"] / 2,
+        done_box["y"] + done_box["height"] / 2,
+    )
+    page.locator("#chartTaskOv").wait_for(state="hidden")
+    page.set_viewport_size({"width": 390, "height": 844})
+    return {"initial": initial, "reduced": reduced, "restored": restored, "action": action}
+
+
 def install_chart_save_counter(page):
     page.evaluate(
         """
@@ -1503,6 +1653,30 @@ def run_chart_task_management(
     mobile_page.locator("#chartTaskOv .chart-task-close").tap()
     mobile_page.locator("#chartTaskOv").wait_for(state="hidden")
 
+    mobile_page.evaluate(
+        """
+        () => {
+          const phaseOneTask = S.tasks.find(task => task.id === 2);
+          const phaseFiveTask = S.tasks.find(task => task.id === 1);
+          while (ScheduleCore.getTaskPhaseCount(phaseOneTask) > 1) {
+            ScheduleCore.removeLastTaskPhase(phaseOneTask);
+          }
+          while (ScheduleCore.getTaskPhaseCount(phaseFiveTask) < 5) {
+            ScheduleCore.addTaskPhase(phaseFiveTask, {
+              name:phaseFiveTask.name, desc:'키보드 게이트', mode:'auto'
+            });
+          }
+          rChart();
+        }
+        """
+    )
+    mobile_keyboard_phase_one = run_chart_task_keyboard_case(
+        mobile_page, screenshot_dir, task_id=2, phase=1, action="add"
+    )
+    mobile_keyboard_phase_five = run_chart_task_keyboard_case(
+        mobile_page, screenshot_dir, task_id=1, phase=5, action="remove"
+    )
+
     mobile_drag_bar = mobile_page.locator('.bar[data-task-id="1"][data-phase="1"]')
     mobile_drag_bar.scroll_into_view_if_needed()
     mobile_drag_box = mobile_drag_bar.bounding_box()
@@ -1559,6 +1733,20 @@ def run_chart_task_management(
                 "tab_then_done": tab_immediate_save_counts,
                 "debounced_then_done": tab_debounced_save_counts,
             },
+        },
+        "mobile_keyboard": {
+            "phase1_reduced_scroll": round(mobile_keyboard_phase_one["reduced"]["scroll"]["top"], 2),
+            "phase5_reduced_scroll": round(mobile_keyboard_phase_five["reduced"]["scroll"]["top"], 2),
+            "phase1_action": mobile_keyboard_phase_one["action"],
+            "phase5_action": mobile_keyboard_phase_five["action"],
+            "sheet_restore_drift": max(
+                abs(
+                    result["restored"]["sheet"][metric]
+                    - result["initial"]["sheet"][metric]
+                )
+                for result in (mobile_keyboard_phase_one, mobile_keyboard_phase_five)
+                for metric in ("top", "height")
+            ),
         },
         "manager_geometry": {
             "desktop": {
