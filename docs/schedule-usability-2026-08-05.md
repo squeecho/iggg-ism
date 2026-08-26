@@ -541,3 +541,42 @@
 - 기존 서비스 계정 파일과 자격증명 정리
 - 캘린더 API 인증·감사 이슈 수정
 - 모놀리식 `index.html` 전면 모듈화
+
+## 2026-08-26 편집 → 차트 일정 긴급패치
+
+판정: `LOCAL COMPLETE / PUSH·DEPLOY NOT REQUESTED`.
+
+### 원인 판정
+
+| 가설 | 판정 | 근거 |
+|---|---|---|
+| 편집 탭과 차트 탭이 서로 다른 일정 모델을 사용한다. | 기각 | 두 화면 모두 전역 `S`와 `ScheduleCore.getTaskPhases`를 정본으로 사용한다. 정상 미확정 fixture의 막대 이동·좌우 resize·저장·탭 왕복·reload는 desktop/mobile에서 통과했다. |
+| 차트 진입의 Firebase 동기화가 방금 편집한 로컬 일정을 덮는다. | 확정 | `swChart()`가 사람 표시용 `savedAt` 문자열과 숫자 `_updatedAt`을 직접 비교했다. 문자열이 숫자 비교에서 `NaN`이 되어 명백히 오래된 cloud fixture도 `Object.assign(S, cloud)`로 적용되는 것을 격리 Chromium에서 재현했다. 요청 중 현장이 바뀌어도 늦은 응답을 폐기하는 identity gate도 없었다. |
+| 캡처의 `9/28`과 `10/2` 차이는 차트가 공사기간 변경을 받지 못한 증거다. | 부분 기각 | 차트는 공사기간 밖 수동 공정·특별 날짜를 잃지 않기 위해 표시 envelope를 확장한다. 값 보존은 기존 계약이지만 화면이 공사기간과 표시범위를 한 날짜처럼 보여 오해를 만들었다. |
+| 일반 차트 막대 drag/resize가 고장 났다. | 기각 | 1~5차 move/left/right 15/15와 모바일 touch move, autosave, undo, reload가 통과했다. 겹친 차수 hit-test와 취소 gesture는 아래 별도 backlog다. |
+
+### 수정 계약
+
+| ID | 목표 | 상태 | 구현·검증 |
+|---|---|---:|---|
+| HOT-01 | 편집 직후 차트 전환 시 로컬 draft 즉시 보존 | parity | `swChart()`가 800ms debounce를 취소하고 `_persistCurrentLocalDraft()`를 먼저 실행한다. 실제 전환 뒤 state/local snap/reload가 exact다. |
+| HOT-02 | 미확정 현장의 로컬 일정 권한 유지 | parity | 미확정 record는 같은 이름의 cloud 문서가 있어도 remote read/apply 0이다. 합성 newer/stale cloud 모두 local state와 snap mutation 0이다. |
+| HOT-03 | 확정 현장만 숫자형 cloud revision으로 갱신 | parity | 표시용 `savedAt`과 분리한 `cloudUpdatedAt`만 비교한다. 첫 remote revision과 더 최신 revision만 적용하며 invalid/equal/older revision은 차단한다. |
+| HOT-04 | 늦거나 충돌한 원격 응답의 현장·탭·권한 오염 차단 | parity | 요청 시작 `S`/현장/record와 탭·저장 epoch, 응답 payload의 exact 현장명을 결속한다. sanitize-key 충돌, A→B, 확정 해제→재확정, 차트→편집→차트 역순 응답에서 최신 state/snap/revision만 유지한다. |
+| HOT-05 | 공사기간과 차트 표시범위 구분 | parity | 차트 제목은 `공사기간`을 정본으로 표시하고, 공종·특별일 때문에 envelope가 넓어질 때 중립적인 `차트 표시범위`를 별도 표기한다. |
+| HOT-06 | 차트 일정 편집 진입점 명확화 | parity | toolbar, tooltip, 접근성 label, phase sheet 문구를 `일정·설명 편집`으로 통일했다. 기존 date picker와 drag pipeline은 재사용한다. |
+
+### 검증 체크포인트
+
+- 순수 회귀: `npm test` 17/17. 미확정/확정 및 invalid/equal/newer cloud revision 분기를 포함한다.
+- 정적·빌드: `npm run typecheck`, `npm run build`, `git diff --check` 통과.
+- 전체 실제 UI: `npm run test:ui` 통과. 편집 직후 차트 전환은 remote read 0, `2026-08-13 ~ 2026-09-28` state와 local snap exact, 차트 표시범위 분리, sanitize-key 충돌·A→B·재확정·차트 왕복 응답 mutation 0을 확인했다.
+- 기존 전체 회귀: chart phase pointer 15/15, desktop/mobile 막대·label collision 0, read-only mutation 0, note desktop/mobile 10/10, console/page/request failure 0, unexpected network mutation 0.
+- 날짜 의존 UI fixture는 `defaultState()`의 실행일에 따라 다른 달을 여는 문제를 보정했다. 목표 달을 명시하고 phase 1~5 범위를 고정해 테스트 의미와 현재 날짜를 분리했다.
+- 실제 Chromium 캡처: `/tmp/ig-ism-chart-tab-hotfix-20260826/chart-tab-local-authority.png` (97,331B, SHA-256 `b45ef323ae69f77bedb2bffb6f882d2c5487cec16012b1d1bcfb47588acd44f1`). 공사기간/표시범위 문구, `일정·설명 편집` control, 막대 framing과 clipping 0을 직접 확인했다.
+
+### 별도 백로그
+
+- P1: 완전히 겹친 차수의 동일 y/z hit-test에서 뒤 차수만 선택되는 문제와 특별 날짜선이 막대 일부를 덮는 문제.
+- P2: `touchcancel`, window blur, 탭·현장 전환 중 중단된 drag를 원복하는 단일 gesture cancel finalizer. 이번 사용자 증상의 원인은 아니며 정상 release 경로는 회귀 통과했다.
+- 운영 Firebase·Google Calendar·고객 데이터, push·deploy는 이번 긴급패치에서 접근하거나 변경하지 않는다.

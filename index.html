@@ -1518,7 +1518,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
       <button class="btn ca-sub-btn" id="btnCtorCheck" onclick="openCtorCheckModal()">👥 협력업체 일정체크</button>
     </div>
     <div class="ca-row ca-row3 no-print">
-      <button class="btn ca-bar-edit-btn" id="chartBarEditToggle" type="button" aria-pressed="false" onclick="toggleChartBarEditMode()" title="차트 막대를 눌러 해당 차수 설명 편집"><span aria-hidden="true">&#9998;</span><span>설명 편집</span></button>
+      <button class="btn ca-bar-edit-btn" id="chartBarEditToggle" type="button" aria-pressed="false" onclick="toggleChartBarEditMode()" title="차트 막대를 눌러 해당 차수 일정·설명 편집"><span aria-hidden="true">&#9998;</span><span>일정·설명 편집</span></button>
       <button class="btn ca-add-task-btn" id="chartAddTask" onclick="openChartCustomTask()">+ 공종 추가</button>
     </div>
   </div>
@@ -1742,8 +1742,13 @@ function dsp(ds){if(!ds)return '—';var d=pD(ds);return (d.getMonth()+1)+'/'+d.
 function dspK(ds){if(!ds)return '미정';var d=pD(ds);return zz(d.getMonth()+1)+'월 '+zz(d.getDate())+'일 ('+WK[d.getDay()]+')';}
 function per(){
   var bounds=chartBounds();
-  var n=bounds.end?dif(bounds.start,bounds.end)+1:1;
-  return bounds.start+' ~ '+bounds.end+'  (총 '+(n<1?1:n)+'일)';
+  var periodDays=S.ed?dif(S.sd,S.ed)+1:1;
+  var label='공사기간 '+S.sd+' ~ '+S.ed+'  (총 '+(periodDays<1?1:periodDays)+'일)';
+  if(bounds.start!==S.sd||bounds.end!==S.ed){
+    var displayDays=bounds.end?dif(bounds.start,bounds.end)+1:1;
+    label+=' · 차트 표시범위 '+bounds.start+' ~ '+bounds.end+'  ('+(displayDays<1?1:displayDays)+'일)';
+  }
+  return label;
 }
 function zz(n){return String(n).padStart(2,'0');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -1810,11 +1815,16 @@ function defaultState(){
   return state;
 }
 var S=defaultState();
+var _chartSyncEpoch=0;
+function _invalidateChartSync(){
+  _chartSyncEpoch+=1;
+  return _chartSyncEpoch;
+}
 
 /* recent projects */
 function getRecent(){try{return JSON.parse(localStorage.getItem(RK)||'[]');}catch(e){return[];}}
 function setRecent(arr){
-  try{localStorage.setItem(RK,JSON.stringify(arr));}
+  try{localStorage.setItem(RK,JSON.stringify(arr));_invalidateChartSync();}
   catch(e){console.error('setRecent fail:',e);toast('저장 오류: '+e.message);}
 }
 function _findSiteNameConflict(name,excludeExactName){
@@ -3304,6 +3314,7 @@ function onDC(){
   if(ns&&ne)setProjectPeriod(ns,ne,{source:'fields',reflow:true});
 }
 function sw(m){
+  var chartSyncEpoch=_invalidateChartSync();
   _removeStickyHeader(); /* 탭 전환 시 차트 고정헤더 제거 */
   document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
   document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on');});
@@ -3330,7 +3341,7 @@ function sw(m){
       lkb2.style.background='';lkb2.style.borderColor='';lkb2.style.color='';
     }
   }
-  if(m==='c') swChart();
+  if(m==='c') return swChart(chartSyncEpoch);
   if(m==='e'){ rEdit(); loadCloudSites(true).then(rCloudChips); }
   if(m==='i'){
     _loadExtScheduleFromCloud().catch(function(){});
@@ -3339,46 +3350,70 @@ function sw(m){
 }
 
 /* 차트탭 전환: Firebase 최신 데이터로 S 동기화 후 렌더 */
-async function swChart() {
+async function swChart(existingEpoch) {
+  var requestEpoch=Number.isInteger(existingEpoch)?existingEpoch:_invalidateChartSync();
   _updLockOverlay(); /* 마스터 편집 배너 갱신 */
+  /* 편집 직후 차트로 이동하면 800ms debounce보다 먼저 로컬 정본을 확정한다. */
+  if (!_cloudEditing && !_cloudView && !IS_RO) {
+    clearTimeout(_asTimer);
+    if (_persistCurrentLocalDraft()) rChips();
+  }
   rChart(); /* 즉시 렌더 */
   if (_cloudEditing) return; /* 마스터 클라우드 편집 중엔 동기화 불필요 */
   if (_cloudView) return; /* 공유 현장 보기 중엔 로컬 동기화 불필요 */
   if (!_fbReady || !_db || !S || !S.pn) return;
+
+  /* 미확정 현장은 로컬 draft가 정본이다. 같은 이름의 오래된 cloud 문서가
+     있어도 차트 탭 진입만으로 편집 내용을 덮어쓰지 않는다. */
+  var requestState = S;
+  var requestPn = S.pn;
+  var requestIdentity = _origPn;
+  var requestReadOnly = IS_RO;
+  var requestRecords = getRecent();
+  var requestIndex = requestRecords.findIndex(function(x){ return x.pn === requestPn; });
+  var requestRecord = requestIndex >= 0 ? requestRecords[requestIndex] : null;
+  if (!requestRecord || !requestRecord.confirmed || !requestReadOnly) return;
+  var requestRecordSnap = requestRecord.snap || '';
+  var requestRecordRevision = Number(requestRecord.cloudUpdatedAt || 0);
+
   try {
-    var key = sanitizeKey(S.pn);
+    var key = sanitizeKey(requestPn);
     var doc = await _db.collection('sites').doc(key).get();
     if (!doc.exists) return;
     var cloud = ScheduleCore.normalizeScheduleState(doc.data());
-    if (!cloud || !cloud.tasks) return;
+    if (!cloud || !cloud.tasks || cloud.pn !== requestPn) return;
 
-    /* 로컬 savedAt vs Firebase _updatedAt 비교 */
+    /* 요청 도중 현장·권한·보기 모드가 바뀌면 늦은 응답을 폐기한다. */
+    if (_chartSyncEpoch !== requestEpoch || S !== requestState ||
+        S.pn !== requestPn || _origPn !== requestIdentity ||
+        IS_RO !== requestReadOnly || _cloudView || _cloudEditing) return;
+
     var arr = getRecent();
-    var ci = arr.findIndex(function(x){ return x.pn === S.pn; });
-    var localTs = ci >= 0 ? (arr[ci].savedAt || 0) : 0;
-    var cloudTs = cloud._updatedAt || 0;
-
-    if (cloudTs <= localTs) return; /* 로컬이 최신이면 스킵 */
+    var ci = arr.findIndex(function(x){ return x.pn === requestPn; });
+    var currentRecord = ci >= 0 ? arr[ci] : null;
+    if (!currentRecord || !currentRecord.confirmed ||
+        (currentRecord.snap || '') !== requestRecordSnap ||
+        Number(currentRecord.cloudUpdatedAt || 0) !== requestRecordRevision) return;
+    var cloudTs = Number(cloud._updatedAt || 0);
+    if (!ScheduleCore.shouldApplyChartCloudSnapshot(currentRecord, cloudTs)) return;
 
     /* Firebase가 더 최신 → S 업데이트 */
-    var prevPn = S.pn;
     Object.assign(S, cloud);
-    S.pn = prevPn;
+    S.pn = requestPn;
     normalizeTasks(); /* pn 유지 */
     delete S._updatedAt;
     delete S.confirmed;
 
     /* 로컬스토리지 snap 갱신 */
-    if (ci >= 0) {
+    if (ci >= 0 && arr[ci].confirmed) {
       arr[ci] = Object.assign({}, arr[ci], {
         sd: S.sd, ed: S.ed,
-        savedAt: cloudTs,
+        cloudUpdatedAt: cloudTs,
         snap: JSON.stringify(S)
       });
       setRecent(arr);
     }
 
-    if (typeof syncPeriod === 'function') syncPeriod();
     rChart();
     toast('☁️ 최신 일정으로 업데이트됨');
   } catch(e) { console.warn('chart sync failed', e); }
@@ -3762,14 +3797,14 @@ function _updateChartTaskControls(){
     edit.setAttribute('aria-disabled',readOnly?'true':'false');
     edit.setAttribute('aria-pressed',_chartBarEditMode?'true':'false');
     edit.classList.toggle('on',_chartBarEditMode);
-    edit.title=readOnly?'확정된 현장에서는 설명을 편집할 수 없습니다':'차트 막대를 눌러 해당 차수 설명 편집';
+    edit.title=readOnly?'확정된 현장에서는 일정·설명을 편집할 수 없습니다':'차트 막대를 눌러 해당 차수 일정·설명 편집';
   }
   var chart=document.getElementById('pc');
   if(chart)chart.classList.toggle('chart-bar-edit-mode',_chartBarEditMode&&!readOnly);
   document.querySelectorAll('#gt .bar').forEach(function(bar){
     if(_chartBarEditMode&&!readOnly){
       bar.setAttribute('role','button');bar.setAttribute('tabindex','0');
-      bar.setAttribute('aria-label',(bar.getAttribute('title')||'공종')+' 설명 편집');
+      bar.setAttribute('aria-label',(bar.getAttribute('title')||'공종')+' 일정·설명 편집');
     }else{
       bar.removeAttribute('role');bar.removeAttribute('tabindex');bar.removeAttribute('aria-label');
     }
@@ -3871,7 +3906,7 @@ function _renderChartTaskManager(){
   var title=document.getElementById('chartTaskTitle');if(title)title.textContent=task.name||'공종 관리';
   var sub=document.getElementById('chartTaskSub');
   if(sub)sub.textContent=(task.custom?'사용자 공종 · ':'기본 공종 · ')+count+'개 차수'
-    +(_chartTaskManagerFocusPhase?' · '+_chartTaskManagerFocusPhase+'차 설명 편집':'')+(readOnly?' · 읽기 전용':'');
+    +(_chartTaskManagerFocusPhase?' · '+_chartTaskManagerFocusPhase+'차 일정·설명 편집':'')+(readOnly?' · 읽기 전용':'');
   var disabled=readOnly?' disabled aria-disabled="true"':'';
   var h='<div class="chart-task-state"><div><div class="chart-task-state-copy">공종 활성 상태</div>'
     +(readOnly?'<div class="chart-task-readonly">확정 현장 · 변경 불가</div>':'')

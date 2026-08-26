@@ -637,6 +637,289 @@ def exercise_phase_pointer_edits(page, task_id):
     return {"operations": operations, "manager_opens": manager_opens}
 
 
+def run_chart_tab_sync_authority(
+    browser,
+    origin,
+    route_request,
+    screenshot_dir,
+    console_errors,
+    page_errors,
+    request_failures,
+):
+    context = browser.new_context(viewport={"width": 1440, "height": 1000})
+    context.add_init_script(
+        """
+        window.__ISM_TEST_MODE__ = true;
+        if (!sessionStorage.getItem('__chartSyncFixtureInitialized')) {
+          localStorage.clear();
+          sessionStorage.clear();
+          sessionStorage.setItem('__chartSyncFixtureInitialized', '1');
+          localStorage.setItem('_deviceName', 'chart-sync-qa');
+          localStorage.setItem('_gcalEnabled', '0');
+        }
+        """
+    )
+    context.route("**/*", route_request)
+    page = context.new_page()
+    page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.on("requestfailed", lambda request: request_failures.append(f"{request.method} {request.url}"))
+    page.goto(origin + "/", wait_until="domcontentloaded")
+
+    result = page.evaluate(
+        """
+        async () => {
+          const local = defaultState();
+          local.pn = 'Chart Sync Local';
+          ScheduleCore.applyConstructionPeriod(local, '2026-08-13', '2026-09-28');
+          const cleaning = local.tasks.find(task => task.id === 14);
+          cleaning.on = true;
+          cleaning.sd = '2026-09-30';
+          cleaning.ed = '2026-10-02';
+          cleaning.scheduleMode = 'manual';
+          const staleCloud = JSON.parse(JSON.stringify(local));
+          staleCloud.sd = '2026-08-01';
+          staleCloud.ed = '2026-08-31';
+          staleCloud._updatedAt = 1;
+
+          const original = JSON.parse(JSON.stringify(local));
+          original.sd = '2026-08-05';
+          original.ed = '2026-09-01';
+          const localRecord = {
+            pn:local.pn,
+            sd:original.sd,
+            ed:original.ed,
+            confirmed:false,
+            savedAt:'2026-08-26 20:45',
+            snap:JSON.stringify(original)
+          };
+          localStorage.setItem('cs_recent', JSON.stringify([localRecord]));
+          localStorage.setItem('cs_last', local.pn);
+          S = ScheduleCore.normalizeScheduleState(local);
+          _origPn = local.pn;
+          _cloudEditing = null;
+          _cloudView = null;
+          IS_RO = false;
+          let cloudReads = 0;
+          _fbReady = true;
+          _db = {collection:() => ({doc:() => ({get:async () => {
+            cloudReads += 1;
+            return {exists:true, data:() => staleCloud};
+          }})})};
+          calInit(); sync(); rEdit(); rChips();
+          const expectedLocal = JSON.stringify(S);
+          await sw('c');
+          sw('e');
+          await sw('c');
+          const persistedLocal = JSON.parse(localStorage.getItem('cs_recent'))[0];
+          const localAuthority = {
+            cloudReads,
+            stateExact:JSON.stringify(S) === expectedLocal,
+            persistedExact:persistedLocal.snap === expectedLocal,
+            period:[S.sd, S.ed],
+            title:document.querySelector('#gt .hps').textContent,
+            editButton:document.getElementById('chartBarEditToggle').textContent.trim()
+          };
+
+          const confirmedA = defaultState();
+          confirmedA.pn = 'Confirmed A';
+          ScheduleCore.applyConstructionPeriod(confirmedA, '2026-08-10', '2026-09-10');
+          const localB = defaultState();
+          localB.pn = 'Local B';
+          ScheduleCore.applyConstructionPeriod(localB, '2026-10-01', '2026-10-20');
+          const records = [
+            {pn:confirmedA.pn, sd:confirmedA.sd, ed:confirmedA.ed, confirmed:true, savedAt:'2026-08-26 20:45', cloudUpdatedAt:10, snap:JSON.stringify(confirmedA)},
+            {pn:localB.pn, sd:localB.sd, ed:localB.ed, confirmed:false, snap:JSON.stringify(localB)}
+          ];
+          const expectedBRecordSnap = records[1].snap;
+          localStorage.setItem('cs_recent', JSON.stringify(records));
+          S = ScheduleCore.normalizeScheduleState(confirmedA);
+          _origPn = confirmedA.pn;
+          IS_RO = true;
+          const cloudA = JSON.parse(JSON.stringify(confirmedA));
+          cloudA.sd = '2026-08-12';
+          cloudA._updatedAt = 11;
+          _db = {collection:() => ({doc:() => ({get:async () => ({exists:true, data:() => cloudA})})})};
+          await swChart();
+          const refreshedRecord = JSON.parse(localStorage.getItem('cs_recent'))
+            .find(item => item.pn === confirmedA.pn);
+          const confirmedRefresh = {
+            start:S.sd,
+            revision:refreshedRecord.cloudUpdatedAt,
+            savedAt:refreshedRecord.savedAt
+          };
+
+          localStorage.setItem('cs_recent', JSON.stringify(records));
+          S = ScheduleCore.normalizeScheduleState(JSON.parse(records[0].snap));
+          _origPn = confirmedA.pn;
+          IS_RO = true;
+          const collisionCloud = JSON.parse(JSON.stringify(cloudA));
+          collisionCloud.pn = 'Confirmed_A';
+          collisionCloud._updatedAt = 99;
+          const collisionExpectedState = JSON.stringify(S);
+          _db = {collection:() => ({doc:() => ({get:async () => ({
+            exists:true, data:() => collisionCloud
+          })})})};
+          await swChart();
+          const collisionRecord = JSON.parse(localStorage.getItem('cs_recent'))[0];
+          const collisionResponse = {
+            keyCollides:sanitizeKey(collisionCloud.pn) === sanitizeKey(confirmedA.pn),
+            stateExact:JSON.stringify(S) === collisionExpectedState,
+            snapExact:collisionRecord.snap === records[0].snap,
+            revision:collisionRecord.cloudUpdatedAt
+          };
+
+          localStorage.setItem('cs_recent', JSON.stringify(records));
+          S = ScheduleCore.normalizeScheduleState(JSON.parse(records[0].snap));
+          _origPn = confirmedA.pn;
+          IS_RO = true;
+          let resolveCloud;
+          _db = {collection:() => ({doc:() => ({get:() => new Promise(resolve => {
+            resolveCloud = () => resolve({exists:true, data:() => cloudA});
+          })})})};
+          const pending = swChart();
+          S = ScheduleCore.normalizeScheduleState(localB);
+          _origPn = localB.pn;
+          IS_RO = false;
+          const expectedB = JSON.stringify(S);
+          resolveCloud();
+          await pending;
+          const afterRecords = JSON.parse(localStorage.getItem('cs_recent'));
+          const lateResponse = {
+            stateExact:JSON.stringify(S) === expectedB,
+            bSnapExact:afterRecords.find(item => item.pn === localB.pn).snap === expectedBRecordSnap,
+            aRevision:afterRecords.find(item => item.pn === confirmedA.pn).cloudUpdatedAt
+          };
+
+          localStorage.setItem('cs_recent', JSON.stringify(records));
+          S = ScheduleCore.normalizeScheduleState(JSON.parse(records[0].snap));
+          _origPn = confirmedA.pn;
+          IS_RO = true;
+          const reconfirmExpectedState = JSON.stringify(S);
+          let resolveReconfirmed;
+          _db = {collection:() => ({doc:() => ({get:() => new Promise(resolve => {
+            resolveReconfirmed = () => resolve({exists:true, data:() => cloudA});
+          })})})};
+          const reconfirmPending = swChart();
+          const unconfirmedRecords = JSON.parse(JSON.stringify(records));
+          unconfirmedRecords[0].confirmed = false;
+          setRecent(unconfirmedRecords);
+          IS_RO = false;
+          setRecent(records);
+          IS_RO = true;
+          resolveReconfirmed();
+          await reconfirmPending;
+          const reconfirmedRecord = JSON.parse(localStorage.getItem('cs_recent'))[0];
+          const reconfirmRace = {
+            stateExact:JSON.stringify(S) === reconfirmExpectedState,
+            revision:reconfirmedRecord.cloudUpdatedAt
+          };
+
+          localStorage.setItem('cs_recent', JSON.stringify(records));
+          S = ScheduleCore.normalizeScheduleState(JSON.parse(records[0].snap));
+          _origPn = confirmedA.pn;
+          IS_RO = true;
+          const cloudOlder = JSON.parse(JSON.stringify(cloudA));
+          cloudOlder.sd = '2026-08-11';
+          cloudOlder._updatedAt = 11;
+          const cloudNewer = JSON.parse(JSON.stringify(cloudA));
+          cloudNewer.sd = '2026-08-13';
+          cloudNewer._updatedAt = 12;
+          const pendingResolvers = [];
+          _db = {collection:() => ({
+            doc:() => ({get:() => new Promise(resolve => pendingResolvers.push(resolve))}),
+            get:async () => ({docs:[]})
+          })};
+          const firstTabRequest = sw('c');
+          sw('e');
+          const secondTabRequest = sw('c');
+          pendingResolvers[1]({exists:true, data:() => cloudNewer});
+          await secondTabRequest;
+          pendingResolvers[0]({exists:true, data:() => cloudOlder});
+          await firstTabRequest;
+          const tabRaceRecord = JSON.parse(localStorage.getItem('cs_recent'))[0];
+          const tabRace = {
+            start:S.sd,
+            revision:tabRaceRecord.cloudUpdatedAt,
+            chartActive:document.getElementById('pc').classList.contains('on'),
+            title:document.querySelector('#gt .hps').textContent
+          };
+          const finalLocal = ScheduleCore.normalizeScheduleState(local);
+          const finalLocalSnap = JSON.stringify(finalLocal);
+          localStorage.setItem('cs_recent', JSON.stringify([{
+            pn:finalLocal.pn, sd:finalLocal.sd, ed:finalLocal.ed,
+            confirmed:false, snap:finalLocalSnap
+          }]));
+          localStorage.setItem('cs_last', finalLocal.pn);
+          S = finalLocal;
+          _origPn = local.pn;
+          IS_RO = false;
+          _fbReady = false;
+          _db = null;
+          calInit(); sync(); rEdit(); rChips(); sw('c');
+          const toastEl = document.getElementById('toast');
+          if (toastEl) { toastEl.classList.remove('on'); toastEl.textContent = ''; }
+          return {
+            localAuthority, confirmedRefresh, collisionResponse,
+            lateResponse, reconfirmRace, tabRace,
+            reloadExpected:{pn:finalLocal.pn, period:[finalLocal.sd, finalLocal.ed]}
+          };
+        }
+        """
+    )
+    assert result["localAuthority"]["cloudReads"] == 0, result
+    assert result["localAuthority"]["stateExact"] is True, result
+    assert result["localAuthority"]["persistedExact"] is True, result
+    assert result["localAuthority"]["period"] == ["2026-08-13", "2026-09-28"], result
+    assert "공사기간 2026-08-13 ~ 2026-09-28" in result["localAuthority"]["title"], result
+    assert "차트 표시범위" in result["localAuthority"]["title"], result
+    assert result["localAuthority"]["editButton"].endswith("일정·설명 편집"), result
+    assert result["confirmedRefresh"] == {
+        "start": "2026-08-12",
+        "revision": 11,
+        "savedAt": "2026-08-26 20:45",
+    }, result
+    assert result["collisionResponse"] == {
+        "keyCollides": True,
+        "stateExact": True,
+        "snapExact": True,
+        "revision": 10,
+    }, result
+    assert result["lateResponse"] == {"stateExact": True, "bSnapExact": True, "aRevision": 10}, result
+    assert result["reconfirmRace"] == {"stateExact": True, "revision": 10}, result
+    assert result["tabRace"]["start"] == "2026-08-13", result
+    assert result["tabRace"]["revision"] == 12, result
+    assert result["tabRace"]["chartActive"] is True, result
+    assert "공사기간 2026-08-13" in result["tabRace"]["title"], result
+    if screenshot_dir:
+        page.locator("#pc").screenshot(path=str(screenshot_dir / "chart-tab-local-authority.png"))
+    page.reload(wait_until="domcontentloaded")
+    page.locator("#tc2").click()
+    page.wait_for_function("document.getElementById('pc').classList.contains('on')")
+    reload_result = page.evaluate(
+        """
+        () => {
+          const record = getRecent().find(item => item.pn === S.pn);
+          return {
+            pn:S.pn,
+            period:[S.sd, S.ed],
+            stateExact:!!record && record.snap === JSON.stringify(S),
+            chartActive:document.getElementById('pc').classList.contains('on')
+          };
+        }
+        """
+    )
+    assert reload_result == {
+        "pn": result["reloadExpected"]["pn"],
+        "period": result["reloadExpected"]["period"],
+        "stateExact": True,
+        "chartActive": True,
+    }, {"result": result, "reload": reload_result}
+    result["reload"] = reload_result
+    context.close()
+    return result
+
+
 def run_chart_task_management(
     browser,
     origin,
@@ -1100,7 +1383,7 @@ def run_chart_task_management(
     page.locator("#chartTaskOv").wait_for(state="visible")
     page.locator('#chartTaskActions .remove-phase-btn[data-task-id="1"]').click()
     assert page.evaluate("_chartTaskManagerFocusPhase") is None
-    assert "5차 설명 편집" not in page.locator("#chartTaskSub").inner_text()
+    assert "5차 일정·설명 편집" not in page.locator("#chartTaskSub").inner_text()
     page.locator("#chartTaskOv .chart-task-close").click()
     page.locator("#chartTaskOv").wait_for(state="hidden")
     page.evaluate("doUndo()")
@@ -2755,8 +3038,7 @@ def run():
 
                   const qa = defaultState();
                   qa.pn = 'Wave2 QA';
-                  qa.sd = '2026-08-05';
-                  qa.ed = '2026-09-01';
+                  ScheduleCore.applyConstructionPeriod(qa, '2026-08-05', '2026-09-01');
                   const manual = qa.tasks.find(task => task.id === 2);
                   manual.on = true;
                   manual.sd = '2026-07-20';
@@ -2765,8 +3047,7 @@ def run():
 
                   const other = defaultState();
                   other.pn = 'Wave2 Other';
-                  other.sd = '2026-08-05';
-                  other.ed = '2026-09-01';
+                  ScheduleCore.applyConstructionPeriod(other, '2026-08-05', '2026-09-01');
                   const records = [qa, other].map(state => ({
                     pn: state.pn,
                     sd: state.sd,
@@ -2817,6 +3098,7 @@ def run():
 
             phase_four_dates = page.locator('.phase-date[data-task-id="1"][data-phase="4"]')
             phase_four_dates.locator(".date-disp").first.click()
+            page.evaluate("() => {_tc.y=2026;_tc.m=7;tcalRender();}")
             page.locator('#tcalOv .tcal-dn[data-ds="2026-08-19"]').click()
             page.locator('#tcalOv .tcal-dn[data-ds="2026-08-20"]').click()
             page.locator("#tcalOv").wait_for(state="hidden")
@@ -2832,6 +3114,15 @@ def run():
                 """
                 () => {
                   const task = S.tasks.find(item => item.id === 1);
+                  [
+                    ['2026-08-10', '2026-08-11'],
+                    ['2026-08-13', '2026-08-14'],
+                    ['2026-08-16', '2026-08-17']
+                  ].forEach((range, index) => {
+                    ScheduleCore.updateTaskPhase(task, index + 1, {
+                      sd:range[0], ed:range[1], mode:'manual'
+                    });
+                  });
                   ScheduleCore.updateTaskPhase(task, 5, {
                     sd:'2026-08-23', ed:'2026-08-24', mode:'manual'
                   });
@@ -3405,6 +3696,16 @@ def run():
                 "gcal_events": len(gcal_result),
             }
 
+            chart_tab_sync_result = run_chart_tab_sync_authority(
+                browser,
+                origin,
+                route_request,
+                screenshot_dir,
+                console_errors,
+                page_errors,
+                request_failures,
+            )
+
             chart_task_result = run_chart_task_management(
                 browser,
                 origin,
@@ -3453,6 +3754,7 @@ def run():
             "cloud_restore_round_trip": cloud_restore_round_trip,
             "wave_two": wave_two_result,
             "wave_three": wave_three_result,
+            "chart_tab_sync_authority": chart_tab_sync_result,
             "chart_task_management": chart_task_result,
             "note_date_interactions": note_date_result,
             "intercepted_local_config_requests": intercepted_config_requests,

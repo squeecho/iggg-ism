@@ -54,6 +54,54 @@ test('local draft preserves an exact legacy identity and never canonical-matches
   assert.equal(JSON.parse(result.records[1].snap).marker, 'edited');
 });
 
+test('chart cloud refresh never overrides a local draft and compares only numeric cloud revisions', () => {
+  const staleHumanTimestamp = '2026-08-26 20:45';
+  assert.equal(
+    core.shouldApplyChartCloudSnapshot(
+      { confirmed: false, savedAt: staleHumanTimestamp },
+      Date.now() + 60_000
+    ),
+    false,
+    'an unconfirmed local draft remains authoritative even when a same-name cloud record exists'
+  );
+  assert.equal(
+    core.shouldApplyChartCloudSnapshot(
+      { confirmed: true, savedAt: staleHumanTimestamp },
+      100
+    ),
+    true,
+    'a confirmed record without an applied cloud revision refreshes once'
+  );
+  assert.equal(
+    core.shouldApplyChartCloudSnapshot(
+      { confirmed: true, savedAt: staleHumanTimestamp, cloudUpdatedAt: 100 },
+      100
+    ),
+    false
+  );
+  assert.equal(
+    core.shouldApplyChartCloudSnapshot(
+      { confirmed: true, savedAt: staleHumanTimestamp, cloudUpdatedAt: 100 },
+      99
+    ),
+    false
+  );
+  assert.equal(
+    core.shouldApplyChartCloudSnapshot(
+      { confirmed: true, savedAt: staleHumanTimestamp, cloudUpdatedAt: 100 },
+      101
+    ),
+    true
+  );
+  assert.equal(
+    core.shouldApplyChartCloudSnapshot(
+      { confirmed: true, cloudUpdatedAt: 100 },
+      'not-a-revision'
+    ),
+    false
+  );
+});
+
 test('phase 2 uses the legacy split key', () => {
   const task = { name: 'Electrical', split: true, sd2: '2026-08-10', ed2: '2026-08-12' };
   assert.equal(core.isPhaseEnabled(task, 2), true);

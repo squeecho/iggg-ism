@@ -714,6 +714,15 @@
     return { records: list, updated: true, index: index, snapshot: snapshot };
   }
 
+  function shouldApplyChartCloudSnapshot(record, cloudUpdatedAt) {
+    if (!record || record.confirmed !== true) return false;
+    var remoteRevision = Number(cloudUpdatedAt);
+    if (!Number.isFinite(remoteRevision) || remoteRevision <= 0) return false;
+    var appliedRevision = Number(record.cloudUpdatedAt);
+    if (!Number.isFinite(appliedRevision) || appliedRevision <= 0) return true;
+    return remoteRevision > appliedRevision;
+  }
+
   return {
     MAX_PHASES: MAX_PHASES,
     MIN_CUSTOM_TASK_ID: MIN_CUSTOM_TASK_ID,
@@ -755,6 +764,7 @@
     applyConstructionPeriod: applyConstructionPeriod,
     snapshotForIdentity: snapshotForIdentity,
     updateLocalDraft: updateLocalDraft,
+    shouldApplyChartCloudSnapshot: shouldApplyChartCloudSnapshot,
     dayDiff: dayDiff,
     addDays: addDays
   };
