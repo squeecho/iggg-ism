@@ -73,3 +73,20 @@ test('차트 도구모음은 편집 기능을 주 기능으로, 출력·자동�
   assert.match(html, /\.ca \.chart-toolbar-btn\{height:34px;min-height:34px;/);
   assert.match(html, /\.ca-utility-btn\{background:transparent;/);
 });
+
+test('Firebase 초기 현장 목록은 실시간 snapshot 한 경로로 받고 지난 현장은 펼칠 때 렌더한다', () => {
+  const startupStart = html.indexOf("document.addEventListener('DOMContentLoaded'");
+  const startupEnd = html.indexOf('/* =========================================================\n   통합 뷰 렌더링', startupStart);
+  const startup = html.slice(startupStart, startupEnd);
+  assert.ok(startupStart >= 0 && startupEnd > startupStart);
+  assert.doesNotMatch(startup, /loadCloudSites\(\)\.then\(rCloudChips\)/);
+
+  const listenerStart = html.indexOf('function _startCloudListener()');
+  const listenerEnd = html.indexOf('function _reconcileLocalConfirmed()', listenerStart);
+  const listener = html.slice(listenerStart, listenerEnd);
+  assert.match(listener, /_cloudInventoryReady = true;[\s\S]*rCloudChips\(\)/);
+  assert.match(html, /async function loadCloudSites\(force\) \{\s*if\(!force&&_cloudInventoryReady\)return true;/);
+  assert.match(html, /if\(_cloudLoadPromise\)return _cloudLoadPromise;/);
+  assert.match(html, /if\(caEl\.classList\.contains\('open'\)\)/);
+  assert.match(html, /caEl\.dataset\.loaded='false'/);
+});

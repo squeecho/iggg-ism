@@ -3089,6 +3089,75 @@ def run():
                 "tabStateRestored": True,
                 "busy": False,
             }
+            cloud_loading_result = page.evaluate(
+                """
+                async () => {
+                  const makeSite = (pn, sd, ed) => {
+                    const site = ScheduleCore.normalizeScheduleState(defaultState());
+                    site.pn = pn; site.sd = sd; site.ed = ed; site.confirmed = true;
+                    return site;
+                  };
+                  const originalToday = today;
+                  const originalDb = _db;
+                  const originalFbReady = _fbReady;
+                  const originalInventoryReady = _cloudInventoryReady;
+                  const originalSites = _cloudSites;
+                  today = () => '2026-08-27';
+                  _cloudInventoryReady = true;
+                  _cloudSites = [
+                    makeSite('진행 공유 현장', '2026-08-01', '2026-09-30'),
+                    makeSite('지난 공유 현장 A', '2026-06-01', '2026-07-01'),
+                    makeSite('지난 공유 현장 B', '2026-06-02', '2026-07-02')
+                  ];
+                  const archive = document.getElementById('cloudArchiveChips');
+                  archive.classList.remove('open');
+                  archive.dataset.loaded = 'false';
+                  rCloudChips();
+                  const lazyBefore = {
+                    current:document.querySelectorAll('#cloudChips .cloud-chip-btn').length,
+                    archived:document.querySelectorAll('#cloudArchiveChips .cloud-chip-btn').length,
+                    count:document.getElementById('cloudArchiveCount').textContent
+                  };
+                  toggleCloudArchive();
+                  const lazyAfter = {
+                    archived:document.querySelectorAll('#cloudArchiveChips .cloud-chip-btn').length,
+                    loaded:archive.dataset.loaded,
+                    open:archive.classList.contains('open')
+                  };
+
+                  let getCalls = 0;
+                  let releaseGet;
+                  _db = {collection:() => ({get:() => {
+                    getCalls += 1;
+                    return new Promise(resolve => { releaseGet = resolve; });
+                  }})};
+                  _fbReady = true;
+                  _cloudInventoryReady = false;
+                  _cloudLoadPromise = null;
+                  const first = loadCloudSites();
+                  const second = loadCloudSites();
+                  releaseGet({docs:[]});
+                  const reads = await Promise.all([first, second]);
+
+                  _db = originalDb;
+                  _fbReady = originalFbReady;
+                  _cloudInventoryReady = originalInventoryReady;
+                  _cloudSites = originalSites;
+                  _cloudLoadPromise = null;
+                  archive.classList.remove('open');
+                  archive.dataset.loaded = 'false';
+                  archive.innerHTML = '';
+                  today = originalToday;
+                  return {lazyBefore, lazyAfter, getCalls, reads};
+                }
+                """
+            )
+            assert cloud_loading_result == {
+                "lazyBefore": {"current": 1, "archived": 0, "count": "2"},
+                "lazyAfter": {"archived": 2, "loaded": "true", "open": True},
+                "getCalls": 1,
+                "reads": [True, True],
+            }
             if screenshot_dir:
                 page.locator("#toast").evaluate(
                     "el => { el.classList.remove('on'); el.style.display = 'none'; }"

@@ -1657,6 +1657,7 @@ var _db = null;
 var _cloudSites = [];
 var _fbReady = false;
 var _cloudInventoryReady = false;
+var _cloudLoadPromise = null;
 var _cloudView = null; /* 공유 현장 보기 전용 - S를 덮어쓰지 않음 */
 var _open=null,IS_RO=false,_origPn=null,_cancelPn=null;
 var _chartTaskManagerId=null,_chartTaskManagerFocusPhase=null,_chartTaskManagerRestoreFocus=false,_chartTaskManagerFocusRaf=0,_chartCalendarReturn=null,_chartCustomDraft=null;
@@ -2560,6 +2561,7 @@ function toggleCloudArchive(){
   var isOpen=chips.classList.contains('open');
   chips.classList.toggle('open',!isOpen);
   if(arrow)arrow.classList.toggle('open',!isOpen);
+  if(!isOpen&&chips.dataset.loaded!=='true')rCloudChips();
 }
 function _safeDateStr(v){
   if(!v)return '';
@@ -2754,22 +2756,21 @@ function rCloudChips() {
   if (!el || !wrap) return;
   rSharedExportSites();
 
-  /* Firebase 미준비 시 재시도 */
-  if (!_fbReady) {
+  /* 초기 현장 목록은 실시간 snapshot이 단독으로 채운다. 인증/스냅샷 대기 중
+     별도 collection.get()을 겹쳐 실행하지 않고 listener가 완료 렌더를 맡는다. */
+  if (!_cloudInventoryReady) {
     if(body)body.style.display = '';
     el.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:4px 0">Firebase 연결 대기 중...</div>';
-    setTimeout(function(){ loadCloudSites().then(function(){
-      rCloudChips();
-      /* 딥링크 현장이 로컬엔 없고 클라우드(확정)에 있으면 그쪽을 연다(#224) */
-      try{
-        if(_hubDeep.site && !_open && !S.tasks.length
-           && (_cloudSites||[]).some(function(x){return x.pn===_hubDeep.site;})){
-          loadCloudProject(_hubDeep.site);
-        }
-      }catch(e){}
-    }); }, 1500);
     return;
   }
+
+  /* 딥링크 현장이 로컬엔 없고 클라우드(확정)에 있으면 그쪽을 연다(#224). */
+  try{
+    if(_hubDeep.site && !_open && !S.tasks.length
+       && (_cloudSites||[]).some(function(x){return x.pn===_hubDeep.site;})){
+      loadCloudProject(_hubDeep.site);
+    }
+  }catch(e){}
 
   var localPns = getRecent().map(function(x){ return x.pn; });
   var myDevice = getDeviceName();
@@ -2827,15 +2828,22 @@ function rCloudChips() {
     } else {
       caWrap.style.display = '';
       if(caCount) caCount.textContent = past.length;
-      caEl.innerHTML = past.map(function(site){
-        return buildCloudChip(site).replace('pnchip cloud confirmed','pnchip cloud confirmed archived');
-      }).join('');
-      caEl.querySelectorAll('.cloud-chip-btn').forEach(function(chip){
-        chip.onclick = function(e){
-          if(e.target.closest('.cloud-del-btn'))return;
-          loadCloudProject(chip.dataset.cloudpn);
-        };
-      });
+      /* 접힌 지난 현장은 count만 먼저 표시하고, 사용자가 펼칠 때 마지막으로 렌더한다. */
+      if(caEl.classList.contains('open')){
+        caEl.innerHTML = past.map(function(site){
+          return buildCloudChip(site).replace('pnchip cloud confirmed','pnchip cloud confirmed archived');
+        }).join('');
+        caEl.dataset.loaded='true';
+        caEl.querySelectorAll('.cloud-chip-btn').forEach(function(chip){
+          chip.onclick = function(e){
+            if(e.target.closest('.cloud-del-btn'))return;
+            loadCloudProject(chip.dataset.cloudpn);
+          };
+        });
+      }else{
+        caEl.innerHTML='';
+        caEl.dataset.loaded='false';
+      }
     }
   }
 
@@ -3417,10 +3425,10 @@ function sw(m){
     }
   }
   if(m==='c') return swChart(chartSyncEpoch);
-  if(m==='e'){ rEdit(); loadCloudSites(true).then(rCloudChips); }
+  if(m==='e'){ rEdit(); rCloudChips(); }
   if(m==='i'){
     _loadExtScheduleFromCloud().catch(function(){});
-    loadCloudSites(true).then(rIntegrated);
+    loadCloudSites().then(rIntegrated);
   }
 }
 
@@ -6653,8 +6661,11 @@ function _startCloudListener() {
         });
         /* 전체 스냅샷으로 _cloudSites 동기화 (초기 로드 포함) */
         _cloudSites = snapshot.docs.map(function(d){ return ScheduleCore.normalizeScheduleState(d.data()); }).filter(function(s){ return s.pn; });
+        _normalizeCloudContractors();
         _cloudInventoryReady = true;
+        _restoreMyCloudSites();
         rSharedExportSites();
+        rCloudChips();
         /* 로컬↔클라우드 대조: 이 기기가 닫혀 있는 동안 다른 기기에서
            확정 해제/삭제된 현장의 로컬 confirmed 잔재 정리 (캘린더 부활 방지) */
         try{ _reconcileLocalConfirmed(); }catch(e){ console.warn('[reconcile]', e); }
@@ -6766,25 +6777,40 @@ async function deleteFromCloud(pn) {
   } catch(e) { console.warn('Cloud delete failed:', e); return false; }
 }
 
-async function loadCloudSites() {
+async function loadCloudSites(force) {
+  if(!force&&_cloudInventoryReady)return true;
   if (!_fbReady || !_db) { _cloudSites = [];_cloudInventoryReady=false;return false; }
-  try {
-    var snap = await _db.collection('sites').get();
-    _cloudSites = snap.docs.map(function(d){ return ScheduleCore.normalizeScheduleState(d.data()); }).filter(function(s){ return s.pn; });
-    /* ★ 로드 시 업체 정규화: task.contractors 첫 번째만 유지 (기존 오염 데이터 정리) */
-    _cloudSites.forEach(function(site){
-      (site.tasks||[]).forEach(function(t){
-        if(!t.contractors||!t.contractors.length) return;
-        var valid = t.contractors.filter(function(c){ return c && c.trim(); });
-        if(valid.length > 1) t.contractors = [valid[0]];
-      });
+  if(_cloudLoadPromise)return _cloudLoadPromise;
+  _cloudLoadPromise=(async function(){
+    try {
+      var snap = await _db.collection('sites').get();
+      _cloudSites = snap.docs.map(function(d){ return ScheduleCore.normalizeScheduleState(d.data()); }).filter(function(s){ return s.pn; });
+      _normalizeCloudContractors();
+      _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 */
+      _restoreMyCloudSites();   /* 캐시 지워도 내 기기 현장 복구 */
+      _cloudInventoryReady=true;
+      rSharedExportSites();
+      return true;
+    } catch(e) {
+      console.warn('Cloud load failed:', e);
+      _cloudSites=[];_cloudInventoryReady=false;
+      return false;
+    } finally {
+      _cloudLoadPromise=null;
+    }
+  })();
+  return _cloudLoadPromise;
+}
+
+/* onSnapshot과 명시적 get이 동일한 정규화 계약을 사용한다. */
+function _normalizeCloudContractors(){
+  (_cloudSites||[]).forEach(function(site){
+    (site.tasks||[]).forEach(function(t){
+      if(!t.contractors||!t.contractors.length)return;
+      var valid=t.contractors.filter(function(c){return c&&c.trim();});
+      if(valid.length>1)t.contractors=[valid[0]];
     });
-    _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 */
-    _restoreMyCloudSites();   /* 캐시 지워도 내 기기 현장 복구 */
-    _cloudInventoryReady=true;
-    rSharedExportSites();
-    return true;
-  } catch(e) { console.warn('Cloud load failed:', e); _cloudSites = [];_cloudInventoryReady=false;return false; }
+  });
 }
 
 /* 내 기기가 올린 현장이 로컬에 없으면 자동 복구 */
@@ -6873,10 +6899,10 @@ document.addEventListener('DOMContentLoaded', function(){
       body.style.display = '';
       el.innerHTML = '<div style="font-size:11px;color:var(--mu);padding:4px 0">☁️ 불러오는 중...</div>';
     }
-    /* 업체 목록 + 현장 칩 동시 로드 */
+    /* 업체 목록은 독립 로드. 현장 목록은 initFirebase의 onSnapshot 하나만 사용한다. */
     _loadCtorsFromCloud().catch(function(){});
     _loadPrioFromCloud().catch(function(){});
-    loadCloudSites().then(rCloudChips);
+    rCloudChips();
     /* 로컬 현장 칩 재렌더 — Firebase 처리 후 덮이는 것 방지 */
     rChips();
   }, 400);
