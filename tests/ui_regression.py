@@ -16,6 +16,46 @@ class QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
+def read_chart_toolbar_geometry(page):
+    return page.evaluate(
+        """
+        () => {
+          const ids = ['btnUndo','btnRedo','chartBarEditToggle','chartAddTask','chartPdfBtn','chartImageBtn','btnAutoSched'];
+          const buttons = ids.map(id => {
+            const el = document.getElementById(id);
+            const rect = el.getBoundingClientRect();
+            const style = getComputedStyle(el);
+            return {
+              id,
+              height:Math.round(rect.height),
+              left:rect.left,
+              right:rect.right,
+              top:rect.top,
+              bottom:rect.bottom,
+              radius:style.borderRadius,
+              background:style.backgroundColor,
+              fontSize:style.fontSize,
+              visible:rect.width > 0 && rect.height > 0
+            };
+          });
+          const primary = document.querySelector('.ca-primary-row').getBoundingClientRect();
+          const utility = document.querySelector('.ca-utility-row').getBoundingClientRect();
+          const toolbar = document.querySelector('.ca');
+          return {
+            width:innerWidth,
+            buttons,
+            heights:[...new Set(buttons.map(button => button.height))],
+            radii:[...new Set(buttons.map(button => button.radius))],
+            primaryTop:primary.top,
+            utilityTop:utility.top,
+            allBounded:buttons.every(button => button.left >= 0 && button.right <= innerWidth),
+            horizontalOverflow:toolbar.scrollWidth - toolbar.clientWidth
+          };
+        }
+        """
+    )
+
+
 def read_single_row_geometry(page, task_ids):
     return page.evaluate(
         """
@@ -2961,6 +3001,37 @@ def run():
             assert page.locator("#taskScheduleBody").is_hidden()
             assert page.locator("#noteScheduleBody").is_hidden()
             assert page.locator("#ti").is_hidden()
+            page.evaluate("sw('c')")
+            desktop_toolbar = read_chart_toolbar_geometry(page)
+            if screenshot_dir:
+                page.screenshot(
+                    path=str(screenshot_dir / "chart-toolbar-desktop.png"),
+                    full_page=False,
+                )
+            page.set_viewport_size({"width": 390, "height": 844})
+            mobile_toolbar = read_chart_toolbar_geometry(page)
+            if screenshot_dir:
+                page.screenshot(
+                    path=str(screenshot_dir / "chart-toolbar-mobile.png"),
+                    full_page=False,
+                )
+            page.set_viewport_size({"width": 1440, "height": 1000})
+            page.evaluate("sw('e')")
+            for toolbar in (desktop_toolbar, mobile_toolbar):
+                assert toolbar["heights"] == [34], toolbar
+                assert toolbar["radii"] == ["8px"], toolbar
+                assert toolbar["allBounded"] is True, toolbar
+                assert toolbar["horizontalOverflow"] == 0, toolbar
+                assert all(button["visible"] for button in toolbar["buttons"]), toolbar
+                primary = toolbar["buttons"][:4]
+                utility = toolbar["buttons"][4:]
+                assert all(button["background"] != "rgba(0, 0, 0, 0)" for button in primary), toolbar
+                assert all(button["background"] == "rgba(0, 0, 0, 0)" for button in utility), toolbar
+                assert float(primary[2]["fontSize"].replace("px", "")) > float(
+                    utility[0]["fontSize"].replace("px", "")
+                ), toolbar
+            assert abs(desktop_toolbar["primaryTop"] - desktop_toolbar["utilityTop"]) <= 1
+            assert mobile_toolbar["utilityTop"] > mobile_toolbar["primaryTop"]
             shared_export_result = page.evaluate(
                 """
                 async () => {

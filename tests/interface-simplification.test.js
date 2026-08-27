@@ -51,3 +51,25 @@ test('차트 협력업체 버튼과 통합 탭은 화면에서 숨긴다', () =>
   assert.match(html, /id="btnCtorCheck"[^>]*style="display:none"[^>]*aria-hidden="true"/);
   assert.match(html, /id="ti"[^>]*style="display:none"[^>]*aria-hidden="true"/);
 });
+
+test('차트 도구모음은 편집 기능을 주 기능으로, 출력·자동배치를 무채색 보조 기능으로 구분한다', () => {
+  const toolbarStart = html.indexOf('<div class="ca" id="ca">');
+  const toolbarEnd = html.indexOf('<div id="pa">', toolbarStart);
+  assert.ok(toolbarStart >= 0 && toolbarEnd > toolbarStart);
+  const toolbar = html.slice(toolbarStart, toolbarEnd);
+
+  const primaryStart = toolbar.indexOf('ca-primary-row');
+  const utilityStart = toolbar.indexOf('ca-utility-row');
+  assert.ok(primaryStart >= 0 && utilityStart > primaryStart);
+  for (const id of ['btnUndo', 'btnRedo', 'chartBarEditToggle', 'chartAddTask']) {
+    const position = toolbar.indexOf(`id="${id}"`);
+    assert.ok(position > primaryStart && position < utilityStart, `${id}는 주 기능군에 있어야 한다`);
+  }
+  for (const id of ['chartPdfBtn', 'chartImageBtn', 'btnAutoSched']) {
+    const position = toolbar.indexOf(`id="${id}"`);
+    assert.ok(position > utilityStart, `${id}는 보조 기능군에 있어야 한다`);
+    assert.match(toolbar, new RegExp(`class="[^"]*chart-toolbar-btn[^"]*ca-utility-btn[^"]*" id="${id}"`));
+  }
+  assert.match(html, /\.ca \.chart-toolbar-btn\{height:34px;min-height:34px;/);
+  assert.match(html, /\.ca-utility-btn\{background:transparent;/);
+});

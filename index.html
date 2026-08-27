@@ -83,7 +83,7 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 @media(max-width:640px){.tb-acct-email{display:none;}.tb-acct{gap:6px;}.tb-acct-btn{padding:5px 7px;font-size:10px;}}
 .btn{display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border-radius:8px;font-size:12px;font-family:'Noto Sans KR',sans-serif;font-weight:700;cursor:pointer;border:1.5px solid;white-space:nowrap;transition:all .14s;}
 .bg2{border-color:#444;background:transparent;color:#ccc;}.bg2:hover{border-color:#aaa;color:#fff;}
-.bur{border-color:#475569;background:transparent;color:#94a3b8;font-size:14px;font-weight:700;padding:10px 16px;min-width:72px;justify-content:center;gap:6px;-webkit-tap-highlight-color:transparent;opacity:.28;cursor:default;pointer-events:none;}.bur.on{opacity:1;color:#1e293b;border-color:#475569;cursor:pointer;pointer-events:auto;font-weight:800;}@media(hover:hover){.bur.on:hover{background:rgba(148,163,184,.15);}}.bur:disabled{opacity:.28;cursor:default;}.bur.dim{opacity:.28;cursor:default;pointer-events:none;}.bp-group{display:flex;gap:6px;margin-left:auto;}
+.bur{justify-content:center;-webkit-tap-highlight-color:transparent;opacity:.32;cursor:default;pointer-events:none;}.bur.on{opacity:1;cursor:pointer;pointer-events:auto;}@media(hover:hover){.bur.on:hover{background:#0f172a;border-color:#0f172a;}}.bur:disabled{opacity:.32;cursor:default;}.bur.dim{opacity:.32;cursor:default;pointer-events:none;}.bp-group{display:flex;gap:6px;margin-left:auto;}
 .bb{border-color:var(--bar);background:var(--bar);color:#fff;}.bb:hover{background:var(--barh);}
 .bo{border-color:var(--bar);background:transparent;color:var(--bar-tx);}.bo:hover{background:var(--al);}
 .bp{border-color:var(--am);background:var(--am);color:#fff;}.bp:hover{background:#92400e;}
@@ -593,18 +593,20 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .cta .btn{flex:1;justify-content:center;padding:13px;font-size:14px;}
 /* CHART */
 .cp{padding:12px 12px 30px;}
-.ca{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center;position:sticky;top:90px;z-index:350;background:var(--bg);padding:8px 0 8px;border-bottom:1.5px solid var(--bd);}
-.ca-row{display:flex;align-items:center;gap:6px;width:100%;}
-.ca-row1{flex-wrap:nowrap;}
-.ca-row2{flex-wrap:nowrap;}
-.ca-undo-group{display:flex;gap:0;}
-.ca-main-btn{flex:1;background:#0ea5e9;border-color:#0ea5e9;color:#fff;font-size:12px;padding:7px 10px;justify-content:center;}
-.ca-sub-btn{flex:1;background:#7c3aed;border-color:#7c3aed;color:#fff;font-size:12px;padding:7px 10px;justify-content:center;}
-.ca-row3{width:100%;}
-.ca-add-task-btn,.ca-bar-edit-btn{flex:1;justify-content:center;background:var(--sf);border-color:var(--bar);color:var(--bar-tx);font-size:12px;padding:8px 12px;}
-.ca-bar-edit-btn.on{background:var(--bar-tx);border-color:var(--bar-tx);color:#fff;}
-.ca-bar-edit-btn:disabled,.ca-add-task-btn:disabled{opacity:.45;cursor:not-allowed;}
-@media(min-width:640px){.ca-row{width:auto;flex:none;}.ca{flex-wrap:nowrap;}.ca-row2{flex:1;}.ca-row3{width:auto;}.ca-main-btn,.ca-sub-btn{flex:1;}.ca-add-task-btn,.ca-bar-edit-btn{width:auto;white-space:nowrap;}}
+.ca{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;position:sticky;top:90px;z-index:350;background:var(--bg);padding:8px 0;border-bottom:1.5px solid var(--bd);}
+.ca-row{display:flex;align-items:center;gap:6px;min-width:0;}
+.ca-primary-row{flex:1;}
+.ca-utility-row{margin-left:auto;justify-content:flex-end;}
+.ca-undo-group{display:flex;gap:4px;}
+.ca .chart-toolbar-btn{height:34px;min-height:34px;border-radius:8px;padding:0 12px;font-size:12px;line-height:1;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;}
+.ca-primary-btn,.ca .bur{background:#1e293b;border-color:#1e293b;color:#fff;}
+.ca-primary-btn{min-width:112px;}
+.ca-add-task-btn{min-width:82px;}
+.ca-bar-edit-btn.on{background:#15803d;border-color:#15803d;color:#fff;box-shadow:0 0 0 2px rgba(21,128,61,.16);}
+.ca-bar-edit-btn:disabled,.ca-add-task-btn:disabled{opacity:.4;cursor:not-allowed;}
+.ca-utility-btn{background:transparent;border-color:var(--bd);color:var(--mu);padding-left:9px!important;padding-right:9px!important;min-width:0;font-size:10.5px!important;font-weight:700!important;}
+@media(hover:hover){.ca-primary-btn:hover{background:#0f172a;border-color:#0f172a;}.ca-utility-btn:hover{background:var(--sf);border-color:var(--mu2);color:var(--tx);}}
+@media(max-width:639px){.ca{gap:6px;align-items:stretch;}.ca-primary-row,.ca-utility-row{width:100%;}.ca-primary-row{gap:4px;}.ca-utility-row{margin-left:0;justify-content:flex-end;gap:4px;}.ca-undo-group{gap:3px;}.ca .chart-toolbar-btn{height:34px;min-height:34px;padding-left:8px;padding-right:8px;font-size:11px;}.ca .bur{min-width:54px;}.ca-primary-btn{flex:1;min-width:0;}.ca-utility-btn{font-size:10px!important;padding-left:7px!important;padding-right:7px!important;}}
 .cw{background:var(--sf);border-radius:0;border:2px solid #b8b2a8;overflow:hidden;}
 .cs{overflow:auto;position:relative;}
 .gt{border-collapse:collapse;table-layout:fixed;}
@@ -1211,8 +1213,10 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 .archive-header-count{color:var(--mu)!important;background:#2a2925!important;}
 .pnchip.archived .pnchip-nm{color:var(--mu)!important;}
 
-/* ⑫ bur 버튼 (Undo/Redo) on 상태 텍스트 */
-.bur.on{color:var(--tx)!important;}
+/* ⑫ 차트 도구모음 위계 */
+.ca-primary-btn,.ca .bur{background:#1e293b!important;border-color:#334155!important;color:#fff!important;}
+.ca-bar-edit-btn.on{background:#166534!important;border-color:#22c55e!important;color:#fff!important;}
+.ca-utility-btn{background:transparent!important;border-color:var(--bd)!important;color:var(--mu)!important;}
 
 /* ⑬ 달력 범위 선택 */
 .ig-barpick-cell.in-range{background:#192e48!important;color:var(--tx)!important;}
@@ -1541,19 +1545,18 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
     </span>
   </div>
   <div class="ca" id="ca">
-    <div class="ca-row ca-row1">
+    <div class="ca-row ca-primary-row no-print">
       <div class="ca-undo-group">
-        <button class="btn bur" id="btnUndo" ontouchstart="" ontouchend="this.blur();doUndo()" onclick="doUndo()" title="실행 취소">↩ Undo</button><button class="btn bur" id="btnRedo" ontouchstart="" ontouchend="this.blur();doRedo()" onclick="doRedo()" title="다시 실행">↪ Redo</button>
+        <button class="btn chart-toolbar-btn bur" id="btnUndo" ontouchstart="" ontouchend="this.blur();doUndo()" onclick="doUndo()" title="실행 취소">↩ Undo</button><button class="btn chart-toolbar-btn bur" id="btnRedo" ontouchstart="" ontouchend="this.blur();doRedo()" onclick="doRedo()" title="다시 실행">↪ Redo</button>
       </div>
-      <div class="bp-group"><button class="btn bp" onclick="doPDF()">PDF 저장</button><button class="btn bp" style="background:#6b7280" onclick="doIMG()">이미지 저장</button></div>
+      <button class="btn chart-toolbar-btn ca-primary-btn ca-bar-edit-btn" id="chartBarEditToggle" type="button" aria-pressed="false" onclick="toggleChartBarEditMode()" title="차트 막대를 눌러 해당 차수 일정·설명 편집"><span aria-hidden="true">&#9998;</span><span>일정·설명 편집</span></button>
+      <button class="btn chart-toolbar-btn ca-primary-btn ca-add-task-btn" id="chartAddTask" onclick="openChartCustomTask()">+ 공종 추가</button>
     </div>
-    <div class="ca-row ca-row2">
-      <button class="btn ca-main-btn" id="btnAutoSched" onclick="openAutoSchedModal()">🔄 공정 자동배치</button>
-      <button class="btn ca-sub-btn" id="btnCtorCheck" onclick="openCtorCheckModal()" style="display:none" aria-hidden="true">👥 협력업체 일정체크</button>
-    </div>
-    <div class="ca-row ca-row3 no-print">
-      <button class="btn ca-bar-edit-btn" id="chartBarEditToggle" type="button" aria-pressed="false" onclick="toggleChartBarEditMode()" title="차트 막대를 눌러 해당 차수 일정·설명 편집"><span aria-hidden="true">&#9998;</span><span>일정·설명 편집</span></button>
-      <button class="btn ca-add-task-btn" id="chartAddTask" onclick="openChartCustomTask()">+ 공종 추가</button>
+    <div class="ca-row ca-utility-row no-print">
+      <button class="btn chart-toolbar-btn ca-utility-btn" id="chartPdfBtn" onclick="doPDF()">PDF</button>
+      <button class="btn chart-toolbar-btn ca-utility-btn" id="chartImageBtn" onclick="doIMG()">이미지</button>
+      <button class="btn chart-toolbar-btn ca-utility-btn" id="btnAutoSched" onclick="openAutoSchedModal()">↻ 공정 자동배치</button>
+      <button class="btn chart-toolbar-btn ca-utility-btn" id="btnCtorCheck" onclick="openCtorCheckModal()" style="display:none" aria-hidden="true">협력업체 일정체크</button>
     </div>
   </div>
   <div id="pa">
