@@ -98,11 +98,16 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .sl{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--mu);margin-bottom:10px;}
 .edit-section-header{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;user-select:none;margin-bottom:0;}
 .edit-section-arrow{font-size:11px;color:var(--mu2);transition:transform .2s;transform:rotate(0deg);}
-.edit-export-card{margin-top:12px;padding:12px 14px;background:var(--sf);border-radius:10px;border:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.edit-export-card{padding:12px 14px;background:var(--sf);border-radius:12px;border:1.5px solid var(--bd);display:flex;flex-direction:column;align-items:stretch;gap:9px;margin-bottom:14px;}
 .edit-export-copy{display:flex;align-items:center;gap:7px;min-width:0;}
 .edit-export-title{font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;}
-.edit-export-actions{display:flex;gap:6px;margin-left:auto;}
-.edit-export-actions .btn{justify-content:center;min-width:82px;}
+.edit-export-sites{display:flex;flex-direction:column;gap:7px;}
+.edit-export-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:9px;padding:8px 9px;border:1px solid var(--bd);border-radius:9px;background:var(--bg);}
+.edit-export-site-name{font-size:13px;font-weight:800;color:var(--tx);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.edit-export-actions{display:flex;gap:5px;}
+.edit-export-actions .btn{justify-content:center;min-width:60px;padding:6px 9px;font-size:11px;}
+.edit-export-empty{font-size:11px;color:var(--mu2);padding:5px 1px;}
+@media(max-width:420px){.edit-export-row{grid-template-columns:1fr;}.edit-export-actions{width:100%;}.edit-export-actions .btn{flex:1;}}
 .fr{display:flex;gap:10px;flex-wrap:wrap;}
 .ff{display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px;}
 .ff.fu{min-width:100%;flex-basis:100%;}
@@ -1394,6 +1399,16 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
       </div>
     </div>
   </div>
+  <!-- 진행 중인 공유 확정 현장별 저장 -->
+  <div class="edit-export-card no-print" id="editExportCard">
+    <div class="edit-export-copy">
+      <span style="font-size:14px;">💾</span>
+      <span class="edit-export-title">일정표 저장</span>
+    </div>
+    <div class="edit-export-sites" id="editExportSites" aria-live="polite">
+      <div class="edit-export-empty">공유 확정 현장을 불러오는 중...</div>
+    </div>
+  </div>
   </div><!-- /ep-info-col -->
   <!-- 오른쪽: 공사기간 달력 -->
   <div class="ep-cal-col">
@@ -1431,18 +1446,6 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
   </div><!-- /edit-lockable-cal -->
   </div><!-- /ep-cal-col -->
   </div><!-- /ep-top-row -->
-
-  <!-- 편집 화면에서도 기존 차트 저장 pipeline을 바로 실행 -->
-  <div class="edit-export-card no-print" id="editExportCard">
-    <div class="edit-export-copy">
-      <span style="font-size:14px;">💾</span>
-      <span class="edit-export-title">일정표 저장</span>
-    </div>
-    <div class="edit-export-actions">
-      <button class="btn bp" id="editPdfBtn" type="button" onclick="exportScheduleFromEdit('pdf')">PDF 저장</button>
-      <button class="btn bp" id="editImgBtn" type="button" style="background:#6b7280;border-color:#6b7280" onclick="exportScheduleFromEdit('image')">이미지 저장</button>
-    </div>
-  </div>
 
   <!-- 구글 캘린더 자동 동기화 -->
   <div id="gcalSection" style="margin-top:12px;padding:10px 14px;background:var(--sf);border-radius:10px;border:1px solid var(--bd);">
@@ -2704,11 +2707,49 @@ function rChips(){
 function renderDrop(){rChips();}
 
 /* ── 클라우드 공유 현장 칩 ── */
+function _activeSharedExportSites(){
+  var td=today();
+  var seen={};
+  return (_cloudSites||[]).filter(function(site){
+    if(!site||!site.pn||site.confirmed===false)return false;
+    if(site.ed&&site.ed<td)return false;
+    var key=ScheduleCore.canonicalSiteName(site.pn);
+    if(!key||seen[key])return false;
+    seen[key]=true;
+    return true;
+  }).sort(function(a,b){
+    var ad=a.sd||'9999-99-99',bd=b.sd||'9999-99-99';
+    return ad.localeCompare(bd)||String(a.pn).localeCompare(String(b.pn),'ko');
+  });
+}
+function rSharedExportSites(){
+  var el=document.getElementById('editExportSites');
+  if(!el)return;
+  if(!_cloudInventoryReady){
+    el.innerHTML='<div class="edit-export-empty">공유 확정 현장을 불러오는 중...</div>';
+    return;
+  }
+  var sites=_activeSharedExportSites();
+  if(!sites.length){
+    el.innerHTML='<div class="edit-export-empty">진행 중인 공유 확정 현장이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML=sites.map(function(site){
+    var pn=esc(site.pn);
+    return '<div class="edit-export-row" data-exportpn="'+pn+'">'
+      +'<div class="edit-export-site-name" title="'+pn+'">'+pn+'</div>'
+      +'<div class="edit-export-actions">'
+      +'<button class="btn bp" type="button" data-kind="pdf" data-pn="'+pn+'" onclick="exportScheduleFromEdit(this.dataset.kind,this.dataset.pn)">PDF 저장</button>'
+      +'<button class="btn bp" type="button" data-kind="image" data-pn="'+pn+'" style="background:#6b7280;border-color:#6b7280" onclick="exportScheduleFromEdit(this.dataset.kind,this.dataset.pn)">이미지 저장</button>'
+      +'</div></div>';
+  }).join('');
+}
 function rCloudChips() {
   var wrap = document.getElementById('cloudChipsWrap');
   var body = document.getElementById('cloudChipsBody');
   var el = document.getElementById('cloudChips');
   if (!el || !wrap) return;
+  rSharedExportSites();
 
   /* Firebase 미준비 시 재시도 */
   if (!_fbReady) {
@@ -4932,13 +4973,21 @@ function _restoreInlineStyles(entries){
   });
 }
 var _chartExportBusy=false;
-async function exportScheduleFromEdit(kind){
-  if(_chartExportBusy){toast('파일 저장을 마친 뒤 다시 시도해주세요.');return;}
+var _editExportRequestBusy=false;
+async function exportScheduleFromEdit(kind,pn){
+  if(_editExportRequestBusy||_chartExportBusy){toast('파일 저장을 마친 뒤 다시 시도해주세요.');return;}
+  var previousCloudView=_cloudView;
   var pages=Array.from(document.querySelectorAll('.pg'));
   var tabs=Array.from(document.querySelectorAll('.tab'));
   var pageState=pages.map(function(el){return el.classList.contains('on');});
   var tabState=tabs.map(function(el){return el.classList.contains('on');});
+  _editExportRequestBusy=true;
   try{
+    if(pn){
+      var site=_activeSharedExportSites().find(function(item){return item.pn===pn;});
+      if(!site){toast('진행 중인 공유 확정 현장을 찾지 못했습니다.');return;}
+      _cloudView=site;
+    }
     pages.forEach(function(el){el.classList.remove('on');});
     tabs.forEach(function(el){el.classList.remove('on');});
     document.getElementById('pc').classList.add('on');
@@ -4948,9 +4997,11 @@ async function exportScheduleFromEdit(kind){
     if(kind==='pdf')await doPDF();
     else await doIMG();
   }finally{
+    _cloudView=previousCloudView;
     pages.forEach(function(el,index){el.classList.toggle('on',pageState[index]);});
     tabs.forEach(function(el,index){el.classList.toggle('on',tabState[index]);});
     _removeStickyHeader();
+    _editExportRequestBusy=false;
   }
 }
 async function doIMG(){
@@ -6600,6 +6651,7 @@ function _startCloudListener() {
         /* 전체 스냅샷으로 _cloudSites 동기화 (초기 로드 포함) */
         _cloudSites = snapshot.docs.map(function(d){ return ScheduleCore.normalizeScheduleState(d.data()); }).filter(function(s){ return s.pn; });
         _cloudInventoryReady = true;
+        rSharedExportSites();
         /* 로컬↔클라우드 대조: 이 기기가 닫혀 있는 동안 다른 기기에서
            확정 해제/삭제된 현장의 로컬 confirmed 잔재 정리 (캘린더 부활 방지) */
         try{ _reconcileLocalConfirmed(); }catch(e){ console.warn('[reconcile]', e); }
@@ -6727,6 +6779,7 @@ async function loadCloudSites() {
     _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 */
     _restoreMyCloudSites();   /* 캐시 지워도 내 기기 현장 복구 */
     _cloudInventoryReady=true;
+    rSharedExportSites();
     return true;
   } catch(e) { console.warn('Cloud load failed:', e); _cloudSites = [];_cloudInventoryReady=false;return false; }
 }

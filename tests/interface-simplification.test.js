@@ -21,15 +21,27 @@ test('편집 상세 영역은 기본 접힘이며 키보드 토글 계약을 제
   assert.match(html, /function editSectionKeydown\(event,bodyId,arrowId,header\)/);
 });
 
-test('편집 화면 저장 카드는 기존 차트 PDF·이미지 exporter를 재사용한다', () => {
+test('편집 화면 저장 카드는 프로젝트 정보 폭에서 진행 중 공유 현장별 exporter를 제공한다', () => {
   assert.match(html, /id="editExportCard"/);
-  assert.match(html, /id="editPdfBtn"[^>]*exportScheduleFromEdit\('pdf'\)/);
-  assert.match(html, /id="editImgBtn"[^>]*exportScheduleFromEdit\('image'\)/);
+  assert.match(html, /id="editExportSites"[^>]*aria-live="polite"/);
+  assert.match(html, /function _activeSharedExportSites\(\)/);
+  assert.match(html, /site\.ed&&site\.ed<td/);
+  assert.match(html, /site\.confirmed===false/);
+  assert.match(html, /data-kind="pdf"[^>]*exportScheduleFromEdit\(this\.dataset\.kind,this\.dataset\.pn\)/);
+  assert.match(html, /data-kind="image"[^>]*exportScheduleFromEdit\(this\.dataset\.kind,this\.dataset\.pn\)/);
 
-  const start = html.indexOf('async function exportScheduleFromEdit(kind)');
+  const infoStart = html.indexOf('<div class="ep-info-col">');
+  const infoEnd = html.indexOf('</div><!-- /ep-info-col -->', infoStart);
+  const card = html.indexOf('id="editExportCard"');
+  assert.ok(infoStart >= 0 && card > infoStart && card < infoEnd, '저장 카드는 프로젝트 정보와 같은 열에 있어야 한다');
+
+  const start = html.indexOf('async function exportScheduleFromEdit(kind,pn)');
   const end = html.indexOf('async function doIMG()', start);
   assert.ok(start >= 0 && end > start);
   const wrapper = html.slice(start, end);
+  assert.match(wrapper, /_activeSharedExportSites\(\)\.find/);
+  assert.match(wrapper, /_cloudView=site/);
+  assert.match(wrapper, /_cloudView=previousCloudView/);
   assert.match(wrapper, /await doPDF\(\)/);
   assert.match(wrapper, /await doIMG\(\)/);
   assert.doesNotMatch(wrapper, /html2canvas|new jsPDF/);

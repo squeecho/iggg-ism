@@ -2961,6 +2961,73 @@ def run():
             assert page.locator("#taskScheduleBody").is_hidden()
             assert page.locator("#noteScheduleBody").is_hidden()
             assert page.locator("#ti").is_hidden()
+            shared_export_result = page.evaluate(
+                """
+                async () => {
+                  const makeSite = (pn, sd, ed, confirmed = true) => {
+                    const site = ScheduleCore.normalizeScheduleState(defaultState());
+                    site.pn = pn; site.sd = sd; site.ed = ed; site.confirmed = confirmed;
+                    return site;
+                  };
+                  const originalToday = today;
+                  today = () => '2026-08-27';
+                  _cloudInventoryReady = true;
+                  _cloudView = null;
+                  _cloudSites = [
+                    makeSite('나나방콕 방학점', '2026-09-28', '2026-11-08'),
+                    makeSite('지난 공유 현장', '2026-07-01', '2026-08-01'),
+                    makeSite('성수 곳간', '2026-08-06', '2026-10-04'),
+                    makeSite('미확정 현장', '2026-08-01', '2026-12-01', false),
+                    makeSite('라쿤피자 고덕점', '2026-09-02', '2026-10-09')
+                  ];
+                  rSharedExportSites();
+                  const card = document.getElementById('editExportCard').getBoundingClientRect();
+                  const project = document.querySelector('.ep-info-col > .cd').getBoundingClientRect();
+                  const names = Array.from(document.querySelectorAll('.edit-export-site-name')).map(el => el.textContent);
+                  const beforePages = Array.from(document.querySelectorAll('.pg')).map(el => el.classList.contains('on'));
+                  const beforeTabs = Array.from(document.querySelectorAll('.tab')).map(el => el.classList.contains('on'));
+                  const originalPdf = doPDF;
+                  let captured = null;
+                  doPDF = async () => { captured = _cloudView && _cloudView.pn; };
+                  await exportScheduleFromEdit('pdf', '성수 곳간');
+                  doPDF = originalPdf;
+                  const afterPages = Array.from(document.querySelectorAll('.pg')).map(el => el.classList.contains('on'));
+                  const afterTabs = Array.from(document.querySelectorAll('.tab')).map(el => el.classList.contains('on'));
+                  const result = {
+                    names,
+                    cardMatchesProject: Math.abs(card.width - project.width) <= 1,
+                    buttons: document.querySelectorAll('.edit-export-row .edit-export-actions .btn').length,
+                    captured,
+                    cloudViewRestored: _cloudView === null,
+                    pageStateRestored: JSON.stringify(beforePages) === JSON.stringify(afterPages),
+                    tabStateRestored: JSON.stringify(beforeTabs) === JSON.stringify(afterTabs),
+                    busy: _editExportRequestBusy || _chartExportBusy
+                  };
+                  today = originalToday;
+                  return result;
+                }
+                """
+            )
+            assert shared_export_result == {
+                "names": ["성수 곳간", "라쿤피자 고덕점", "나나방콕 방학점"],
+                "cardMatchesProject": True,
+                "buttons": 6,
+                "captured": "성수 곳간",
+                "cloudViewRestored": True,
+                "pageStateRestored": True,
+                "tabStateRestored": True,
+                "busy": False,
+            }
+            if screenshot_dir:
+                page.locator("#toast").evaluate(
+                    "el => { el.classList.remove('on'); el.style.display = 'none'; }"
+                )
+                page.screenshot(
+                    path=str(screenshot_dir / "edit-shared-site-export-desktop.png"),
+                    full_page=True,
+                )
+                page.locator("#toast").evaluate("el => el.style.removeProperty('display')")
+            page.evaluate("_cloudSites = []; rSharedExportSites();")
             page.locator("#taskScheduleHeader").click()
             page.locator("#noteScheduleHeader").click()
             assert page.locator("#taskScheduleBody").is_visible()
