@@ -2349,6 +2349,9 @@ def dispatch_note_touch_drag(page, cdp, note_id, screenshot_path=None, test_canc
 
 def restore_note_auto_with_ui(page, note_id, label, automatic_date, mobile=False):
     page.locator("#te").tap() if mobile else page.locator("#te").click()
+    note_body = page.locator("#noteScheduleBody")
+    if note_body.is_hidden():
+        page.locator("#noteScheduleHeader").tap() if mobile else page.locator("#noteScheduleHeader").click()
     group = page.get_by_role("group", name=f"{label} 배치 방식")
     auto_button = group.get_by_role("button", name="자동")
     auto_button.tap() if mobile else auto_button.click()
@@ -2955,6 +2958,13 @@ def run():
                 }
                 """
             )
+            assert page.locator("#taskScheduleBody").is_hidden()
+            assert page.locator("#noteScheduleBody").is_hidden()
+            assert page.locator("#ti").is_hidden()
+            page.locator("#taskScheduleHeader").click()
+            page.locator("#noteScheduleHeader").click()
+            assert page.locator("#taskScheduleBody").is_visible()
+            assert page.locator("#noteScheduleBody").is_visible()
             page.locator("#taskCard1 > .th2").click()
             page.locator('.add-phase-btn[data-task-id="1"]').click()
             page.locator(".add-custom-task-btn").click()

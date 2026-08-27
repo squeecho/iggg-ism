@@ -96,6 +96,13 @@ html,body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(-
 .ep{padding:14px 14px 90px;}
 .cd{background:var(--sf);border-radius:12px;border:1.5px solid var(--bd);padding:16px;margin-bottom:14px;}
 .sl{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--mu);margin-bottom:10px;}
+.edit-section-header{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;user-select:none;margin-bottom:0;}
+.edit-section-arrow{font-size:11px;color:var(--mu2);transition:transform .2s;transform:rotate(0deg);}
+.edit-export-card{margin-top:12px;padding:12px 14px;background:var(--sf);border-radius:10px;border:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.edit-export-copy{display:flex;align-items:center;gap:7px;min-width:0;}
+.edit-export-title{font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;}
+.edit-export-actions{display:flex;gap:6px;margin-left:auto;}
+.edit-export-actions .btn{justify-content:center;min-width:82px;}
 .fr{display:flex;gap:10px;flex-wrap:wrap;}
 .ff{display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px;}
 .ff.fu{min-width:100%;flex-basis:100%;}
@@ -1327,7 +1334,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 <div class="tabs" id="tabs">
   <div class="tab on" id="te" onclick="sw('e')">편집</div>
   <div class="tab" id="tc2" onclick="sw('c')">차트</div>
-  <div class="tab" id="ti" onclick="sw('i')">통합</div>
+  <div class="tab" id="ti" onclick="sw('i')" style="display:none" aria-hidden="true">통합</div>
 </div>
 <!-- 편집 -->
 <div class="pg on ep" id="pe">
@@ -1425,6 +1432,18 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
   </div><!-- /ep-cal-col -->
   </div><!-- /ep-top-row -->
 
+  <!-- 편집 화면에서도 기존 차트 저장 pipeline을 바로 실행 -->
+  <div class="edit-export-card no-print" id="editExportCard">
+    <div class="edit-export-copy">
+      <span style="font-size:14px;">💾</span>
+      <span class="edit-export-title">일정표 저장</span>
+    </div>
+    <div class="edit-export-actions">
+      <button class="btn bp" id="editPdfBtn" type="button" onclick="exportScheduleFromEdit('pdf')">PDF 저장</button>
+      <button class="btn bp" id="editImgBtn" type="button" style="background:#6b7280;border-color:#6b7280" onclick="exportScheduleFromEdit('image')">이미지 저장</button>
+    </div>
+  </div>
+
   <!-- 구글 캘린더 자동 동기화 -->
   <div id="gcalSection" style="margin-top:12px;padding:10px 14px;background:var(--sf);border-radius:10px;border:1px solid var(--bd);">
     <div style="display:flex;align-items:center;justify-content:space-between;">
@@ -1474,12 +1493,24 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 
   <!-- 하단 풀폭: 공종 + 비고 (잠금 영역) -->
   <div id="edit-lockable" style="position:relative">
-    <div class="sl" style="margin:12px 2px 8px">공종별 일정 <span style="font-weight:400;color:var(--mu2)">(탭하여 편집)</span></div>
-    <div class="tl" id="tl"></div>
     <div class="cd" style="margin-top:10px">
-      <div class="sl">비고 · 협력업체 일정체크</div>
-      <div id="en"></div>
-      <button class="na" onclick="addNote()">항목 추가</button>
+      <div class="sl edit-section-header" id="taskScheduleHeader" role="button" tabindex="0" aria-expanded="false" aria-controls="taskScheduleBody" onclick="toggleEditSection('taskScheduleBody','taskScheduleArrow',this)" onkeydown="editSectionKeydown(event,'taskScheduleBody','taskScheduleArrow',this)">
+        <span>공종별 일정 <span style="font-weight:400;color:var(--mu2)">(탭하여 편집)</span></span>
+        <span class="edit-section-arrow" id="taskScheduleArrow">▶</span>
+      </div>
+      <div id="taskScheduleBody" style="display:none;margin-top:10px;">
+        <div class="tl" id="tl"></div>
+      </div>
+    </div>
+    <div class="cd" style="margin-top:10px">
+      <div class="sl edit-section-header" id="noteScheduleHeader" role="button" tabindex="0" aria-expanded="false" aria-controls="noteScheduleBody" onclick="toggleEditSection('noteScheduleBody','noteScheduleArrow',this)" onkeydown="editSectionKeydown(event,'noteScheduleBody','noteScheduleArrow',this)">
+        <span>비고 · 협력업체 일정체크</span>
+        <span class="edit-section-arrow" id="noteScheduleArrow">▶</span>
+      </div>
+      <div id="noteScheduleBody" style="display:none;margin-top:10px;">
+        <div id="en"></div>
+        <button class="na" onclick="addNote()">항목 추가</button>
+      </div>
     </div>
     <div class="cd" style="margin-top:10px">
       <div class="sl" id="ctorMgrHeader" onclick="toggleCtorMgr()" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;">
@@ -1515,7 +1546,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
     </div>
     <div class="ca-row ca-row2">
       <button class="btn ca-main-btn" id="btnAutoSched" onclick="openAutoSchedModal()">🔄 공정 자동배치</button>
-      <button class="btn ca-sub-btn" id="btnCtorCheck" onclick="openCtorCheckModal()">👥 협력업체 일정체크</button>
+      <button class="btn ca-sub-btn" id="btnCtorCheck" onclick="openCtorCheckModal()" style="display:none" aria-hidden="true">👥 협력업체 일정체크</button>
     </div>
     <div class="ca-row ca-row3 no-print">
       <button class="btn ca-bar-edit-btn" id="chartBarEditToggle" type="button" aria-pressed="false" onclick="toggleChartBarEditMode()" title="차트 막대를 눌러 해당 차수 일정·설명 편집"><span aria-hidden="true">&#9998;</span><span>일정·설명 편집</span></button>
@@ -3488,6 +3519,21 @@ function rEdit(){
   rCtorMgr();
 }
 
+function toggleEditSection(bodyId,arrowId,header){
+  var body=document.getElementById(bodyId);
+  var arrow=document.getElementById(arrowId);
+  if(!body)return;
+  var open=body.style.display!=='none';
+  body.style.display=open?'none':'block';
+  if(arrow)arrow.style.transform=open?'rotate(0deg)':'rotate(90deg)';
+  if(header)header.setAttribute('aria-expanded',open?'false':'true');
+}
+function editSectionKeydown(event,bodyId,arrowId,header){
+  if(event.key!=='Enter'&&event.key!==' ')return;
+  event.preventDefault();
+  toggleEditSection(bodyId,arrowId,header);
+}
+
 /* ─── 공종별 업체 관리 (편집탭 마스터) ─── */
 var _CTOR_DISPLAY_ORDER=[1,2,3,4,5,8,10,6,11,9,7,13,12,14];
 
@@ -4886,6 +4932,27 @@ function _restoreInlineStyles(entries){
   });
 }
 var _chartExportBusy=false;
+async function exportScheduleFromEdit(kind){
+  if(_chartExportBusy){toast('파일 저장을 마친 뒤 다시 시도해주세요.');return;}
+  var pages=Array.from(document.querySelectorAll('.pg'));
+  var tabs=Array.from(document.querySelectorAll('.tab'));
+  var pageState=pages.map(function(el){return el.classList.contains('on');});
+  var tabState=tabs.map(function(el){return el.classList.contains('on');});
+  try{
+    pages.forEach(function(el){el.classList.remove('on');});
+    tabs.forEach(function(el){el.classList.remove('on');});
+    document.getElementById('pc').classList.add('on');
+    document.getElementById('tc2').classList.add('on');
+    rChart();
+    await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve);});});
+    if(kind==='pdf')await doPDF();
+    else await doIMG();
+  }finally{
+    pages.forEach(function(el,index){el.classList.toggle('on',pageState[index]);});
+    tabs.forEach(function(el,index){el.classList.toggle('on',tabState[index]);});
+    _removeStickyHeader();
+  }
+}
 async function doIMG(){
   if(typeof html2canvas==='undefined'){toast('캡처 라이브러리 로딩 중...');return;}
   if(_chartExportBusy){toast('파일 저장을 마친 뒤 다시 시도해주세요.');return;}
