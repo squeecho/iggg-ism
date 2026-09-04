@@ -580,3 +580,54 @@
 - P1: 완전히 겹친 차수의 동일 y/z hit-test에서 뒤 차수만 선택되는 문제와 특별 날짜선이 막대 일부를 덮는 문제.
 - P2: `touchcancel`, window blur, 탭·현장 전환 중 중단된 drag를 원복하는 단일 gesture cancel finalizer. 이번 사용자 증상의 원인은 아니며 정상 release 경로는 회귀 통과했다.
 - 운영 Firebase·Google Calendar·고객 데이터, push·deploy는 이번 긴급패치에서 접근하거나 변경하지 않는다.
+
+## 2026-09-04 Google Calendar 무인 서버 동기화
+
+판정: `LOCAL COMPLETE / 운영 dry-run·배포 게이트 진행 전`.
+
+### 재현·원인과 경쟁 가설
+
+| 가설 | 판정 | 근거 |
+|---|---|---|
+| Calendar API나 서비스 계정 자체가 간헐적으로 멈춘다. | 기각 | 기존 토큰·프록시 경로는 정상이나, 동기화의 시작·재시도·삭제 대조를 `index.html`의 열린 탭과 `localStorage`가 소유했다. |
+| Firestore 실시간 listener만 더 자주 실행하면 해결된다. | 기각 | 모바일 절전·탭 종료·SSO 만료 상태에서는 listener와 debounce callback 모두 실행 주체가 없다. |
+| 저장 직후 browser `keepalive` 요청만 추가하면 충분하다. | 기각 | 탭 종료 전달은 개선하지만 누락 복구 주체가 아니며 여러 서버리스 인스턴스의 구·신 snapshot이 동시에 Calendar를 쓰는 경쟁도 남는다. |
+| Firestore 정본을 한 서버 job이 주기적으로 전체 대조하면 재발을 닫을 수 있다. | 채택 | 브라우저를 projection writer에서 제외하고, 5분마다 실행되는 단일 Scheduler job만 mutation을 소유하도록 계약했다. |
+
+### 갭 스코어보드
+
+| ID | 목표 | 상태 | 우선순위 | 구현·검증 기준 |
+|---|---|---:|---:|---|
+| GCAL-01 | 로그인·열린 탭 없는 자동 반영 | parity | P0 | Firestore `sites`를 서버가 읽고 상세/간략 Calendar를 5분마다 reconcile한다. |
+| GCAL-02 | 중복·누락 없는 안정적 event identity | parity | P0 | site key·mode·task/phase identity의 deterministic ID, 동일 입력 exact, create 409은 동일 ID update로 수렴한다. |
+| GCAL-03 | stale 삭제 안전성 | parity | P0 | 전체 source·날짜·ID 검증 후 upsert를 모두 성공시킨 경우에만 stale managed event를 삭제한다. 수동 event와 미래 schema는 보존한다. |
+| GCAL-04 | 동시 writer 제거 | parity | P0 | 실제 mutation은 scheduler secret 요청만 허용하고 browser reconcile은 dry-run으로 강제한다. 구버전 proxy POST/PUT/PATCH/DELETE는 410으로 종료한다. |
+| GCAL-05 | 장애·쿼터·시간 제한 | parity | P0 | OAuth/Firestore/Calendar socket timeout, 429·5xx·quota 403 bounded retry, 50초 global deadline을 적용한다. |
+| GCAL-06 | 빈·손상 source 전량 삭제 차단 | parity | P0 | 200+빈 source는 기본 차단하고 마지막 현장을 의도적으로 제거할 때만 운영 환경의 명시적 allow-empty gate를 사용한다. |
+| GCAL-07 | 서버 설정 상태 UI | parity | P1 | 서비스 계정·서로 다른 두 Calendar·Scheduler secret이 모두 있어야 녹색 상태를 표시한다. |
+| OPS-GCAL | IAM·secret·Scheduler·운영 idempotency | pending | P0 | read-only Firestore IAM, secret, paused dry-run → 1회 apply → dry-run 0/0/0 → job 활성화 순서로 검증한다. |
+
+### 구현 계약
+
+- `calendar-sync.js`가 기존 `ScheduleCore`의 공종/차수 의미를 재사용해 상세 event와 현장 전체 event를 생성한다. 새 일정 store나 병행 renderer는 만들지 않는다.
+- 각 event는 `src/schema/siteKey/pn/identity/mode` 소유권을 가진다. 현재 schema와 legacy 소유 event만 교체하며, 수동 event와 알 수 없는 미래 schema는 수정·삭제하지 않는다.
+- 활성 현장의 `tasks[]`, task stable ID, 이름, 활성 차수의 strict `YYYY-MM-DD`, 시작≤종료를 Calendar 목록 조회 전에 전수 검증한다. 한 문서라도 손상되면 mutation은 0이다.
+- detail과 simple Calendar ID가 같으면 fail-closed한다. 서로의 event를 stale로 오인해 번갈아 삭제하는 오구성을 허용하지 않는다.
+- 브라우저의 저장·확정·해제는 Firestore commit 뒤 서버 상태 dry-run만 요청한다. 실제 projection 반영은 Cloud Scheduler 한 job이 소유하며 화면과 로그인에 의존하지 않는다.
+- 서버 요청은 Vercel 60초보다 짧은 50초 deadline을 공유한다. upsert 일부가 실패하면 stale delete를 시작하지 않고 다음 주기에 다시 수렴한다.
+
+### 로컬 체크포인트
+
+- Node 전체 45/45, `npm run typecheck`, `npm run build`, `git diff --check` 통과.
+- 실제 Chromium 전체 회귀에서 desktop/mobile 일정 편집·차트·저장 흐름, Calendar 설정 10회, dry-run reconcile 1회, 저장 중 추가 변경 trailing pass 2회를 확인했다.
+- actual 외부 mutation, console error, page error, request failure는 모두 0이었다.
+- 1440/390 Calendar 상태 카드를 직접 판독했다. 녹색 status dot, `서버 상태 확인`, 최대 5분 안내가 보였고 잘림·가로 overflow는 0이었다.
+
+### 운영 게이트
+
+1. Calendar 서비스 계정에 Firestore 프로젝트 `roles/datastore.viewer`만 부여한다.
+2. Scheduler secret을 Secret Manager와 Vercel Production에 저장한 뒤 새 revision을 배포한다.
+3. `ism-calendar-sync` job을 `asia-northeast3`, 5분 간격, dry-run body로 생성하고 pause한다.
+4. 운영 dry-run에서 source>0·failure 0과 계획 수량을 확인한 뒤 1회 apply한다.
+5. 두 번째 dry-run의 create/update/delete가 모두 0인지 확인하고 그때만 apply body로 전환·resume한다.
+6. 장애 시 Scheduler를 먼저 pause하고 직전 Vercel deployment로 되돌린다.

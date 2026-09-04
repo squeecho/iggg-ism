@@ -10,6 +10,34 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Keep date-sensitive archive/today behavior stable regardless of when CI runs.
+# 2026-08-27 is the fixture's original observation date; the production clock
+# remains untouched because this script is installed only in Playwright pages.
+FROZEN_BROWSER_CLOCK_SCRIPT = """
+(() => {
+  const NativeDate = Date;
+  const fixedNow = new NativeDate(2026, 7, 27, 12, 0, 0, 0).getTime();
+  function FixedDate(...args) {
+    if (new.target) return new NativeDate(...(args.length ? args : [fixedNow]));
+    return new NativeDate(fixedNow).toString();
+  }
+  Object.setPrototypeOf(FixedDate, NativeDate);
+  FixedDate.prototype = NativeDate.prototype;
+  FixedDate.now = () => fixedNow;
+  FixedDate.parse = NativeDate.parse;
+  FixedDate.UTC = NativeDate.UTC;
+  Object.defineProperty(window, 'Date', {
+    configurable: true,
+    writable: true,
+    value: FixedDate,
+  });
+})();
+"""
+
+
+def add_test_init_script(context, script):
+    context.add_init_script(FROZEN_BROWSER_CLOCK_SCRIPT + "\n" + script)
+
 
 class QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, _format, *args):
@@ -687,7 +715,8 @@ def run_chart_tab_sync_authority(
     request_failures,
 ):
     context = browser.new_context(viewport={"width": 1440, "height": 1000})
-    context.add_init_script(
+    add_test_init_script(
+        context,
         """
         window.__ISM_TEST_MODE__ = true;
         if (!sessionStorage.getItem('__chartSyncFixtureInitialized')) {
@@ -970,7 +999,8 @@ def run_chart_task_management(
     request_failures,
 ):
     context = browser.new_context(viewport={"width": 1440, "height": 1000})
-    context.add_init_script(
+    add_test_init_script(
+        context,
         """
         window.__ISM_TEST_MODE__ = true;
         localStorage.clear();
@@ -1762,7 +1792,8 @@ def run_chart_task_management(
     )
 
     mobile_context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
-    mobile_context.add_init_script(
+    add_test_init_script(
+        mobile_context,
         """
         window.__ISM_TEST_MODE__ = true;
         localStorage.clear();
@@ -2490,7 +2521,8 @@ def run_note_date_interactions(
             is_mobile=mobile,
             has_touch=mobile,
         )
-        context.add_init_script(
+        add_test_init_script(
+            context,
             """
             window.__ISM_TEST_MODE__ = true;
             if (!sessionStorage.getItem('__noteQaBoot')) {
@@ -2651,12 +2683,14 @@ def run():
     request_failures = []
     unexpected_mutations = []
     intercepted_config_requests = 0
+    intercepted_reconcile_requests = []
 
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             context = browser.new_context(viewport={"width": 1440, "height": 1000})
-            context.add_init_script(
+            add_test_init_script(
+                context,
                 """
                 window.__ISM_TEST_MODE__ = true;
                 localStorage.clear();
@@ -2667,7 +2701,7 @@ def run():
             )
 
             def route_request(route):
-                nonlocal intercepted_config_requests
+                nonlocal intercepted_config_requests, intercepted_reconcile_requests
                 request = route.request
                 if request.url == origin + "/api/calendar" and request.method == "POST":
                     try:
@@ -2679,7 +2713,20 @@ def run():
                         route.fulfill(
                             status=200,
                             content_type="application/json",
-                            body=json.dumps({"detailCalId": "qa-detail", "simpleCalId": "qa-simple"}),
+                            body=json.dumps({
+                                "detailCalId": "qa-detail",
+                                "simpleCalId": "qa-simple",
+                                "configured": True,
+                                "serverManaged": True,
+                            }),
+                        )
+                        return
+                    if payload.get("action") == "reconcile":
+                        intercepted_reconcile_requests.append(payload)
+                        route.fulfill(
+                            status=200,
+                            content_type="application/json",
+                            body=json.dumps({"ok": True, "result": {"totals": {}}}),
                         )
                         return
                     unexpected_mutations.append({"method": request.method, "url": request.url})
@@ -2701,6 +2748,50 @@ def run():
             page.on("pageerror", lambda error: page_errors.append(str(error)))
             page.on("requestfailed", lambda request: request_failures.append(f"{request.method} {request.url}"))
             page.goto(origin + "/", wait_until="domcontentloaded")
+            assert page.evaluate("today()") == "2026-08-27"
+            page.wait_for_function("_gcalReady === true")
+            assert page.locator("#gcalStatusLabel").inner_text() == "자동 동기화 설정됨"
+            assert page.locator("#gcalUploadNowBtn").inner_text() == "서버 상태 확인"
+            if screenshot_dir:
+                page.locator("#gcalSection").screenshot(path=str(screenshot_dir / "calendar-server-sync-desktop.png"))
+                page.set_viewport_size({"width": 390, "height": 844})
+                page.locator("#gcalSection").screenshot(path=str(screenshot_dir / "calendar-server-sync-mobile.png"))
+                assert page.evaluate(
+                    "document.getElementById('gcalSection').getBoundingClientRect().right <= innerWidth"
+                ) is True
+                page.set_viewport_size({"width": 1440, "height": 1000})
+
+            trailing_sync_calls = page.evaluate(
+                """
+                async () => {
+                  const original = _gcalServerRequestOnce;
+                  let calls = 0;
+                  let releaseFirst;
+                  clearTimeout(_gcalServerRetryTimer);
+                  _gcalServerSyncPromise = null;
+                  _gcalServerSyncDirty = false;
+                  _gcalServerRequestOnce = function(){
+                    calls += 1;
+                    if(calls === 1){
+                      return new Promise(resolve => { releaseFirst = resolve; });
+                    }
+                    return Promise.resolve({});
+                  };
+                  const first = _gcalRequestServerSync({manual:false});
+                  await new Promise(resolve => setTimeout(resolve, 0));
+                  _gcalRequestServerSync({manual:false});
+                  releaseFirst({});
+                  await first;
+                  await new Promise(resolve => setTimeout(resolve, 10));
+                  _gcalServerRequestOnce = original;
+                  clearTimeout(_gcalServerRetryTimer);
+                  _gcalServerSyncPromise = null;
+                  _gcalServerSyncDirty = false;
+                  return calls;
+                }
+                """
+            )
+            assert trailing_sync_calls == 2
 
             page.evaluate(
                 """
@@ -3475,7 +3566,8 @@ def run():
             mobile_context = browser.new_context(
                 viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True
             )
-            mobile_context.add_init_script(
+            add_test_init_script(
+                mobile_context,
                 """
                 window.__ISM_TEST_MODE__ = true;
                 localStorage.clear();
@@ -3947,6 +4039,7 @@ def run():
             assert page_errors == [], page_errors
             assert request_failures == [], request_failures
             assert unexpected_mutations == [], unexpected_mutations
+            assert all(item.get("dryRun") is True for item in intercepted_reconcile_requests)
             context.close()
             browser.close()
 
@@ -3975,6 +4068,8 @@ def run():
             "chart_task_management": chart_task_result,
             "note_date_interactions": note_date_result,
             "intercepted_local_config_requests": intercepted_config_requests,
+            "intercepted_dry_run_reconcile_requests": len(intercepted_reconcile_requests),
+            "trailing_sync_calls": trailing_sync_calls,
             "unexpected_network_mutations": len(unexpected_mutations),
             "console_errors": len(console_errors),
             "page_errors": len(page_errors),

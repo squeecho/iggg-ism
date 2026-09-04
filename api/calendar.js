@@ -11,10 +11,28 @@
 
 const crypto = require('crypto');
 const https = require('https');
+const calendarSync = require('../calendar-sync.js');
 
-/* ── 토큰 캐시 (서버리스 인스턴스 수명 동안 재사용) ── */
-let _cachedToken = null;
-let _tokenExpiry = 0;
+const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
+const DATASTORE_SCOPE = 'https://www.googleapis.com/auth/datastore';
+
+/* ── scope별 토큰 캐시 (서버리스 인스턴스 수명 동안 재사용) ── */
+const _tokenCache = new Map();
+
+/* Node의 req.setTimeout은 socket idle 기준이라 slow-drip 응답이 계속 오면 절대
+   종료 시간이 아니다. 모든 외부 요청에 wall-clock timer를 별도로 결속한다. */
+function _armRequestDeadline(req, timeoutMs, label) {
+  const duration = Math.max(1, Number(timeoutMs) || 1);
+  const timer = setTimeout(() => {
+    const error = new Error(label || 'request deadline reached');
+    error.code = 'ETIMEDOUT';
+    req.destroy(error);
+  }, duration);
+  if (typeof timer.unref === 'function') timer.unref();
+  const clear = () => clearTimeout(timer);
+  req.once('close', clear);
+  return clear;
+}
 
 /* ── Base64url 인코딩 ── */
 function base64url(buf) {
@@ -26,12 +44,12 @@ function base64url(buf) {
 }
 
 /* ── JWT 생성 ── */
-function createJWT(email, privateKey) {
+function createJWT(email, privateKey, scope) {
   const header = { alg: 'RS256', typ: 'JWT' };
   const now = Math.floor(Date.now() / 1000);
   const payload = {
     iss: email,
-    scope: 'https://www.googleapis.com/auth/calendar',
+    scope: scope || CALENDAR_SCOPE,
     aud: 'https://oauth2.googleapis.com/token',
     iat: now,
     exp: now + 3600,
@@ -54,14 +72,16 @@ function createJWT(email, privateKey) {
 }
 
 /* ── Google OAuth2 토큰 교환 ── */
-function getAccessToken(email, privateKey) {
+function getAccessToken(email, privateKey, scope, deadlineAt) {
   return new Promise((resolve, reject) => {
+    const cacheKey = scope || CALENDAR_SCOPE;
+    const cached = _tokenCache.get(cacheKey);
     // 캐시된 토큰이 유효하면 재사용
-    if (_cachedToken && Date.now() < _tokenExpiry) {
-      return resolve(_cachedToken);
+    if (cached && Date.now() < cached.expiry) {
+      return resolve(cached.token);
     }
 
-    const jwt = createJWT(email, privateKey);
+    const jwt = createJWT(email, privateKey, cacheKey);
     const body = new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
       assertion: jwt,
@@ -85,9 +105,11 @@ function getAccessToken(email, privateKey) {
         try {
           const json = JSON.parse(data);
           if (json.access_token) {
-            _cachedToken = json.access_token;
             // 만료 2분 전에 갱신하도록
-            _tokenExpiry = Date.now() + (json.expires_in - 120) * 1000;
+            _tokenCache.set(cacheKey, {
+              token: json.access_token,
+              expiry: Date.now() + (json.expires_in - 120) * 1000,
+            });
             resolve(json.access_token);
           } else {
             reject(new Error('Token error: ' + data));
@@ -98,6 +120,7 @@ function getAccessToken(email, privateKey) {
       });
     });
 
+    _armRequestDeadline(req, _deadlineTimeout(deadlineAt, 8000), 'Google OAuth deadline reached');
     req.on('error', reject);
     req.write(body);
     req.end();
@@ -105,7 +128,7 @@ function getAccessToken(email, privateKey) {
 }
 
 /* ── Google Calendar API 호출 ── */
-function callCalendarAPI(token, method, path, body) {
+function callCalendarAPI(token, method, path, body, timeoutMs) {
   return new Promise((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : '';
 
@@ -130,10 +153,15 @@ function callCalendarAPI(token, method, path, body) {
       let data = '';
       res.on('data', (chunk) => (data += chunk));
       res.on('end', () => {
-        resolve({ status: res.statusCode, body: data });
+        resolve({ status: res.statusCode, body: data, headers: res.headers || {} });
       });
     });
 
+    _armRequestDeadline(
+      req,
+      Math.max(250, Number(timeoutMs) || 10000),
+      'Calendar API deadline reached'
+    );
     req.on('error', reject);
     if (bodyStr && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
       req.write(bodyStr);
@@ -232,11 +260,241 @@ function httpsRequest(urlStr, opts) {
       res.on('data', (c) => (data += c));
       res.on('end', () => resolve({ status: res.statusCode, body: data }));
     });
-    req.setTimeout(opts.timeoutMs || 8000, () => { req.destroy(new Error('timeout')); });
+    _armRequestDeadline(req, opts.timeoutMs || 8000, 'HTTP request deadline reached');
     req.on('error', reject);
     if (payload) req.write(payload);
     req.end();
   });
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   서버 정본 동기화
+
+   브라우저가 일정 하나씩 삭제/재생성하던 방식은 탭 종료·모바일 절전·SSO
+   만료 때 작업이 사라진다. 서버는 Firestore `sites`를 다시 읽고 deterministic
+   event ID로 대조한다. 브라우저는 설정·source 상태만 dry-run으로 확인하고,
+   Cloud Scheduler의 단일 job만 실제 반영을 주기적으로 수행한다.
+   ══════════════════════════════════════════════════════════════════ */
+
+function _firestoreValue(value) {
+  if (!value || typeof value !== 'object') return null;
+  if (Object.prototype.hasOwnProperty.call(value, 'nullValue')) return null;
+  if (Object.prototype.hasOwnProperty.call(value, 'stringValue')) return value.stringValue;
+  if (Object.prototype.hasOwnProperty.call(value, 'booleanValue')) return !!value.booleanValue;
+  if (Object.prototype.hasOwnProperty.call(value, 'integerValue')) return Number(value.integerValue);
+  if (Object.prototype.hasOwnProperty.call(value, 'doubleValue')) return Number(value.doubleValue);
+  if (Object.prototype.hasOwnProperty.call(value, 'timestampValue')) return value.timestampValue;
+  if (Object.prototype.hasOwnProperty.call(value, 'referenceValue')) return value.referenceValue;
+  if (Object.prototype.hasOwnProperty.call(value, 'bytesValue')) return value.bytesValue;
+  if (Object.prototype.hasOwnProperty.call(value, 'geoPointValue')) return value.geoPointValue;
+  if (value.arrayValue) {
+    return (value.arrayValue.values || []).map(_firestoreValue);
+  }
+  if (value.mapValue) {
+    const out = {};
+    Object.keys(value.mapValue.fields || {}).forEach((key) => {
+      out[key] = _firestoreValue(value.mapValue.fields[key]);
+    });
+    return out;
+  }
+  return null;
+}
+
+function _firestoreDocument(document) {
+  const snapshot = {};
+  Object.keys((document && document.fields) || {}).forEach((key) => {
+    snapshot[key] = _firestoreValue(document.fields[key]);
+  });
+  const name = String((document && document.name) || '');
+  const encodedKey = name.slice(name.lastIndexOf('/') + 1);
+  let siteKey = encodedKey;
+  try { siteKey = decodeURIComponent(encodedKey); } catch (error) { /* 원문 유지 */ }
+  return { siteKey: siteKey, snapshot: snapshot };
+}
+
+function _deadlineTimeout(deadlineAt, maximumMs) {
+  const deadline = Number(deadlineAt);
+  if (!Number.isFinite(deadline)) return maximumMs;
+  const remaining = deadline - Date.now();
+  if (remaining <= 1000) {
+    const error = new Error('Calendar reconciliation deadline reached');
+    error.code = 'CALENDAR_SYNC_DEADLINE';
+    throw error;
+  }
+  return Math.max(250, Math.min(maximumMs, remaining - 750));
+}
+
+async function fetchFirestoreSites(token, deadlineAt) {
+  const projectId = process.env.FIREBASE_PROJECT_ID || 'iggg-schedule';
+  const root = 'https://firestore.googleapis.com/v1/projects/'
+    + encodeURIComponent(projectId)
+    + '/databases/(default)/documents/sites';
+  const sites = [];
+  let pageToken = '';
+  for (let page = 0; page < 50; page += 1) {
+    const url = root + '?pageSize=100'
+      + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+    const response = await httpsRequest(url, {
+      headers: { Authorization: 'Bearer ' + token },
+      timeoutMs: _deadlineTimeout(deadlineAt, 12000),
+    });
+    if (response.status !== 200) {
+      throw new Error('Firestore sites read ' + response.status);
+    }
+    let payload;
+    try { payload = JSON.parse(response.body || '{}'); } catch (error) {
+      throw new Error('Firestore sites response invalid');
+    }
+    (payload.documents || []).forEach((document) => {
+      const site = _firestoreDocument(document);
+      if (!site.siteKey || !site.snapshot || !site.snapshot.pn) {
+        throw new Error('Firestore site document invalid');
+      }
+      /* confirmed=false도 source inventory에는 포함한다. desired builder가 제외해야
+         기존 Calendar event를 정확히 stale로 판정할 수 있다. */
+      sites.push(site);
+    });
+    if (!payload.nextPageToken) {
+      /* 200+빈 source를 정상으로 보면 모든 managed event가 stale이 되어 전량
+         삭제된다. 현재 운영은 확정 현장이 존재하므로 빈 응답은 fail-closed다. */
+      if (!sites.length && process.env.ISM_CALENDAR_ALLOW_EMPTY_SOURCE !== 'true') {
+        throw new Error('Firestore sites source unexpectedly empty');
+      }
+      return sites;
+    }
+    pageToken = payload.nextPageToken;
+  }
+  throw new Error('Firestore sites pagination limit exceeded');
+}
+
+function _calendarJson(result, operation) {
+  let body = null;
+  try { body = result.body ? JSON.parse(result.body) : null; } catch (error) { /* 본문 없는 DELETE */ }
+  return {
+    ok: result.status >= 200 && result.status < 300,
+    status: result.status,
+    body: body,
+    headers: result.headers || {},
+    operation: operation,
+  };
+}
+
+function createCalendarAdapter(token, calendarId, deadlineAt) {
+  const calendarPath = 'calendars/' + encodeURIComponent(calendarId) + '/events';
+  return {
+    async listManagedEvents() {
+      const events = [];
+      let pageToken = '';
+      for (let page = 0; page < 20; page += 1) {
+        let query = 'privateExtendedProperty=src%3Diggg-ism&showDeleted=false&maxResults=2500';
+        if (pageToken) query += '&pageToken=' + encodeURIComponent(pageToken);
+        const result = await callCalendarAPI(
+          token,
+          'GET',
+          calendarPath + '?' + query,
+          null,
+          _deadlineTimeout(deadlineAt, 9000)
+        );
+        const parsed = _calendarJson(result, 'list');
+        if (!parsed.ok || !parsed.body) return parsed;
+        (parsed.body.items || []).forEach((event) => events.push(event));
+        if (!parsed.body.nextPageToken) {
+          return { ok: true, status: 200, body: { items: events }, items: events };
+        }
+        pageToken = parsed.body.nextPageToken;
+      }
+      return { ok: false, status: 508, body: null, operation: 'list' };
+    },
+    async createEvent(event) {
+      const result = await callCalendarAPI(
+        token, 'POST', calendarPath, event, _deadlineTimeout(deadlineAt, 9000)
+      );
+      return _calendarJson(result, 'create');
+    },
+    async updateEvent(id, event) {
+      const path = calendarPath + '/' + encodeURIComponent(id);
+      const result = await callCalendarAPI(
+        token, 'PUT', path, event, _deadlineTimeout(deadlineAt, 9000)
+      );
+      return _calendarJson(result, 'update');
+    },
+    async deleteEvent(id) {
+      const path = calendarPath + '/' + encodeURIComponent(id);
+      const result = await callCalendarAPI(
+        token, 'DELETE', path, null, _deadlineTimeout(deadlineAt, 9000)
+      );
+      return _calendarJson(result, 'delete');
+    },
+  };
+}
+
+async function runServerReconcile(options) {
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + 50000;
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const privateKeyRaw = process.env.GOOGLE_PRIVATE_KEY;
+  const detailId = process.env.GCAL_ID_DETAIL;
+  const simpleId = process.env.GCAL_ID_SIMPLE;
+  if (!email || !privateKeyRaw || !detailId || !simpleId) {
+    throw new Error('Calendar server configuration incomplete');
+  }
+  if (detailId === simpleId) {
+    /* 같은 캘린더에서 detail reconcile 뒤 simple reconcile을 실행하면 서로의
+       이벤트를 stale로 보아 번갈아 삭제한다. 오구성은 쓰기 전에 차단한다. */
+    throw new Error('Calendar detail/simple IDs must be distinct');
+  }
+  const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
+  const scope = CALENDAR_SCOPE + ' ' + DATASTORE_SCOPE;
+  const token = await getAccessToken(email, privateKey, scope, deadlineAt);
+  const sites = await fetchFirestoreSites(token, deadlineAt);
+  const result = await calendarSync.reconcileAll({
+    sites: sites,
+    calendars: {
+      detail: createCalendarAdapter(token, detailId, deadlineAt),
+      simple: createCalendarAdapter(token, simpleId, deadlineAt),
+    },
+    dryRun: !!(options && options.dryRun),
+    concurrency: 4,
+    maxAttempts: 4,
+    baseDelayMs: 250,
+    deadlineAt: deadlineAt,
+    minimumRemainingMs: 11000,
+  });
+  result.siteCount = sites.length;
+  return result;
+}
+
+function _safeSecretEqual(left, right) {
+  const a = Buffer.from(String(left || ''));
+  const b = Buffer.from(String(right || ''));
+  return a.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function isSchedulerRequest(req) {
+  const expected = process.env.ISM_CALENDAR_CRON_SECRET || '';
+  const headers = req && req.headers || {};
+  const supplied = headers['x-ism-calendar-secret'] || '';
+  return _safeSecretEqual(expected, supplied);
+}
+
+function calendarServerConfig() {
+  const detailCalId = process.env.GCAL_ID_DETAIL || '';
+  const simpleCalId = process.env.GCAL_ID_SIMPLE || '';
+  const configured = !!(
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
+    process.env.GOOGLE_PRIVATE_KEY &&
+    process.env.ISM_CALENDAR_CRON_SECRET &&
+    detailCalId && simpleCalId && detailCalId !== simpleCalId
+  );
+  return { detailCalId, simpleCalId, configured, serverManaged: configured };
+}
+
+function reconcileRequestMode(scheduler, input) {
+  const requestedDryRun = !!(input && input.dryRun === true);
+  return {
+    allowed: !!scheduler || requestedDryRun,
+    dryRun: !scheduler || requestedDryRun,
+  };
 }
 
 function parseCookies(header) {
@@ -583,12 +841,19 @@ async function handleIcs(req, res, q) {
 
 /* ── Vercel Serverless Handler ── */
 module.exports = async (req, res) => {
-  const query = parseQuery(req);
+  const urlQuery = parseQuery(req);
 
   /* ICS 구독 피드는 Origin 게이트 이전에 처리 (읽기 전용 공개) */
-  if (req.method === 'GET' && query.action === 'ics') {
-    return handleIcs(req, res, query);
+  if (req.method === 'GET' && urlQuery.action === 'ics') {
+    return handleIcs(req, res, urlQuery);
   }
+
+  let input = req.body || {};
+  if (typeof input === 'string') {
+    try { input = JSON.parse(input); } catch (error) { input = {}; }
+  }
+  const action = input.action || urlQuery.action || '';
+  const scheduler = action === 'reconcile' && isSchedulerRequest(req);
 
   // CORS 헤더
   const origin = req.headers.origin || '';
@@ -614,37 +879,64 @@ module.exports = async (req, res) => {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // CORS 헤더만으론 실행 자체는 못 막는다 — 비허용 Origin 은 처리 전 차단
-  if (!isAllowedOrigin(origin)) {
+  /* 브라우저 요청은 Origin+직원 SSO, 무인 실행은 별도 scheduler secret으로
+     각각 막는다. secret이 없거나 틀린 무Origin 요청은 아래에서 즉시 거부된다. */
+  if (!scheduler && !isAllowedOrigin(origin)) {
     return res.status(403).json({ error: 'Origin not allowed' });
   }
 
   try {
-    const { action, calendarId, method, path, body: reqBody, bodyB64, query } = req.body || {};
+    const { calendarId, method, path, body: reqBody, bodyB64, query } = input;
 
-    /* ── SSO 실인증 게이트 — 조작 경로(proxy)는 승인 직원만 ──
+    /* ── SSO 실인증 게이트 — 브라우저 조작 경로는 승인 직원만 ──
        ⚠ 환경변수 점검보다 앞에 둔다: 비인증 호출에 서버 설정 상태를 흘리지
          않기 위함(ig-site-report/api/cloudinary-delete.js 와 같은 규약).
        ⚠ Origin 통과만으로는 여기서 막힌다 — Origin 은 CSRF 보조일 뿐이다. */
     let auth = null;
-    if (action === 'proxy') {
+    if ((action === 'proxy' || action === 'reconcile') && !scheduler) {
       auth = await verifyStaff(req);
-      /* ⚠실패를 **서버에 남긴다**(사장 지시 2026-07-30).
-         캘린더 동기화는 브라우저에서 도는 작업이라 서버 크론이 아니고, 그래서 멈춰도
-         자가점검이 볼 대상이 없었다 — 알림이 아예 없었다. 화면의 🔒 토스트뿐이고
-         그것도 60초 1회, 사장이 그 순간 화면을 보고 있어야 했다.
-         자가점검의 실패 카운터에 적어 3회 연속이면 메일 경보가 나간다.
-         자격증명이 없으면(no-credential) 신고도 못 하니 건너뛴다 — 그 경우는
-         애초에 로그인이 안 된 상태라 사장에게 알릴 사고가 아니다. */
-      reportSyncOutcome(req, auth.ok, auth.ok ? '' : String(auth.reason || ''),
-                        auth._idToken);
       if (!auth.ok) {
-        console.warn('[api/calendar][auth] 프록시 거부:', auth.reason,
+        console.warn('[api/calendar][auth] 조작 거부:', auth.reason,
           '| origin=' + (origin || '-'),
           '| method=' + String(method || 'GET').toUpperCase(),
           '| path=' + String(path || '/events').slice(0, 60));
         res.setHeader('X-Auth-Denied', '1');
         return res.status(auth.status).json({ error: auth.error, reason: auth.reason });
+      }
+    }
+
+    /* ── action: 'config' — 프론트엔드 부팅용 공개 설정 ── */
+    if (action === 'config') {
+      return res.status(200).json(calendarServerConfig());
+    }
+
+    /* ── action: 'reconcile' — Firestore 정본 → 두 캘린더 원자적 대조 ──
+       브라우저는 저장 뒤 source 상태만 확인하고, scheduler는 화면/로그인과
+       무관하게 주기적으로 멱등 적용한다. dryRun은 목록·비교만 하고 mutation 0. */
+    if (action === 'reconcile') {
+      const requestMode = reconcileRequestMode(scheduler, input);
+      if (!requestMode.allowed) {
+        /* 실제 Calendar mutation은 단일 Cloud Scheduler job만 수행한다. 서로 다른
+           서버리스 인스턴스에서 구/신 Firestore snapshot이 동시에 쓰는 경쟁을
+           브라우저 요청 단계에서 원천 차단한다. */
+        return res.status(409).json({
+          ok: false,
+          code: 'CALENDAR_SCHEDULER_ONLY',
+          error: 'Calendar apply is owned by the server scheduler'
+        });
+      }
+      const dryRun = requestMode.dryRun;
+      try {
+        const result = await runServerReconcile({ dryRun: dryRun });
+        if (auth) reportSyncOutcome(req, true, '', auth._idToken);
+        console.log('[api/calendar][reconcile]', scheduler ? 'scheduler' : _maskEmail(auth && auth.email),
+          dryRun ? 'dry-run' : 'applied', JSON.stringify(result.totals || {}));
+        return res.status(200).json({ ok: true, dryRun: dryRun, result: result });
+      } catch (error) {
+        const reason = String((error && (error.code || error.message)) || 'reconcile-failed').slice(0, 120);
+        if (auth) reportSyncOutcome(req, false, reason, auth._idToken);
+        console.error('[api/calendar][reconcile] failed:', reason);
+        return res.status(500).json({ ok: false, error: 'Calendar reconciliation failed', reason: reason });
       }
     }
 
@@ -669,14 +961,6 @@ module.exports = async (req, res) => {
       }
     }
 
-    /* ── action: 'config' — 프론트엔드에서 캘린더 ID 조회 ── */
-    if (action === 'config') {
-      return res.status(200).json({
-        detailCalId: process.env.GCAL_ID_DETAIL || '',
-        simpleCalId: process.env.GCAL_ID_SIMPLE || '',
-      });
-    }
-
     /* ── action: 'proxy' — Calendar API 프록시 (인증은 위 게이트에서 완료) ── */
     if (action === 'proxy') {
       // 캘린더 ID 검증
@@ -684,9 +968,6 @@ module.exports = async (req, res) => {
       if (!resolvedCalId) {
         return res.status(403).json({ error: 'Calendar ID not allowed' });
       }
-
-      // 토큰 발급
-      const token = await getAccessToken(email, privateKey);
 
       // API 경로 조립
       // path 예: '/events', '/events/{eventId}'
@@ -697,12 +978,33 @@ module.exports = async (req, res) => {
 
       // Calendar API 호출
       const apiMethod = (method || 'GET').toUpperCase();
+      if (apiMethod !== 'GET') {
+        /* 배포 전에 열려 있던 구버전 탭이 random insert/delete를 계속 실행하면
+           deterministic 서버 projection과 경쟁한다. 조회 호환만 남기고 legacy
+           mutation은 종료한다. 새 UI의 저장 직후 wake는 action=reconcile이다. */
+        return res.status(410).json({
+          error: 'Calendar writes moved to server reconciliation',
+          code: 'CALENDAR_PROXY_WRITE_RETIRED'
+        });
+      }
+
+      // 조회 호환 경로 토큰 발급
+      const token = await getAccessToken(email, privateKey);
       /* 조작(쓰기·삭제)은 누가 했는지 로그에 남긴다 — 조회는 양이 많아 제외 */
       if (apiMethod !== 'GET') {
         console.log('[api/calendar][proxy]', _maskEmail(auth.email), apiMethod,
           String(path || '/events').slice(0, 60), '| cal=' + String(calendarId || ''));
       }
       const result = await callCalendarAPI(token, apiMethod, apiPath, proxyBody);
+
+      /* 실제 Google 응답 뒤에만 성공/실패를 기록한다. 인증 성공을 Calendar
+         성공으로 선기록하던 옛 경로는 Google 4xx/5xx를 숨겼다. */
+      reportSyncOutcome(
+        req,
+        result.status >= 200 && result.status < 300,
+        result.status >= 200 && result.status < 300 ? '' : 'calendar-' + result.status,
+        auth && auth._idToken
+      );
 
       // 응답 전달
       res.status(result.status);
@@ -726,3 +1028,10 @@ module.exports.buildIcs = buildIcs;
 module.exports.icsFold = icsFold;
 module.exports.icsEscape = icsEscape;
 module.exports.parseQuery = parseQuery;
+module.exports._firestoreValue = _firestoreValue;
+module.exports._firestoreDocument = _firestoreDocument;
+module.exports.isSchedulerRequest = isSchedulerRequest;
+module.exports.calendarServerConfig = calendarServerConfig;
+module.exports.reconcileRequestMode = reconcileRequestMode;
+module.exports._deadlineTimeout = _deadlineTimeout;
+module.exports._armRequestDeadline = _armRequestDeadline;

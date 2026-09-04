@@ -90,3 +90,35 @@ test('Firebase 초기 현장 목록은 실시간 snapshot 한 경로로 받고 �
   assert.match(html, /if\(caEl\.classList\.contains\('open'\)\)/);
   assert.match(html, /caEl\.dataset\.loaded='false'/);
 });
+
+test('Google Calendar 자동 동기화는 브라우저 저장소가 아닌 서버 reconcile을 정본으로 사용한다', () => {
+  assert.match(html, /구글 캘린더 서버 자동 동기화/);
+  assert.match(html, /body:JSON\.stringify\(\{action:'reconcile',dryRun:true\}\)/);
+  assert.match(html, /keepalive:true/);
+  assert.match(html, /화면을 닫아도 서버가 최대 5분 안에 누락 일정을 다시 확인해요/);
+
+  const initStart = html.indexOf('function initCalendarProxy(cb)');
+  const initEnd = html.indexOf('function _gcalSyncUI()', initStart);
+  const init = html.slice(initStart, initEnd);
+  assert.ok(initStart >= 0 && initEnd > initStart);
+  assert.match(init, /data\.serverManaged === true/);
+  assert.doesNotMatch(init, /localStorage\.getItem\('_gcalEnabled'\)/);
+
+  const autoStart = html.indexOf('function _gcalAutoUpload(snap)');
+  const autoEnd = html.indexOf('function gcalUploadOnConfirm', autoStart);
+  const automatic = html.slice(autoStart, autoEnd);
+  assert.match(automatic, /_gcalQueueAutoSync\(pn\)/);
+  assert.doesNotMatch(automatic, /_gcalApiCall|_gcalDoUpload|_gcalDeleteSiteEvents/);
+
+  const saveStart = html.indexOf('async function saveToCloud(siteSnap,options)');
+  const saveEnd = html.indexOf('async function deleteFromCloud(pn)', saveStart);
+  const save = html.slice(saveStart, saveEnd);
+  assert.match(save, /await _db\.collection\('sites'\)[\s\S]*_gcalQueueAutoSync\(cleanSnap\.pn\)/);
+
+  const proxyStart = html.indexOf('function _gcalApiCall(method, calIdAlias, path, body, query)');
+  const proxyEnd = html.indexOf('var _gcalServerSyncPromise', proxyStart);
+  const proxy = html.slice(proxyStart, proxyEnd);
+  assert.match(proxy, /Calendar direct writer disabled/);
+  assert.match(html, /var _gcalServerSyncDirty = false/);
+  assert.match(html, /if\(_gcalServerSyncDirty&&pass<3\)return drain\(pass\+1\)/);
+});

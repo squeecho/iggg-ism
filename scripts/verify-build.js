@@ -13,7 +13,7 @@ for (const source of inlineScripts) {
   new vm.Script(source);
 }
 
-for (const required of ['index.html', 'schedule-core.js', 'api/calendar.js', 'vercel.json']) {
+for (const required of ['index.html', 'schedule-core.js', 'calendar-sync.js', 'api/calendar.js', 'vercel.json']) {
   if (!fs.existsSync(required)) throw new Error('Missing build input: ' + required);
 }
 
