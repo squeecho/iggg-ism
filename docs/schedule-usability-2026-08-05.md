@@ -618,7 +618,7 @@
 
 ### 로컬 체크포인트
 
-- Node 전체 45/45, `npm run typecheck`, `npm run build`, `git diff --check` 통과.
+- Node 전체 46/46, `npm run typecheck`, `npm run build`, `git diff --check` 통과.
 - 실제 Chromium 전체 회귀에서 desktop/mobile 일정 편집·차트·저장 흐름, Calendar 설정 10회, dry-run reconcile 1회, 저장 중 추가 변경 trailing pass 2회를 확인했다.
 - actual 외부 mutation, console error, page error, request failure는 모두 0이었다.
 - 1440/390 Calendar 상태 카드를 직접 판독했다. 녹색 status dot, `서버 상태 확인`, 최대 5분 안내가 보였고 잘림·가로 overflow는 0이었다.

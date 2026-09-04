@@ -105,3 +105,25 @@ test('external request wall-clock deadline fires even without an idle-timeout ev
   assert.equal(request.error && request.error.code, 'ETIMEDOUT');
   assert.equal(request.error && request.error.message, 'absolute deadline');
 });
+
+test('reconcile failure diagnostics expose only aggregate operation and status counts', () => {
+  const summary = calendarApi.reconcileFailureSummary({
+    code: 'CALENDAR_SYNC_UPSERT_FAILED',
+    phase: 'upsert',
+    result: {
+      mode: 'detail',
+      planned: { create: 3, update: 0, delete: 2, unchanged: 1 },
+      applied: { create: 1, update: 0, delete: 0, unchanged: 1 },
+      retries: 8,
+      failures: [
+        { operation: 'create', status: 403, eventId: 'private-id', message: 'private body' },
+        { operation: 'create', status: 403, eventId: 'private-id-2', message: 'private body 2' },
+      ],
+    },
+  });
+  assert.deepEqual(summary.statusCounts, { 403: 2 });
+  assert.deepEqual(summary.operationCounts, { create: 2 });
+  assert.equal(summary.failureCount, 2);
+  assert.equal(JSON.stringify(summary).includes('private-id'), false);
+  assert.equal(JSON.stringify(summary).includes('private body'), false);
+});

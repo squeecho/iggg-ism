@@ -497,6 +497,32 @@ function reconcileRequestMode(scheduler, input) {
   };
 }
 
+/* 운영 로그·응답에는 고객명/event ID/Google 본문을 남기지 않고, 실패 원인을
+   상태코드와 작업 종류의 집계로만 노출한다. */
+function reconcileFailureSummary(error) {
+  const result = error && error.result || {};
+  const failures = Array.isArray(result.failures) ? result.failures : [];
+  const statusCounts = {};
+  const operationCounts = {};
+  failures.forEach((failure) => {
+    const status = failure && failure.status == null ? 'none' : String(failure.status);
+    const operation = String(failure && failure.operation || 'unknown');
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+    operationCounts[operation] = (operationCounts[operation] || 0) + 1;
+  });
+  return {
+    code: String(error && (error.code || error.message) || 'reconcile-failed').slice(0, 120),
+    phase: String(error && error.phase || ''),
+    mode: String(result.mode || ''),
+    planned: result.planned || null,
+    applied: result.applied || null,
+    retries: Number(result.retries) || 0,
+    failureCount: failures.length,
+    statusCounts,
+    operationCounts,
+  };
+}
+
 function parseCookies(header) {
   const out = {};
   String(header || '').split(';').forEach(function (part) {
@@ -934,9 +960,15 @@ module.exports = async (req, res) => {
         return res.status(200).json({ ok: true, dryRun: dryRun, result: result });
       } catch (error) {
         const reason = String((error && (error.code || error.message)) || 'reconcile-failed').slice(0, 120);
+        const failure = reconcileFailureSummary(error);
         if (auth) reportSyncOutcome(req, false, reason, auth._idToken);
-        console.error('[api/calendar][reconcile] failed:', reason);
-        return res.status(500).json({ ok: false, error: 'Calendar reconciliation failed', reason: reason });
+        console.error('[api/calendar][reconcile] failed:', JSON.stringify(failure));
+        return res.status(500).json({
+          ok: false,
+          error: 'Calendar reconciliation failed',
+          reason: reason,
+          failure: failure,
+        });
       }
     }
 
@@ -1033,5 +1065,6 @@ module.exports._firestoreDocument = _firestoreDocument;
 module.exports.isSchedulerRequest = isSchedulerRequest;
 module.exports.calendarServerConfig = calendarServerConfig;
 module.exports.reconcileRequestMode = reconcileRequestMode;
+module.exports.reconcileFailureSummary = reconcileFailureSummary;
 module.exports._deadlineTimeout = _deadlineTimeout;
 module.exports._armRequestDeadline = _armRequestDeadline;
