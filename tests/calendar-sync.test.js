@@ -148,6 +148,30 @@ test('a partial upsert failure prevents every stale delete', async () => {
   assert.deepEqual(io.calls.delete, []);
 });
 
+test('mutation budget converges across runs without deleting stale events before all upserts exist', async () => {
+  const desired = buildDesiredEvents([site()], 'detail');
+  const legacy = managedLegacy('legacy', '이전 현장');
+  const firstIo = adapters([legacy]);
+  const first = await reconcileCalendar(Object.assign({
+    sites: [site()], mode: 'detail', concurrency: 1, mutationBudget: 2
+  }, firstIo));
+  assert.equal(first.ok, true);
+  assert.equal(first.partial, true);
+  assert.deepEqual(first.deferred, { upsert: 1, delete: 1 });
+  assert.equal(firstIo.calls.create.length, 2);
+  assert.deepEqual(firstIo.calls.delete, []);
+
+  const secondIo = adapters([legacy].concat(desired.slice(0, 2)));
+  const second = await reconcileCalendar(Object.assign({
+    sites: [site()], mode: 'detail', concurrency: 1, mutationBudget: 2
+  }, secondIo));
+  assert.equal(second.ok, true);
+  assert.equal(second.partial, false);
+  assert.deepEqual(second.deferred, { upsert: 0, delete: 0 });
+  assert.equal(secondIo.calls.create.length, 1);
+  assert.deepEqual(secondIo.calls.delete, ['legacy']);
+});
+
 test('upserts honor bounded concurrency and every delete starts after every upsert settles', async () => {
   const events = [];
   let active = 0;

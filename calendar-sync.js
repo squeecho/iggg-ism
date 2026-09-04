@@ -370,6 +370,7 @@ function initialResult(mode, dryRun, desired, existing, managed, unknown) {
   return {
     ok: false,
     dryRun: !!dryRun,
+    partial: false,
     mode,
     desired: desired.length,
     existing: existing.length,
@@ -378,6 +379,7 @@ function initialResult(mode, dryRun, desired, existing, managed, unknown) {
     preservedUnknown: (unknown || []).length,
     planned: { create: 0, update: 0, delete: 0, unchanged: 0 },
     applied: { create: 0, update: 0, delete: 0, unchanged: 0 },
+    deferred: { upsert: 0, delete: 0 },
     retries: 0,
     failures: []
   };
@@ -457,7 +459,18 @@ async function reconcileCalendar(options) {
     return result;
   }
 
-  await mapBounded(upserts, opts.concurrency, async (job) => {
+  /* 초기 전환·대량 편집 때 Google Calendar의 단시간 write limit와 서버리스
+     deadline을 넘기지 않도록 한 실행의 mutation 수를 제한한다. deferred
+     upsert가 하나라도 있으면 stale 삭제는 0으로 유지하고 다음 주기에 이어간다. */
+  const requestedBudget = Number(opts.mutationBudget);
+  const mutationBudget = Number.isSafeInteger(requestedBudget) && requestedBudget > 0
+    ? requestedBudget
+    : Number.POSITIVE_INFINITY;
+  const scheduledUpserts = upserts.slice(0, mutationBudget);
+  result.deferred.upsert = upserts.length - scheduledUpserts.length;
+  result.deferred.delete = result.deferred.upsert > 0 ? stale.length : 0;
+
+  await mapBounded(scheduledUpserts, opts.concurrency, async (job) => {
     try {
       if (job.operation === 'create') {
         try {
@@ -481,7 +494,18 @@ async function reconcileCalendar(options) {
     throw new CalendarSyncError('CALENDAR_SYNC_UPSERT_FAILED', 'upsert', result);
   }
 
-  await mapBounded(stale, opts.concurrency, async (event) => {
+  if (result.deferred.upsert > 0) {
+    result.partial = true;
+    result.ok = true;
+    return result;
+  }
+
+  const remainingBudget = Number.isFinite(mutationBudget)
+    ? Math.max(0, mutationBudget - scheduledUpserts.length)
+    : Number.POSITIVE_INFINITY;
+  const scheduledDeletes = stale.slice(0, remainingBudget);
+  result.deferred.delete = stale.length - scheduledDeletes.length;
+  await mapBounded(scheduledDeletes, opts.concurrency, async (event) => {
     try {
       await callWithRetry(async () => {
         try {
@@ -503,6 +527,7 @@ async function reconcileCalendar(options) {
   if (result.failures.length) {
     throw new CalendarSyncError('CALENDAR_SYNC_DELETE_FAILED', 'delete', result);
   }
+  result.partial = result.deferred.delete > 0;
   result.ok = true;
   return result;
 }
@@ -518,16 +543,33 @@ async function reconcileAll(options) {
     baseDelayMs: opts.baseDelayMs,
     sleep: opts.sleep,
     deadlineAt: opts.deadlineAt,
-    minimumRemainingMs: opts.minimumRemainingMs
+    minimumRemainingMs: opts.minimumRemainingMs,
+    mutationBudget: opts.mutationBudget
   };
   const detail = await reconcileCalendar(Object.assign({}, shared, calendars.detail, { mode: 'detail' }));
   const simple = await reconcileCalendar(Object.assign({}, shared, calendars.simple, { mode: 'simple' }));
-  const totals = { planned: {}, applied: {}, retries: detail.retries + simple.retries };
+  const totals = {
+    planned: {},
+    applied: {},
+    deferred: {
+      upsert: detail.deferred.upsert + simple.deferred.upsert,
+      delete: detail.deferred.delete + simple.deferred.delete,
+    },
+    partial: detail.partial || simple.partial,
+    retries: detail.retries + simple.retries
+  };
   ['create', 'update', 'delete', 'unchanged'].forEach((key) => {
     totals.planned[key] = detail.planned[key] + simple.planned[key];
     totals.applied[key] = detail.applied[key] + simple.applied[key];
   });
-  return { ok: detail.ok && simple.ok, dryRun: !!opts.dryRun, detail, simple, totals };
+  return {
+    ok: detail.ok && simple.ok,
+    dryRun: !!opts.dryRun,
+    partial: detail.partial || simple.partial,
+    detail,
+    simple,
+    totals
+  };
 }
 
 module.exports = {

@@ -457,6 +457,7 @@ async function runServerReconcile(options) {
     concurrency: 4,
     maxAttempts: 4,
     baseDelayMs: 250,
+    mutationBudget: 80,
     deadlineAt: deadlineAt,
     minimumRemainingMs: 11000,
   });

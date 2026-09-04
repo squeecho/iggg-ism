@@ -603,6 +603,7 @@
 | GCAL-03 | stale 삭제 안전성 | parity | P0 | 전체 source·날짜·ID 검증 후 upsert를 모두 성공시킨 경우에만 stale managed event를 삭제한다. 수동 event와 미래 schema는 보존한다. |
 | GCAL-04 | 동시 writer 제거 | parity | P0 | 실제 mutation은 scheduler secret 요청만 허용하고 browser reconcile은 dry-run으로 강제한다. 구버전 proxy POST/PUT/PATCH/DELETE는 410으로 종료한다. |
 | GCAL-05 | 장애·쿼터·시간 제한 | parity | P0 | OAuth/Firestore/Calendar socket timeout, 429·5xx·quota 403 bounded retry, 50초 global deadline을 적용한다. |
+| GCAL-05A | 대량 변경의 쿼터 내 수렴 | parity | P0 | 실행당 캘린더별 mutation 80개로 제한하고, 미처리 upsert가 있으면 stale 삭제 0으로 다음 5분 주기에 이어간다. |
 | GCAL-06 | 빈·손상 source 전량 삭제 차단 | parity | P0 | 200+빈 source는 기본 차단하고 마지막 현장을 의도적으로 제거할 때만 운영 환경의 명시적 allow-empty gate를 사용한다. |
 | GCAL-07 | 서버 설정 상태 UI | parity | P1 | 서비스 계정·서로 다른 두 Calendar·Scheduler secret이 모두 있어야 녹색 상태를 표시한다. |
 | OPS-GCAL | IAM·secret·Scheduler·운영 idempotency | pending | P0 | read-only Firestore IAM, secret, paused dry-run → 1회 apply → dry-run 0/0/0 → job 활성화 순서로 검증한다. |
@@ -618,7 +619,7 @@
 
 ### 로컬 체크포인트
 
-- Node 전체 46/46, `npm run typecheck`, `npm run build`, `git diff --check` 통과.
+- Node 전체 47/47, `npm run typecheck`, `npm run build`, `git diff --check` 통과.
 - 실제 Chromium 전체 회귀에서 desktop/mobile 일정 편집·차트·저장 흐름, Calendar 설정 10회, dry-run reconcile 1회, 저장 중 추가 변경 trailing pass 2회를 확인했다.
 - actual 외부 mutation, console error, page error, request failure는 모두 0이었다.
 - 1440/390 Calendar 상태 카드를 직접 판독했다. 녹색 status dot, `서버 상태 확인`, 최대 5분 안내가 보였고 잘림·가로 overflow는 0이었다.
