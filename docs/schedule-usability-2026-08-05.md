@@ -583,7 +583,7 @@
 
 ## 2026-09-04 Google Calendar 무인 서버 동기화
 
-판정: `LOCAL COMPLETE / 운영 dry-run·배포 게이트 진행 전`.
+판정: `PRODUCTION COMPLETE / 5분 Scheduler ENABLED`.
 
 ### 재현·원인과 경쟁 가설
 
@@ -606,7 +606,7 @@
 | GCAL-05A | 대량 변경의 쿼터 내 수렴 | parity | P0 | 실행당 캘린더별 mutation 80개로 제한하고, 미처리 upsert가 있으면 stale 삭제 0으로 다음 5분 주기에 이어간다. |
 | GCAL-06 | 빈·손상 source 전량 삭제 차단 | parity | P0 | 200+빈 source는 기본 차단하고 마지막 현장을 의도적으로 제거할 때만 운영 환경의 명시적 allow-empty gate를 사용한다. |
 | GCAL-07 | 서버 설정 상태 UI | parity | P1 | 서비스 계정·서로 다른 두 Calendar·Scheduler secret이 모두 있어야 녹색 상태를 표시한다. |
-| OPS-GCAL | IAM·secret·Scheduler·운영 idempotency | pending | P0 | read-only Firestore IAM, secret, paused dry-run → 1회 apply → dry-run 0/0/0 → job 활성화 순서로 검증한다. |
+| OPS-GCAL | IAM·secret·Scheduler·운영 idempotency | parity | P0 | read-only Firestore IAM, secret, paused dry-run → bounded apply → dry-run 0/0/0 → job 활성화를 실환경에서 확인했다. |
 
 ### 구현 계약
 
@@ -632,3 +632,14 @@
 4. 운영 dry-run에서 source>0·failure 0과 계획 수량을 확인한 뒤 1회 apply한다.
 5. 두 번째 dry-run의 create/update/delete가 모두 0인지 확인하고 그때만 apply body로 전환·resume한다.
 6. 장애 시 Scheduler를 먼저 pause하고 직전 Vercel deployment로 되돌린다.
+
+### 운영 적용 결과 — 2026-09-04
+
+- `roles/datastore.viewer`만 Calendar 서비스 계정에 부여하고, Scheduler secret과 `FIREBASE_PROJECT_ID`를 Production에 설정했다.
+- Production revision `dpl_2o4W1V2MYwmo5AEc8K2xxwgLMGqK`가 `ism.igggstudio.com`을 서빙하며 config의 `configured/serverManaged`가 `true/true`임을 확인했다.
+- 첫 dry-run: Firestore 현장 18개, 상세/간략 desired 307/18, create 325, delete 109, unknown ownership·failure 0.
+- 초기 대량 전환 중 실제 Google 403 write limit를 재현했다. 성공 upsert 뒤에만 stale delete가 시작되어 실패 시 기존 일정 삭제 0이었고, 이를 계기로 실행당 Calendar별 mutation 80개 bounded convergence를 추가했다.
+- Scheduler 자동 재시도에서 남은 create 18, delete 39를 적용하고 deferred 0으로 수렴했다.
+- 최종 독립 dry-run: site 18, unchanged 325, create/update/delete 0/0/0, failure 0, retry 0.
+- `ism-calendar-sync`: `ENABLED`, `*/5 * * * *`, `Asia/Seoul`, deadline 60초. 화면·로그인 없이 실행되며 동시 실행은 Scheduler 단일 job에 한정된다.
+- 삭제된 deterministic ID의 `409 → PUT status=confirmed` 복원은 synthetic adapter 회귀로 검증했다. Production 고객 Calendar에 검증용 가짜 일정을 만들지 않는 원칙 때문에 별도 실물 tombstone fixture는 생성하지 않았다.
