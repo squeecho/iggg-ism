@@ -1776,14 +1776,9 @@ function getDt(){var a=[],b=pD(chartBounds().start),N=tot();for(var i=0;i<N;i++)
 function dsp(ds){if(!ds)return '—';var d=pD(ds);return (d.getMonth()+1)+'/'+d.getDate()+'('+WK[d.getDay()]+')';}
 function dspK(ds){if(!ds)return '미정';var d=pD(ds);return zz(d.getMonth()+1)+'월 '+zz(d.getDate())+'일 ('+WK[d.getDay()]+')';}
 function per(){
-  var bounds=chartBounds();
   var periodDays=S.ed?dif(S.sd,S.ed)+1:1;
-  var label='공사기간 '+S.sd+' ~ '+S.ed+'  (총 '+(periodDays<1?1:periodDays)+'일)';
-  if(bounds.start!==S.sd||bounds.end!==S.ed){
-    var displayDays=bounds.end?dif(bounds.start,bounds.end)+1:1;
-    label+=' · 차트 표시범위 '+bounds.start+' ~ '+bounds.end+'  ('+(displayDays<1?1:displayDays)+'일)';
-  }
-  return label;
+  /* 차트가 공종·특별일 때문에 공사기간 밖으로 넓어져도 제목엔 공사기간만 — '차트 표시범위' 문구 제거(사장 2026-10-09) */
+  return '공사기간 '+S.sd+' ~ '+S.ed+'  (총 '+(periodDays<1?1:periodDays)+'일)';
 }
 function zz(n){return String(n).padStart(2,'0');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}

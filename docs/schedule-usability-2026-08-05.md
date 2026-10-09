@@ -563,7 +563,7 @@
 | HOT-02 | 미확정 현장의 로컬 일정 권한 유지 | parity | 미확정 record는 같은 이름의 cloud 문서가 있어도 remote read/apply 0이다. 합성 newer/stale cloud 모두 local state와 snap mutation 0이다. |
 | HOT-03 | 확정 현장만 숫자형 cloud revision으로 갱신 | parity | 표시용 `savedAt`과 분리한 `cloudUpdatedAt`만 비교한다. 첫 remote revision과 더 최신 revision만 적용하며 invalid/equal/older revision은 차단한다. |
 | HOT-04 | 늦거나 충돌한 원격 응답의 현장·탭·권한 오염 차단 | parity | 요청 시작 `S`/현장/record와 탭·저장 epoch, 응답 payload의 exact 현장명을 결속한다. sanitize-key 충돌, A→B, 확정 해제→재확정, 차트→편집→차트 역순 응답에서 최신 state/snap/revision만 유지한다. |
-| HOT-05 | 공사기간과 차트 표시범위 구분 | parity | 차트 제목은 `공사기간`을 정본으로 표시하고, 공종·특별일 때문에 envelope가 넓어질 때 중립적인 `차트 표시범위`를 별도 표기한다. |
+| HOT-05 | 공사기간과 차트 표시범위 구분 | parity | 차트 제목은 `공사기간`을 정본으로 표시하고, 공종·특별일 때문에 envelope가 넓어질 때 중립적인 `차트 표시범위`를 별도 표기한다. **2026-10-09 스펙 변경(사장): `차트 표시범위` 문구 제거 — 제목엔 공사기간만, envelope 확장(값 보존)은 유지.** |
 | HOT-06 | 차트 일정 편집 진입점 명확화 | parity | toolbar, tooltip, 접근성 label, phase sheet 문구를 `일정·설명 편집`으로 통일했다. 기존 date picker와 drag pipeline은 재사용한다. |
 
 ### 검증 체크포인트

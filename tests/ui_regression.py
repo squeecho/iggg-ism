@@ -941,7 +941,7 @@ def run_chart_tab_sync_authority(
     assert result["localAuthority"]["persistedExact"] is True, result
     assert result["localAuthority"]["period"] == ["2026-08-13", "2026-09-28"], result
     assert "공사기간 2026-08-13 ~ 2026-09-28" in result["localAuthority"]["title"], result
-    assert "차트 표시범위" in result["localAuthority"]["title"], result
+    assert "차트 표시범위" not in result["localAuthority"]["title"], result  # 문구 제거(사장 2026-10-09)
     assert result["localAuthority"]["editButton"].endswith("일정·설명 편집"), result
     assert result["confirmedRefresh"] == {
         "start": "2026-08-12",
