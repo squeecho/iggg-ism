@@ -1322,7 +1322,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 </div>
 <script>
 (function(){
-  // 입장 PIN 제거(사장 확정 2026-07-27) — 입장 통제는 head 의 sso-gate.js.
+  // 입장 PIN 제거(확정 2026-07-27) — 입장 통제는 head 의 sso-gate.js.
   document.getElementById('pinLockOv').classList.add('hidden');
 })();
 </script>
@@ -1333,7 +1333,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
     <span class="tb-label">CONSTRUCTION SCHEDULE</span>
     <span class="tb-site" id="tpn">(현장명 미입력)</span>
   </div>
-  <!-- 공통 셸: 허브 / 로그인 계정 / 로그아웃 (사장 승인 2026-07-28) -->
+  <!-- 공통 셸: 허브 / 로그인 계정 / 로그아웃 (승인 2026-07-28) -->
   <div class="tb-acct">
     <a class="tb-acct-btn" href="https://home.igggstudio.com/" title="앱 허브로 이동">허브</a>
     <span class="tb-acct-email" id="tbAcctEmail"></span>
@@ -1777,7 +1777,7 @@ function dsp(ds){if(!ds)return '—';var d=pD(ds);return (d.getMonth()+1)+'/'+d.
 function dspK(ds){if(!ds)return '미정';var d=pD(ds);return zz(d.getMonth()+1)+'월 '+zz(d.getDate())+'일 ('+WK[d.getDay()]+')';}
 function per(){
   var periodDays=S.ed?dif(S.sd,S.ed)+1:1;
-  /* 차트가 공종·특별일 때문에 공사기간 밖으로 넓어져도 제목엔 공사기간만 — '차트 표시범위' 문구 제거(사장 2026-10-09) */
+  /* 차트가 공종·특별일 때문에 공사기간 밖으로 넓어져도 제목엔 공사기간만 — '차트 표시범위' 문구 제거(2026-10-09) */
   return '공사기간 '+S.sd+' ~ '+S.ed+'  (총 '+(periodDays<1?1:periodDays)+'일)';
 }
 function zz(n){return String(n).padStart(2,'0');}
@@ -2323,7 +2323,7 @@ function toggleArchive(){
    비밀번호: SHA-256 해시로만 저장
 ═══════════════════════════════════════ */
 var _MASTER_HASH='48f225b82a33834d1850cff0faa53e44023775822fe9fcd200ece404d82ebc01';
-/* 사장 SSO 자동 마스터(사장 지시 2026-08-04) — SSO 로그인이 사장 계정이면
+/* 관리자 SSO 자동 마스터(지시 2026-08-04) — SSO 로그인이 관리자 계정이면
    비밀번호 모달을 생략하고 접속 즉시 마스터(전체 수정·삭제). 이 게이트는
    원래 클라이언트 UI 잠금이라(해시가 소스에 있음) 보안 등급은 동일하다 —
    실제 쓰기 권한은 Firestore 규칙(직원 세션)이 가른다. */
@@ -2353,9 +2353,9 @@ async function _sha256(str){
 
 function _showMasterModal(){
   if(_masterMode){ _exitMasterMode(); return; }
-  if(_ssoIsMaster()){    /* 사장 계정 — 비번 생략 즉시 활성 */
+  if(_ssoIsMaster()){    /* 관리자 계정 — 비번 생략 즉시 활성 */
     _enterMasterMode(true);
-    toast('🔑 마스터 모드 — 사장 계정 자동 인증');
+    toast('🔑 마스터 모드 — 관리자 계정 자동 인증');
     return;
   }
   if(Date.now()<_masterLockUntil){
@@ -2412,7 +2412,7 @@ async function _submitMaster(){
   }
 }
 
-/* 마스터 활성 공용 경로 — auto=true(사장 SSO): 토스트·5분 자동해제 없음(세션 내내),
+/* 마스터 활성 공용 경로 — auto=true(관리자 SSO): 토스트·5분 자동해제 없음(세션 내내),
    auto=false(비밀번호): 종전 동작 그대로(공용 기기 가정 5분 자동 해제). */
 function _enterMasterMode(auto){
   _masterFailCount=0;
@@ -2963,7 +2963,7 @@ async function _cloudEditSave() {
     return;
   }
   var newPn = snap.pn || pn;
-  /* ★개명 저장 = 이동(사장 실측 2026-08-04: '뚝섬 곳간'→'성수 곳간' 개명이
+  /* ★개명 저장 = 이동(실측 2026-08-04: '뚝섬 곳간'→'성수 곳간' 개명이
      복사로 남아 현장이 둘이 됐다). 문서 키가 현장명 파생이라 새 키 저장 성공
      후 옛 문서·옛 이름 캘린더를 정리한다 — 로컬 개명(pnRename)과 같은 레시피. */
   if (sanitizeKey(newPn) !== sanitizeKey(pn)) {
@@ -6862,7 +6862,7 @@ document.addEventListener('DOMContentLoaded', function(){
   initFirebase();
   initCalendarProxy();
   initShellAccount();
-  /* 사장 SSO = 접속 즉시 마스터(비번 모달 생략, 사장 지시 2026-08-04).
+  /* 관리자 SSO = 접속 즉시 마스터(비번 모달 생략, 지시 2026-08-04).
      아래 400ms 지연 클라우드 칩 로드보다 먼저 켜져 첫 렌더부터 편집 가능. */
   if(_ssoIsMaster()) _enterMasterMode(true);
   initDeviceName();

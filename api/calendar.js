@@ -187,7 +187,7 @@ function isAllowedOrigin(origin) {
 
 /* ══════════════════════════════════════════════════════════════════
    SSO 실인증 게이트 — ig works 승인 직원만 캘린더 조작 허용
-   (전수감사 2026-07-29 H4 / 사장 승인)
+   (전수감사 2026-07-29 H4 / 승인 )
 
    왜: Origin 헤더는 `curl -H "Origin: https://ism.igggstudio.com"` 로 자명하게
    위조된다. 그것만이 관문이면 누구나 서비스 계정 토큰으로 회사 구글 캘린더를
@@ -626,7 +626,7 @@ async function verifyStaff(req) {
 }
 
 /* ── 캘린더 ID 매핑 ── */
-/* 동기화 성공·실패를 백엔드 자가점검에 신고 — 실패가 쌓이면 사장에게 메일이 간다.
+/* 동기화 성공·실패를 백엔드 자가점검에 신고 — 실패가 쌓이면 운영자에게 메일이 간다.
    fire-and-forget: 신고 실패가 캘린더 동작을 막지 않는다(await 하지 않는다). */
 function reportSyncOutcome(req, ok, reason, idToken) {
   try {
