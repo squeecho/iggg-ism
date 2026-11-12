@@ -213,6 +213,9 @@ function isAllowedOrigin(origin) {
      직원에게만 내려준다(아래 게이트 대상).
    ⚠ action='config' 는 캘린더 ID 두 개만 돌려주는 읽기라 Origin 게이트만
      유지한다(부팅 경로를 인증에 묶으면 초기 로드가 인증 장애에 연동된다).
+   ⚠ action='master-check' 는 화면의 마스터 모드 판정 창구다(보안 감사
+     2026-11-12 #8). 같은 게이트를 지난 뒤 백엔드가 준 역할이 owner 일 때만
+     master:true. 화면 소스에 이메일·비밀번호 해시를 두지 않는다.
    ══════════════════════════════════════════════════════════════════ */
 
 const STAFF_API = (process.env.IGGG_API_URL
@@ -627,6 +630,12 @@ async function verifyStaff(req) {
   }
 }
 
+/* 마스터 모드 판정 — 백엔드 /api/staff/me 의 역할이 owner 인 승인 계정만.
+   (백엔드가 옛 admin 을 owner 로 바꿔 돌려준다. exec·manager 는 마스터가 아니다) */
+function isMasterRole(role) {
+  return String(role || '') === 'owner';
+}
+
 /* ── 캘린더 ID 매핑 ── */
 /* 동기화 성공·실패를 백엔드 자가점검에 신고 — 실패가 쌓이면 운영자에게 메일이 간다.
    fire-and-forget: 신고 실패가 캘린더 동작을 막지 않는다(await 하지 않는다). */
@@ -966,7 +975,8 @@ module.exports = async (req, res) => {
          않기 위함(ig-site-report/api/cloudinary-delete.js 와 같은 규약).
        ⚠ Origin 통과만으로는 여기서 막힌다 — Origin 은 CSRF 보조일 뿐이다. */
     let auth = null;
-    if ((action === 'proxy' || action === 'reconcile' || action === 'ics-url') && !scheduler) {
+    if ((action === 'proxy' || action === 'reconcile' || action === 'ics-url'
+         || action === 'master-check') && !scheduler) {
       auth = await verifyStaff(req);
       if (!auth.ok) {
         console.warn('[api/calendar][auth] 조작 거부:', auth.reason,
@@ -987,6 +997,15 @@ module.exports = async (req, res) => {
       }
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json({ ok: true, paths: paths });
+    }
+
+    /* ── action: 'master-check' — 마스터 모드 판정(승인 계정만, 위 게이트 통과 뒤) ──
+       역할 원문·이메일은 돌려주지 않는다. 화면은 master 하나만 본다. */
+    if (action === 'master-check') {
+      const master = isMasterRole(auth && auth.role);
+      if (master) console.log('[api/calendar][master-check] owner', _maskEmail(auth.email));
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).json({ ok: true, master: master });
     }
 
     /* ── action: 'config' — 프론트엔드 부팅용 공개 설정 ── */
@@ -1124,6 +1143,7 @@ module.exports.icsFeedPaths = icsFeedPaths;
 module.exports._firestoreValue = _firestoreValue;
 module.exports._firestoreDocument = _firestoreDocument;
 module.exports.isSchedulerRequest = isSchedulerRequest;
+module.exports.isMasterRole = isMasterRole;
 module.exports.calendarServerConfig = calendarServerConfig;
 module.exports.reconcileRequestMode = reconcileRequestMode;
 module.exports.reconcileFailureSummary = reconcileFailureSummary;
