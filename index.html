@@ -1473,7 +1473,7 @@ input,textarea,select{background:#191916;color:var(--tx);border-color:var(--bd);
 
   <!-- 캘린더 구독 링크 (접기/펼치기) -->
   <div style="margin-top:12px;padding:10px 14px;background:var(--sf);border-radius:10px;border:1px solid var(--bd);">
-    <div onclick="var b=document.getElementById('icsSubBody');var a=document.getElementById('icsArrow');if(b.style.display==='none'){b.style.display='block';a.textContent='▼';}else{b.style.display='none';a.textContent='▶';}" style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
+    <div onclick="var b=document.getElementById('icsSubBody');var a=document.getElementById('icsArrow');if(b.style.display==='none'){b.style.display='block';a.textContent='▼';_loadIcsPaths().catch(function(){});}else{b.style.display='none';a.textContent='▶';}" style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
       <span style="font-size:14px;">📅</span>
       <span style="font-size:11px;font-weight:700;color:var(--mu);letter-spacing:.3px;">캘린더 구독 (자동 갱신)</span>
       <span id="icsArrow" style="font-size:9px;color:var(--mu2);margin-left:auto;">▶</span>
@@ -5132,10 +5132,42 @@ function igConfirm(msg, okCb, cancelCb, okLabel){
 
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('on');clearTimeout(_tt);_tt=setTimeout(function(){t.classList.remove('on');},3000);}
 
-/* ICS 구독 URL 복사 */
+/* ICS 구독 URL 복사
+   보안 감사 2026-11-12 #2: 피드 주소에 비밀 토큰이 들어간다. 토큰 붙은 경로는
+   서버가 승인 직원에게만 내려준다(action=ics-url, 캘린더 프록시와 같은 SSO 게이트).
+   iOS Safari 는 await 뒤 클립보드 쓰기를 막으므로, 구독 칸을 펼칠 때 미리 받아
+   두고 복사 버튼은 그 값을 바로 쓴다. */
+var _icsPaths=null,_icsPathsP=null,_icsPathsErr=0;
+function _loadIcsPaths(){
+  if(_icsPaths)return Promise.resolve(_icsPaths);
+  if(_icsPathsP)return _icsPathsP;
+  _icsPathsP=_ssoIdToken().catch(function(){return '';}).then(function(idt){
+    var headers={'Content-Type':'application/json'};
+    if(idt)headers.Authorization='Bearer '+idt;
+    return fetch('/api/calendar',{method:'POST',credentials:'same-origin',headers:headers,
+      body:JSON.stringify({action:'ics-url'})});
+  }).then(function(r){
+    return r.json().catch(function(){return {};}).then(function(body){
+      if(!r.ok||!body||!body.paths){_icsPathsErr=(body&&body.reason==='ics-not-configured')?'unset':(r.status||1);throw new Error('ics-url '+r.status);}
+      _icsPathsErr=0;_icsPaths=body.paths;return _icsPaths;
+    });
+  }).catch(function(e){_icsPathsP=null;if(!_icsPathsErr)_icsPathsErr=1;throw e;});
+  return _icsPathsP;
+}
+function _icsPathsErrMsg(){
+  if(_icsPathsErr===401)return '🔒 로그인이 만료됐어요 — 다시 로그인한 뒤 구독 주소를 복사하세요';
+  if(_icsPathsErr===403)return '🔒 구독 주소는 승인된 직원만 받을 수 있어요';
+  if(_icsPathsErr==='unset')return '⚠️ 구독 주소가 아직 준비되지 않았어요 — 관리자에게 알려 주세요';
+  return '⚠️ 구독 주소를 불러오지 못했어요 — 잠시 후 다시 눌러 주세요';
+}
 function _copyIcsUrl(mode){
   var baseUrl=location.origin||'https://ism.igggstudio.com';
-  var url=mode==='simple'?baseUrl+'/calendar-simple.ics':baseUrl+'/calendar.ics';
+  if(!_icsPaths){
+    /* 아직 못 받았으면 받아 온 뒤 복사(클립보드가 막히면 아래 폴백이 주소를 띄운다) */
+    _loadIcsPaths().then(function(){_copyIcsUrl(mode);}).catch(function(){toast(_icsPathsErrMsg());});
+    return;
+  }
+  var url=baseUrl+(mode==='simple'?_icsPaths.simple:_icsPaths.detail);
   if(navigator.clipboard&&navigator.clipboard.writeText){
     navigator.clipboard.writeText(url).then(function(){
       toast('📋 구독 URL 복사됨! 캘린더 앱에 붙여넣기 하세요');

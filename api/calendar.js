@@ -208,7 +208,9 @@ function isAllowedOrigin(origin) {
         POST 에는 붙지 않으므로 이 폴백이 CSRF 창구가 되지 않는다.
 
    ⚠ ICS 구독 피드(action=ics)는 이 게이트보다 앞에서 처리된다 — 캘린더 앱은
-     인증 없이 GET 하므로 공개 유지(읽기 전용이라 조작 위험 없음).
+     헤더를 못 보내므로 주소 안 비밀 토큰(env ICS_FEED_TOKEN)으로만 연다
+     (보안 감사 2026-11-12 #2). 토큰 붙은 주소는 action='ics-url' 로 승인
+     직원에게만 내려준다(아래 게이트 대상).
    ⚠ action='config' 는 캘린더 ID 두 개만 돌려주는 읽기라 Origin 게이트만
      유지한다(부팅 경로를 인증에 묶으면 초기 로드가 인증 장애에 연동된다).
    ══════════════════════════════════════════════════════════════════ */
@@ -660,8 +662,51 @@ function resolveCalendarId(alias) {
 
 /* ══════════════════════════════════════════════════════════════════
    ICS(iCalendar) 구독 피드 — RFC 5545
-   캘린더 앱(iOS/구글/아웃룩)이 주기적으로 GET 하는 읽기 전용 공개 피드.
+   캘린더 앱(iOS/구글/아웃룩)이 주기적으로 GET 하는 읽기 전용 피드.
+   보안 감사 2026-11-12 #2: 공개 피드였던 것을 주소 안 비밀 토큰으로 잠갔다.
+     주소 꼴  /calendar/<토큰>.ics · /calendar-simple/<토큰>.ics
+              (또는 /api/calendar?action=ics&cal=detail|simple&k=<토큰>)
+     서버 env ICS_FEED_TOKEN 과 timing-safe 비교. env 가 비었거나 토큰이
+     없거나 틀리면 모두 같은 404(fail closed). 토큰은 URL 안전 문자
+     (hex·base64url)여야 한다.
    ══════════════════════════════════════════════════════════════════ */
+
+/* 요청에서 피드 토큰을 꺼낸다 — 경로형(rewrite 가 f=<파일명> 으로 넘김)은
+   '.ics' 로 끝나야 하고 그 앞부분이 토큰이다. 쿼리형은 k=<토큰>. */
+function icsTokenFromQuery(q) {
+  if (q && typeof q.f === 'string') {
+    const m = q.f.match(/^(.+)\.ics$/);
+    return m ? m[1] : '';
+  }
+  return q && typeof q.k === 'string' ? q.k : '';
+}
+
+/* 길이 차이도 새지 않게 양쪽을 sha256 으로 고정 길이로 만든 뒤 비교한다.
+   기대값(env)이 비었으면 항상 거부. */
+function icsFeedTokenOk(supplied) {
+  const expected = String(process.env.ICS_FEED_TOKEN || '');
+  if (!expected || !supplied) return false;
+  const a = crypto.createHash('sha256').update(expected).digest();
+  const b = crypto.createHash('sha256').update(String(supplied)).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+/* 승인 직원에게 내려줄 구독 경로(도메인은 화면이 location.origin 으로 붙인다). */
+function icsFeedPaths() {
+  const token = String(process.env.ICS_FEED_TOKEN || '');
+  if (!token) return null;
+  const t = encodeURIComponent(token);
+  return {
+    detail: '/calendar/' + t + '.ics',
+    simple: '/calendar-simple/' + t + '.ics',
+  };
+}
+
+function icsNotFound(res) {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(404).send('Not found');
+}
 
 /* 쿼리 파싱: Vercel 은 req.query 를 채워주지만, rewrite 목적지 쿼리·로컬 실행
    양쪽에서 안전하도록 URL 파싱 결과와 병합한다. */
@@ -817,11 +862,12 @@ async function fetchAllEvents(token, calId, timeMin, timeMax) {
   return events;
 }
 
-/* GET /api/calendar?action=ics&cal=detail|simple
+/* GET /api/calendar?action=ics&cal=detail|simple&(k=<토큰> | f=<토큰>.ics)
    ※ Origin 게이트 예외 — 캘린더 앱 구독 요청에는 Origin 헤더가 없다.
-     읽기 전용(쓰기·삭제 불가)이라 공개해도 조작 위험이 없으며,
-     POST 프록시 게이트는 그대로 유지된다. */
+     대신 주소 안 비밀 토큰이 맞아야만 연다(서버 설정 점검보다 먼저 —
+     토큰 없는 호출에 설정 상태를 흘리지 않는다). */
 async function handleIcs(req, res, q) {
+  if (!icsFeedTokenOk(icsTokenFromQuery(q))) return icsNotFound(res);
   const alias = q.cal === 'simple' ? 'simple' : 'detail';
   try {
     const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -854,10 +900,10 @@ async function handleIcs(req, res, q) {
     });
 
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    /* CDN 캐시 키는 토큰이 든 주소 그대로라 토큰 없는 주소로는 이 응답이 안 나간다 */
     res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=300, stale-while-revalidate=600');
     res.setHeader('Content-Disposition',
       'inline; filename="' + (alias === 'simple' ? 'calendar-simple.ics' : 'calendar.ics') + '"');
-    res.setHeader('Access-Control-Allow-Origin', '*'); /* 읽기 전용 공개 피드 */
     return res.status(200).send(ics);
   } catch (err) {
     console.error('[api/calendar][ics] Error:', err);
@@ -870,7 +916,7 @@ async function handleIcs(req, res, q) {
 module.exports = async (req, res) => {
   const urlQuery = parseQuery(req);
 
-  /* ICS 구독 피드는 Origin 게이트 이전에 처리 (읽기 전용 공개) */
+  /* ICS 구독 피드는 Origin 게이트 이전에 처리 (주소 안 토큰으로만 열림) */
   if (req.method === 'GET' && urlQuery.action === 'ics') {
     return handleIcs(req, res, urlQuery);
   }
@@ -920,7 +966,7 @@ module.exports = async (req, res) => {
          않기 위함(ig-site-report/api/cloudinary-delete.js 와 같은 규약).
        ⚠ Origin 통과만으로는 여기서 막힌다 — Origin 은 CSRF 보조일 뿐이다. */
     let auth = null;
-    if ((action === 'proxy' || action === 'reconcile') && !scheduler) {
+    if ((action === 'proxy' || action === 'reconcile' || action === 'ics-url') && !scheduler) {
       auth = await verifyStaff(req);
       if (!auth.ok) {
         console.warn('[api/calendar][auth] 조작 거부:', auth.reason,
@@ -930,6 +976,17 @@ module.exports = async (req, res) => {
         res.setHeader('X-Auth-Denied', '1');
         return res.status(auth.status).json({ error: auth.error, reason: auth.reason });
       }
+    }
+
+    /* ── action: 'ics-url' — 토큰 붙은 구독 경로(승인 직원만, 위 게이트 통과 뒤) ── */
+    if (action === 'ics-url') {
+      const paths = icsFeedPaths();
+      if (!paths) {
+        return res.status(503).json({ error: '캘린더 구독 주소가 아직 설정되지 않았습니다',
+                                      reason: 'ics-not-configured' });
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).json({ ok: true, paths: paths });
     }
 
     /* ── action: 'config' — 프론트엔드 부팅용 공개 설정 ── */
@@ -1061,6 +1118,9 @@ module.exports.buildIcs = buildIcs;
 module.exports.icsFold = icsFold;
 module.exports.icsEscape = icsEscape;
 module.exports.parseQuery = parseQuery;
+module.exports.icsTokenFromQuery = icsTokenFromQuery;
+module.exports.icsFeedTokenOk = icsFeedTokenOk;
+module.exports.icsFeedPaths = icsFeedPaths;
 module.exports._firestoreValue = _firestoreValue;
 module.exports._firestoreDocument = _firestoreDocument;
 module.exports.isSchedulerRequest = isSchedulerRequest;

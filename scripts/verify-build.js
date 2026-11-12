@@ -29,14 +29,21 @@ if (vercelConfig.outputDirectory !== '.') {
 
 const expectedRewrites = [
   ['/api/calendar', '/api/calendar'],
-  ['/calendar.ics', '/api/calendar?action=ics&cal=detail'],
-  ['/calendar-simple.ics', '/api/calendar?action=ics&cal=simple'],
+  ['/calendar/:file', '/api/calendar?action=ics&cal=detail&f=:file'],
+  ['/calendar-simple/:file', '/api/calendar?action=ics&cal=simple&f=:file'],
 ];
 for (const [source, destination] of expectedRewrites) {
   const preserved = vercelConfig.rewrites?.some(
     (rewrite) => rewrite.source === source && rewrite.destination === destination,
   );
   if (!preserved) throw new Error('Missing Vercel rewrite: ' + source);
+}
+
+/* 보안 감사 2026-11-12 #2: 토큰 없는 옛 공개 피드 주소가 되살아나면 안 된다 */
+for (const legacy of ['/calendar.ics', '/calendar-simple.ics']) {
+  if (vercelConfig.rewrites?.some((rewrite) => rewrite.source === legacy)) {
+    throw new Error('Legacy public ICS rewrite must stay removed: ' + legacy);
+  }
 }
 
 if (vercelConfig.functions?.['api/calendar.js']?.maxDuration !== 60) {

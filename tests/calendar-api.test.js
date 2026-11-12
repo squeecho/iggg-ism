@@ -127,3 +127,135 @@ test('reconcile failure diagnostics expose only aggregate operation and status c
   assert.equal(JSON.stringify(summary).includes('private-id'), false);
   assert.equal(JSON.stringify(summary).includes('private body'), false);
 });
+
+/* ── 보안 감사 2026-11-12 #2: ICS 구독 피드는 주소 안 비밀 토큰으로만 열린다 ── */
+function fakeRes() {
+  return {
+    statusCode: 0, headers: {}, body: undefined,
+    setHeader(name, value) { this.headers[String(name).toLowerCase()] = value; },
+    status(code) { this.statusCode = code; return this; },
+    send(body) { this.body = body; return this; },
+    json(body) { this.body = body; return this; },
+    end() { return this; },
+  };
+}
+
+async function callHandler(req) {
+  const res = fakeRes();
+  await calendarApi(Object.assign({ headers: {}, query: {} }, req), res);
+  return res;
+}
+
+function withEnv(values, fn) {
+  const keys = Object.keys(values);
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  keys.forEach((key) => {
+    if (values[key] == null) delete process.env[key];
+    else process.env[key] = values[key];
+  });
+  const restore = () => keys.forEach((key) => {
+    if (previous[key] == null) delete process.env[key];
+    else process.env[key] = previous[key];
+  });
+  return Promise.resolve().then(fn).finally(restore);
+}
+
+const FEED_TOKEN = 'a3f9c2e17b4d58e6a0f1c9b2d7e4a6c8';
+/* 토큰이 맞으면 게이트를 지나 서비스 계정 설정 점검까지 간다(여기선 env 를
+   비워 500 'Service account not configured' 로 통과 여부를 확인한다). */
+const NO_SERVICE_ACCOUNT = { GOOGLE_SERVICE_ACCOUNT_EMAIL: null, GOOGLE_PRIVATE_KEY: null };
+
+test('ICS feed is closed (404) when ICS_FEED_TOKEN is not configured, even with a token', () =>
+  withEnv(Object.assign({ ICS_FEED_TOKEN: null }, NO_SERVICE_ACCOUNT), async () => {
+    for (const url of [
+      '/api/calendar?action=ics&cal=detail',
+      '/api/calendar?action=ics&cal=detail&k=' + FEED_TOKEN,
+      '/api/calendar?action=ics&cal=simple&f=' + FEED_TOKEN + '.ics',
+    ]) {
+      const res = await callHandler({ method: 'GET', url });
+      assert.equal(res.statusCode, 404, url);
+      assert.equal(res.headers['cache-control'], 'no-store');
+      assert.equal(String(res.body).includes('BEGIN:VCALENDAR'), false);
+    }
+  }));
+
+test('ICS feed rejects missing, wrong, prefix and suffix-less tokens with the same 404', () =>
+  withEnv(Object.assign({ ICS_FEED_TOKEN: FEED_TOKEN }, NO_SERVICE_ACCOUNT), async () => {
+    for (const url of [
+      '/api/calendar?action=ics&cal=detail',                       /* 옛 /calendar.ics 가 가던 곳 */
+      '/api/calendar?action=ics&cal=detail&k=',
+      '/api/calendar?action=ics&cal=detail&k=wrong-token',
+      '/api/calendar?action=ics&cal=detail&k=' + FEED_TOKEN.slice(0, -1),
+      '/api/calendar?action=ics&cal=detail&k=' + FEED_TOKEN + 'x',
+      '/api/calendar?action=ics&cal=detail&f=' + FEED_TOKEN,       /* .ics 없는 경로형 */
+      '/api/calendar?action=ics&cal=detail&f=wrong.ics',
+      '/api/calendar?action=ics&cal=simple&f=.ics',
+    ]) {
+      const res = await callHandler({ method: 'GET', url });
+      assert.equal(res.statusCode, 404, url);
+      assert.equal(res.body, 'Not found', url);
+    }
+  }));
+
+test('ICS feed passes the gate with the right token in path or query form', () =>
+  withEnv(Object.assign({ ICS_FEED_TOKEN: FEED_TOKEN }, NO_SERVICE_ACCOUNT), async () => {
+    for (const url of [
+      '/api/calendar?action=ics&cal=detail&f=' + FEED_TOKEN + '.ics',
+      '/api/calendar?action=ics&cal=simple&f=' + FEED_TOKEN + '.ics',
+      '/api/calendar?action=ics&cal=detail&k=' + FEED_TOKEN,
+    ]) {
+      const res = await callHandler({ method: 'GET', url });
+      assert.equal(res.statusCode, 500, url);
+      assert.equal(res.body, 'Service account not configured', url);
+    }
+  }));
+
+test('ICS token helpers: path form needs .ics suffix, empty env never matches', () =>
+  withEnv({ ICS_FEED_TOKEN: FEED_TOKEN }, () => {
+    assert.equal(calendarApi.icsTokenFromQuery({ f: FEED_TOKEN + '.ics' }), FEED_TOKEN);
+    assert.equal(calendarApi.icsTokenFromQuery({ f: FEED_TOKEN }), '');
+    assert.equal(calendarApi.icsTokenFromQuery({ k: FEED_TOKEN }), FEED_TOKEN);
+    assert.equal(calendarApi.icsFeedTokenOk(FEED_TOKEN), true);
+    assert.equal(calendarApi.icsFeedTokenOk(''), false);
+    assert.deepEqual(calendarApi.icsFeedPaths(), {
+      detail: '/calendar/' + FEED_TOKEN + '.ics',
+      simple: '/calendar-simple/' + FEED_TOKEN + '.ics',
+    });
+    delete process.env.ICS_FEED_TOKEN;
+    assert.equal(calendarApi.icsFeedTokenOk(''), false);
+    assert.equal(calendarApi.icsFeedTokenOk(FEED_TOKEN), false);
+    assert.equal(calendarApi.icsFeedPaths(), null);
+  }));
+
+test('ics-url action is behind the staff gate: no credential gets 401 and no token', () =>
+  withEnv({ ICS_FEED_TOKEN: FEED_TOKEN }, async () => {
+    const res = await callHandler({
+      method: 'POST',
+      url: '/api/calendar',
+      headers: { origin: 'https://ism.igggstudio.com' },
+      body: { action: 'ics-url' },
+    });
+    assert.equal(res.statusCode, 401);
+    assert.equal(res.headers['x-auth-denied'], '1');
+    assert.equal(JSON.stringify(res.body).includes(FEED_TOKEN), false);
+
+    const foreign = await callHandler({
+      method: 'POST',
+      url: '/api/calendar',
+      headers: { origin: 'https://evil.example' },
+      body: { action: 'ics-url' },
+    });
+    assert.equal(foreign.statusCode, 403);
+    assert.equal(JSON.stringify(foreign.body).includes(FEED_TOKEN), false);
+  }));
+
+test('vercel.json no longer routes the legacy public ICS addresses', () => {
+  const config = require('../vercel.json');
+  const sources = config.rewrites.map((rewrite) => rewrite.source);
+  assert.equal(sources.includes('/calendar.ics'), false);
+  assert.equal(sources.includes('/calendar-simple.ics'), false);
+  const detail = config.rewrites.find((rewrite) => rewrite.source === '/calendar/:file');
+  const simple = config.rewrites.find((rewrite) => rewrite.source === '/calendar-simple/:file');
+  assert.equal(detail.destination, '/api/calendar?action=ics&cal=detail&f=:file');
+  assert.equal(simple.destination, '/api/calendar?action=ics&cal=simple&f=:file');
+});

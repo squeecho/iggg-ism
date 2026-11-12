@@ -1,0 +1,24 @@
+# 배포에서 빼는 파일 (보안 감사 2026-11-12 #10)
+# 앱이 아닌 문서·시험은 운영 도메인에서 내려가지 않게 한다.
+# scripts/ 는 남긴다: package.json "build" 가 scripts/verify-build.js 를 부른다.
+/docs/
+/tests/
+*.md
+
+# ── .gitignore 미러 ──
+# .vercelignore 가 있으면 Vercel CLI 는 .gitignore 를 보지 않는다.
+# 로컬에만 있는 비밀키·백업본이 CLI 배포로 올라가지 않게 같은 목록을 둔다.
+iggg-ism-72eae49fecfa.json
+*-service-account*.json
+*.pem
+*.key
+*.backup-before-auth.html
+index(*).backup*.html
+.DS_Store
+.AppleDouble
+.LSOverride
+*.swp
+*~
+.vscode/
+.vercel
+.fablize/
