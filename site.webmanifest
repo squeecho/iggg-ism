@@ -3,7 +3,8 @@
   "short_name": "!G ISM",
   "description": "iggg studio ISM",
   "start_url": "/",
-  "display": "standalone",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
   "background_color": "#1a4d2e",
   "theme_color": "#1a4d2e",
   "icons": [

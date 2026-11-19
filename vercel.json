@@ -7,6 +7,15 @@
     { "source": "/calendar/:file", "destination": "/api/calendar?action=ics&cal=detail&f=:file" },
     { "source": "/calendar-simple/:file", "destination": "/api/calendar?action=ics&cal=simple&f=:file" }
   ],
+  "headers": [
+    {
+      "source": "/.well-known/web-app-origin-association",
+      "headers": [
+        { "key": "Content-Type", "value": "application/json; charset=utf-8" },
+        { "key": "Cache-Control", "value": "public, max-age=3600, must-revalidate" }
+      ]
+    }
+  ],
   "functions": {
     "api/calendar.js": {
       "maxDuration": 60
