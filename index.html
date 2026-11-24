@@ -1654,6 +1654,8 @@ var _db = null;
 var _cloudSites = [];
 var _fbReady = false;
 var _cloudInventoryReady = false;
+var _cloudServerSynced = false;
+var _cloudListenFallbackAt = 0;
 var _cloudLoadPromise = null;
 var _cloudView = null; /* 공유 현장 보기 전용 - S를 덮어쓰지 않음 */
 var _open=null,IS_RO=false,_origPn=null,_cancelPn=null;
@@ -2308,6 +2310,8 @@ async function _doConfirmToggle(pn,confirming){
     _updLockOverlay();
     rEdit();
   }
+  rSharedExportSites();
+  rCloudChips();
   _finishConfirmBusy(pn);
 }
 function toggleArchive(){
@@ -6613,6 +6617,11 @@ function initFirebase() {
     }
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     _db = firebase.firestore();
+    try {
+      if (_db && typeof _db.settings === 'function') {
+        _db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
+      }
+    } catch(e) {}
     /* ── 인증(실직원 신원) 후 Firestore 사용 — 실패하면 안내만 띄운다 ──
        Firestore Rules가 인증된 요청만 허용하므로, 로그인이 완료된 뒤에
        _fbReady=true로 올려 리스너/로드를 시작한다.
@@ -6641,6 +6650,15 @@ function initFirebase() {
 /* ── Firebase 실시간 리스너 ──
    다른 기기(마스터)가 sites 컬렉션에서 문서를 삭제하면
    이 기기에서도 즉시 감지하여 로컬 확정 상태를 해제한다 */
+function _scheduleServerFallbackLoad() {
+  var now = Date.now();
+  if (_cloudServerSynced || (now - _cloudListenFallbackAt) < 10000) return;
+  _cloudListenFallbackAt = now;
+  loadCloudSites(true).then(function(ok) {
+    if (ok) rCloudChips();
+  }).catch(function() {});
+}
+
 function _startCloudListener() {
   if (!_fbReady || !_db) return;
   if (_cloudSnapshotUnsubscribe) {
@@ -6649,9 +6667,26 @@ function _startCloudListener() {
   try {
     _cloudSnapshotUnsubscribe = _db.collection('sites').onSnapshot(
       function(snapshot) {
+        var fromCache = !!(snapshot && snapshot.metadata && snapshot.metadata.fromCache);
+        var docs = (snapshot && snapshot.docs) ? snapshot.docs : [];
+        /* 오프라인·WebChannel 1회 실패 시 Firestore 가 빈 캐시 스냅샷(fromCache:true, docs:[])을
+           내려보낸다 — 이를 서버 정본으로 취급하면 공유 목록이 숨겨지고 로컬 확정 상태가
+           전부 풀린다. 서버 응답 전까지 로컬 확정을 유지하고 단건 조회 폴백을 시도한다. */
+        if (fromCache && !docs.length) {
+          _scheduleServerFallbackLoad();
+          rSharedExportSites();
+          rCloudChips();
+          return;
+        }
+        /* 아직 서버 전체 스냅샷을 못 받은 상태에서 부분 캐시(로컬 쓰기 등)로 확정 목록을 덮지 않는다 */
+        if (fromCache && !_cloudServerSynced) {
+          _scheduleServerFallbackLoad();
+          return;
+        }
         /* 변경된 문서 목록 처리 */
         snapshot.docChanges().forEach(function(change) {
           if (change.type === 'removed') {
+            if (fromCache) return; /* 오프라인/캐시 상태에서는 삭제 판정 보류 */
             /* 삭제된 문서 감지 → 로컬 확정 해제 */
             var deletedPn = change.doc.data().pn || change.doc.id;
             _handleCloudDeletion(deletedPn);
@@ -6664,17 +6699,24 @@ function _startCloudListener() {
           }
         });
         /* 전체 스냅샷으로 _cloudSites 동기화 (초기 로드 포함) */
-        _cloudSites = snapshot.docs.map(function(d){ return ScheduleCore.normalizeScheduleState(d.data()); }).filter(function(s){ return s.pn; });
+        _cloudSites = docs.map(function(d){ return ScheduleCore.normalizeScheduleState(d.data()); }).filter(function(s){ return s.pn; });
         _normalizeCloudContractors();
-        _cloudInventoryReady = true;
-        _restoreMyCloudSites();
+        if (!fromCache) {
+          _cloudServerSynced = true;
+          _cloudInventoryReady = true;
+        } else if (!_cloudInventoryReady && _cloudSites.length > 0) {
+          _cloudInventoryReady = true;
+        }
+        _restoreMyCloudSites({ fromServer: !fromCache });
         rSharedExportSites();
         rCloudChips();
         /* 로컬↔클라우드 대조: 이 기기가 닫혀 있는 동안 다른 기기에서
-           확정 해제/삭제된 현장의 로컬 confirmed 잔재 정리 (캘린더 부활 방지) */
-        try{ _reconcileLocalConfirmed(); }catch(e){ console.warn('[reconcile]', e); }
+           확정 해제/삭제된 현장의 로컬 confirmed 잔재 정리 (서버 확정 스냅샷일 때만) */
+        if (!fromCache && _cloudSites.length > 0) {
+          try{ _reconcileLocalConfirmed({ fromCache: false }); }catch(e){ console.warn('[reconcile]', e); }
+        }
         /* 초기 로드 완료 후 1회: 다른 기기/다른 경로에서 바뀐 확정 현장 캐치업 동기화 */
-        if (!window._gcalCatchupInit) {
+        if (!fromCache && !window._gcalCatchupInit) {
           window._gcalCatchupInit = true;
           setTimeout(function(){ try{ _gcalCatchupSync(); }catch(e){} }, 4000);
         }
@@ -6694,7 +6736,9 @@ function _startCloudListener() {
    캘린더에 유령 현장을 되살린다. 스냅샷마다 로컬 확정 현장이 클라우드에
    실재하는지 대조해 없으면 해제 + 캘린더에서도 삭제한다. */
 var _confirmGrace = {}; /* pn → 로컬 확정 시각 (저장 전파 지연/오프라인 확정 보호) */
-function _reconcileLocalConfirmed() {
+function _reconcileLocalConfirmed(options) {
+  if (options && options.fromCache) return;
+  if (!_fbReady || !_cloudInventoryReady || !_cloudSites || !_cloudSites.length) return;
   var cloudPns = {};
   (_cloudSites || []).forEach(function(s){ if (s.pn) cloudPns[s.pn] = 1; });
   var now = Date.now();
@@ -6792,16 +6836,29 @@ async function loadCloudSites(force) {
   _cloudLoadPromise=(async function(){
     try {
       var snap = await _db.collection('sites').get();
-      _cloudSites = snap.docs.map(function(d){ return ScheduleCore.normalizeScheduleState(d.data()); }).filter(function(s){ return s.pn; });
+      var fromCache = !!(snap && snap.metadata && snap.metadata.fromCache);
+      var docs = (snap && snap.docs) ? snap.docs : [];
+      if (fromCache && !docs.length) {
+        _cloudInventoryReady = false;
+        return false;
+      }
+      _cloudSites = docs.map(function(d){ return ScheduleCore.normalizeScheduleState(d.data()); }).filter(function(s){ return s.pn; });
       _normalizeCloudContractors();
-      _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 */
-      _restoreMyCloudSites();   /* 캐시 지워도 내 기기 현장 복구 */
-      _cloudInventoryReady=true;
+      if (!fromCache) {
+        _cloudServerSynced = true;
+        _syncConfirmedWithCloud(); /* 마스터 삭제 감지 → 로컬 확정 자동 해제 */
+        _restoreMyCloudSites({ fromServer: true });   /* 캐시 지워도 내 기기 현장 복구 */
+        _cloudInventoryReady=true;
+      } else {
+        _cloudInventoryReady = _cloudSites.length > 0;
+        if (_cloudInventoryReady) _restoreMyCloudSites({ fromServer: false });
+      }
       rSharedExportSites();
-      return true;
+      return _cloudInventoryReady;
     } catch(e) {
       console.warn('Cloud load failed:', e);
-      _cloudSites=[];_cloudInventoryReady=false;
+      if(!_cloudServerSynced)_cloudSites=[];
+      _cloudInventoryReady=false;
       return false;
     } finally {
       _cloudLoadPromise=null;
@@ -6821,18 +6878,46 @@ function _normalizeCloudContractors(){
   });
 }
 
-/* 내 기기가 올린 현장이 로컬에 없으면 자동 복구 */
-function _restoreMyCloudSites() {
+function _scheduleRestoreContentKey(rawState) {
+  if (!rawState || typeof rawState !== 'object') return '';
+  try {
+    var copy = JSON.parse(JSON.stringify(rawState));
+    delete copy.snap;
+    delete copy._updatedAt;
+    delete copy._author;
+    delete copy.author;
+    delete copy.confirmed;
+    delete copy.savedAt;
+    delete copy.createdAt;
+    delete copy.cloudUpdatedAt;
+    ScheduleCore.normalizeScheduleState(copy);
+    (copy.tasks||[]).forEach(function(t){
+      if(!t.contractors||!t.contractors.length){ t.contractors=[]; return; }
+      var valid=t.contractors.filter(function(c){ return c&&c.trim(); });
+      t.contractors=valid.length?[valid[0]]:[];
+    });
+    return JSON.stringify({
+      pn: copy.pn || '',
+      sd: copy.sd || '',
+      ed: copy.ed || '',
+      tasks: copy.tasks || [],
+      notes: copy.notes || []
+    });
+  } catch(e) { return ''; }
+}
+
+/* 내 기기가 올린 현장이 로컬에 없으면 자동 복구 (및 오해제된 동일본 확정 복원) */
+function _restoreMyCloudSites(options) {
   var myDevice = getDeviceName();
   if (!myDevice || !_cloudSites || !_cloudSites.length) return;
+  var fromServer = !options || options.fromServer !== false;
   var arr = getRecent();
   var localPns = arr.map(function(x){ return ScheduleCore.canonicalSiteName(x.pn); });
   var changed = false;
+  var activeRestored = false;
   _cloudSites.forEach(function(s) {
-    if (!s.pn || !s.author || s.author !== myDevice) return;
+    if (!s.pn || !s.author || s.author !== myDevice || s.confirmed === false) return;
     var canonical=ScheduleCore.canonicalSiteName(s.pn);
-    if (localPns.indexOf(canonical) >= 0) return; /* 정규화 기준으로 이미 있음 */
-    /* 내 현장인데 로컬에 없음 → 복구 */
     var restoredState;
     try {
       restoredState=s.snap?JSON.parse(s.snap):JSON.parse(JSON.stringify(s));
@@ -6846,6 +6931,26 @@ function _restoreMyCloudSites() {
       console.warn('Cloud restore skipped:',e);
       return;
     }
+    var existingIdx = arr.findIndex(function(x){ return x && x.pn === s.pn; });
+    if (existingIdx >= 0) {
+      var existing = arr[existingIdx];
+      if (fromServer && !existing.confirmed && (!existing.author || existing.author === myDevice)) {
+        try {
+          var localState = existing.snap ? JSON.parse(existing.snap) : null;
+          if (localState && _scheduleRestoreContentKey(localState) === _scheduleRestoreContentKey(restoredState)) {
+            existing.confirmed = true;
+            if (!existing.author) existing.author = s.author;
+            changed = true;
+            if (typeof _cloudView !== 'undefined' && !_cloudView && !_cloudEditing && S && S.pn === s.pn) {
+              activeRestored = true;
+            }
+          }
+        } catch(e) {}
+      }
+      return;
+    }
+    if (localPns.indexOf(canonical) >= 0) return; /* 정규화 기준으로 이미 있음 */
+    /* 내 현장인데 로컬에 없음 → 복구 */
     arr.push({
       pn: s.pn, sd: s.sd||'', ed: s.ed||'',
       savedAt: s.savedAt||'', author: s.author,
@@ -6856,7 +6961,23 @@ function _restoreMyCloudSites() {
     changed = true;
     console.log('[복구] 내 현장 로컬 복구:', s.pn);
   });
-  if (changed) { setRecent(arr); rChips(); }
+  if (changed) {
+    setRecent(arr);
+    rChips();
+    if (activeRestored) {
+      IS_RO = true;
+      var cb = document.getElementById('ca');
+      if (cb && !document.querySelector('.ro-badge')) {
+        var nb = document.createElement('span');
+        nb.className = 'ro-badge';
+        nb.textContent = '🔒 확정됨';
+        nb.style.cssText = 'font-size:11px;font-weight:700;color:#16a34a;background:#dcfce7;border:1px solid #bbf7d0;border-radius:6px;padding:3px 8px;margin-right:4px;';
+        cb.insertBefore(nb, cb.firstChild);
+      }
+      _updLockOverlay();
+      rEdit();
+    }
+  }
 }
 
 /* ── 로컬 확정현장 vs Firebase 동기화 ──
